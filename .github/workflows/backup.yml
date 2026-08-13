@@ -1,0 +1,158 @@
+# Backup diário do banco de produção — dump restaurável, fora da plataforma.
+#
+# Por que existe: o plano Pro do Supabase já faz backup diário, mas esses backups
+# vivem DENTRO do Supabase. Este workflow protege o cenário que eles não cobrem —
+# perda de acesso à conta. Roda pg_dump e guarda o resultado criptografado como
+# artifact do GitHub.
+#
+# REQUISITOS (uma vez, manual):
+#   1. O repositório PRECISA ser privado. Em repo público os artifacts são
+#      baixáveis por qualquer usuário do GitHub — o dump é a contabilidade da empresa.
+#   2. Cadastrar os secrets (Settings → Secrets and variables → Actions):
+#      - DATABASE_URL       string do pooler Supavisor (session mode, porta 5432).
+#                           NÃO usar o host direto db.<ref>.supabase.co: ele só
+#                           resolve em IPv6 e os runners do GitHub não têm IPv6.
+#      - BACKUP_PASSPHRASE  senha forte para criptografar o dump (AES256).
+#                           Guarde-a FORA do GitHub — sem ela o backup é inútil.
+#
+# Para restaurar:
+#   gpg --decrypt --batch --passphrase "$BACKUP_PASSPHRASE" dre_*.dump.gpg > dre.dump
+#   pg_restore --clean --if-exists --no-owner --no-privileges -d "$DATABASE_URL" dre.dump
+
+name: backup-diario
+
+on:
+  schedule:
+    - cron: "23 5 * * *"   # 05:23 UTC ≈ 02:23 em Brasília, diário
+  workflow_dispatch: {}     # permite disparo manual na aba Actions
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # O padrão do repositório é read-only; o passo de alerta precisa abrir issue.
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      # O servidor é Postgres 17.6; o pg_dump do runner é mais antigo e se recusa
+      # a dumpar uma major version acima da dele. Por isso instalamos o client 17.
+      - name: Instalar postgresql-client 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          # O runner já traz o client 16 em /usr/bin e ele ganha no PATH, o que faz
+          # o pg_dump abortar com "server version mismatch". Damos precedência ao 17.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Conferir versão do pg_dump
+        run: |
+          pg_dump --version
+          pg_dump --version | grep -q " 17\." || {
+            echo "::error::pg_dump não é a versão 17 — abortando antes de gerar backup inválido."
+            exit 1
+          }
+
+      - name: Rodar pg_dump
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::secret DATABASE_URL não cadastrado — backup NÃO foi feito."
+            exit 1
+          fi
+          ARQ="dre_$(date -u +%Y%m%d_%H%M%S).dump"
+          echo "ARQ=$ARQ" >> "$GITHUB_ENV"
+          # -Fc  = formato custom (comprimido, permite restore seletivo)
+          # -n   = schemas public (dados de negócio) e auth (usuários do Supabase).
+          #        Sem 'auth' o restore volta sem ninguém conseguir logar.
+          # --no-owner/--no-privileges = restaurável num projeto Supabase novo,
+          #        onde os roles internos têm outros OIDs.
+          pg_dump "$DATABASE_URL" \
+            --format=custom \
+            --schema=public \
+            --schema=auth \
+            --no-owner \
+            --no-privileges \
+            --file="$ARQ"
+
+      # Um backup de 0 byte é pior que nenhum: passa despercebido e dá falsa
+      # segurança. O banco tem ~15 MB, então um dump saudável passa longe de 100 KB.
+      - name: Validar que o dump não está vazio
+        run: |
+          TAM=$(stat -c%s "$ARQ")
+          echo "dump: $ARQ ($TAM bytes)"
+          if [ "$TAM" -lt 102400 ]; then
+            echo "::error::dump suspeito — apenas $TAM bytes. Backup considerado inválido."
+            exit 1
+          fi
+          pg_restore --list "$ARQ" > /dev/null
+          echo "pg_restore --list leu o arquivo: dump íntegro."
+
+      - name: Criptografar
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::secret BACKUP_PASSPHRASE não cadastrado — não vou subir dump em claro."
+            exit 1
+          fi
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "$BACKUP_PASSPHRASE" \
+            --output "$ARQ.gpg" "$ARQ"
+          rm -f "$ARQ"   # nunca deixar o dump em claro no runner
+
+      - name: Publicar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ github.run_id }}
+          path: "*.dump.gpg"
+          retention-days: 90
+          if-no-files-found: error
+
+      # As 7 primeiras execuções deste workflow falharam em silêncio por falta dos
+      # secrets — backup que ninguém verifica não é backup. Abrir issue ATRIBUÍDA ao
+      # dono força a notificação e deixa rastro até alguém fechar. Reaproveita a issue
+      # aberta em vez de criar uma por dia.
+      #
+      # NÃO usa action composta de propósito: este job não faz checkout (não precisa
+      # do repo), e uma action local exigiria um — dependência a mais no caminho do
+      # backup, que é o que menos pode quebrar aqui. Daí também o --repo explícito.
+      - name: Avisar em caso de falha
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITULO: "Falha no backup diário"
+          URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          CORPO="O workflow \`backup-diario\` falhou em $(date -u '+%d/%m/%Y %H:%M UTC').
+          **Não há dump novo desta data.**
+
+          - Run: $URL_RUN
+          - Disparo: \`${{ github.event_name }}\`
+
+          Causas já vistas neste workflow: secret \`DATABASE_URL\` ou
+          \`BACKUP_PASSPHRASE\` ausente; pooler Supavisor fora do ar; \`pg_dump\` em
+          versão diferente da do servidor; dump vazio reprovado na validação.
+
+          Confira o run antes de assumir que os backups anteriores bastam — a
+          retenção do artifact é de 90 dias.
+
+          Feche esta issue depois de corrigir; ela é reaproveitada nas próximas falhas."
+
+          EXISTENTE=$(gh issue list --repo "${{ github.repository }}" --state open \
+            --json number,title --jq "[.[] | select(.title == \"$TITULO\")][0].number")
+
+          if [ -n "$EXISTENTE" ] && [ "$EXISTENTE" != "null" ]; then
+            gh issue comment "$EXISTENTE" --repo "${{ github.repository }}" --body "$CORPO"
+            echo "Comentei na issue #$EXISTENTE."
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$TITULO" \
+              --body "$CORPO" --assignee "${{ github.repository_owner }}"
+          fi

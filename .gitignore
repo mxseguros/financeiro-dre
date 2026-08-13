@@ -1,0 +1,61 @@
+# ── Credenciais (NUNCA commitar) ─────────────────────────────
+.env
+.env.local
+.env.test
+frontend/.env.local
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# ── Node / Next.js ────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+pnpm-lock.yaml
+
+# ── Dados e uploads ──────────────────────────────────────────
+data/uploads/
+data/output/
+*.xlsx
+*.xls
+*.csv
+!etl/categorizacao_exemplo.csv
+
+# ── Arquivos desnecessários ───────────────────────────────────
+telas/
+benchmark_results/
+.claude/
+# package-lock.json NÃO deve ser ignorado: `npm ci` (usado na CI e pela Vercel)
+# exige o lockfile, e é ele que garante build reproduzível.
+
+# ── Supabase local ────────────────────────────────────────────
+.supabase/
+
+# ── Sistema ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+.vercel
+
+# ── Backups de dados (produção — NUNCA commitar) ─────────────
+backups/
+
+# ── Snapshots do Monitoramento IA (gerados pelo cron) ────────
+monitor_out/
+
+# ── Extratos bancários reais (dados de clientes — NUNCA commitar) ──
+extrato/
+
+# ── Artefatos de build ────────────────────────────────────────
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
