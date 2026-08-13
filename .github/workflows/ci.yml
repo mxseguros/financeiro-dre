@@ -121,6 +121,10 @@ jobs:
             gh issue comment "$EXISTENTE" --repo "${{ github.repository }}" --body "$CORPO"
             echo "Comentei na issue #$EXISTENTE."
           else
+            # Sem --assignee: o dono do repo é a ORG mxseguros e o GitHub não aceita
+            # atribuir issue a organização — o alerta falharia junto com o job.
+            # O || garante a issue mesmo se a label 'automacao' for apagada.
             gh issue create --repo "${{ github.repository }}" --title "$TITULO" \
-              --body "$CORPO" --assignee "${{ github.repository_owner }}"
+              --body "$CORPO" --label automacao \
+              || gh issue create --repo "${{ github.repository }}" --title "$TITULO" --body "$CORPO"
           fi
