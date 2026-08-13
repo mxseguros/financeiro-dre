@@ -29,6 +29,11 @@ on:
         description: 'Escreva MIGRAR para confirmar a escrita no banco de DESTINO'
         required: true
         default: ''
+      limpar_destino:
+        description: 'Apagar resíduo de tentativa anterior no destino antes de migrar'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   migrar:
@@ -86,7 +91,11 @@ jobs:
           USUARIOS=$(psql "$DESTINO" -tAc "select count(*) from auth.users;")
           echo "destino: $TABELAS tabelas em public, $USUARIOS usuários em auth"
           if [ "$TABELAS" -ne 0 ] || [ "$USUARIOS" -ne 0 ]; then
-            echo "::error::O destino NÃO está vazio ($TABELAS tabelas, $USUARIOS usuários). Abortando."
+            echo "::error::O destino NÃO está vazio ($TABELAS tabelas, $USUARIOS usuários)."
+            echo "Se for resíduo de uma tentativa que falhou no meio, limpe antes de repetir:"
+            echo "  usuários  -> painel do Supabase, Authentication > Users, selecionar todos e excluir"
+            echo "  tabelas   -> painel do Supabase, SQL Editor:"
+            echo "               drop schema public cascade; create schema public;"
             exit 1
           fi
 
@@ -111,7 +120,14 @@ jobs:
       # PRIMEIRO os usuários. --data-only porque o schema auth já existe no projeto
       # novo, criado pelo próprio Supabase — recriar as tabelas quebraria o serviço
       # de auth dele. Só as duas tabelas que importam para login continuar valendo.
-      - name: Restaurar auth.users e auth.identities (só dados)
+      #
+      # DOIS pg_restore separados, e não um com duas flags --table: passar as duas
+      # de uma vez faz o pg_restore seguir a ordem do TOC do dump, não a ordem das
+      # flags — e o TOC traz identities antes de users. Como auth.identities tem FK
+      # para auth.users(id), a primeira tentativa morreu com
+      # "violates foreign key constraint identities_user_id_fkey". Separar é o que
+      # garante a ordem.
+      - name: Restaurar auth.users (só dados)
         env:
           DESTINO: ${{ secrets.DATABASE_URL_DESTINO }}
         run: |
@@ -119,12 +135,25 @@ jobs:
             --data-only \
             --schema=auth \
             --table=users \
+            --no-owner \
+            --no-privileges \
+            --dbname="$DESTINO" \
+            origem.dump
+          echo "auth.users: $(psql "$DESTINO" -tAc 'select count(*) from auth.users;')"
+
+      - name: Restaurar auth.identities (só dados)
+        env:
+          DESTINO: ${{ secrets.DATABASE_URL_DESTINO }}
+        run: |
+          pg_restore \
+            --data-only \
+            --schema=auth \
             --table=identities \
             --no-owner \
             --no-privileges \
             --dbname="$DESTINO" \
             origem.dump
-          echo "usuários restaurados: $(psql "$DESTINO" -tAc 'select count(*) from auth.users;')"
+          echo "auth.identities: $(psql "$DESTINO" -tAc 'select count(*) from auth.identities;')"
 
       # DEPOIS o schema de negócio, cujas FKs já encontram os usuários no lugar.
       - name: Restaurar schema public (estrutura + dados)
