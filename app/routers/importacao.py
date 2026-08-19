@@ -123,7 +123,9 @@ async def confirmar_balancete(
         )
 
     db_admin = get_supabase_admin()
-    resultado = await efetivar_importacao(payload, usuario.user_id, db_admin)
+    resultado = await efetivar_importacao(
+        payload, usuario.user_id, db_admin, getattr(usuario, "tenant_id", None)
+    )
 
     await dre_service.registrar_auditoria(
         usuario, "importacao_confirmada",

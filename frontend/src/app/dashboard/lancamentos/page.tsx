@@ -573,7 +573,7 @@ export default function LancamentosPage() {
                 type="search"
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
-                placeholder="Buscar descrição, tipo, banco…"
+                placeholder="Buscar por descrição…"
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 focus:border-navy focus-ring focus:outline-none sm:w-56 sm:py-1.5"
               />
               <select value={filtroBanco} onChange={e => setFiltroBanco(e.target.value)}
@@ -604,7 +604,7 @@ export default function LancamentosPage() {
                         <p className="truncate text-xs font-medium text-gray-800">
                           {d.descricao}
                           {d.parcela_total && d.parcela_total > 1 && (
-                            <span className="ml-1 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">{d.parcela_atual}/{d.parcela_total}</span>
+                            <span className="ml-2 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">parcela {d.parcela_atual}/{d.parcela_total}</span>
                           )}
                           {d.recorrente && !d.parcela_total && (
                             <span className="ml-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">recorrente</span>
@@ -677,8 +677,11 @@ export default function LancamentosPage() {
                         <td className="px-4 py-2 text-gray-700">
                           <span>{d.descricao}</span>
                           {d.parcela_total && d.parcela_total > 1 && (
-                            <span className="ml-1.5 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">
-                              {d.parcela_atual}/{d.parcela_total}
+                            <span
+                              className="ml-2 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600"
+                              title={`Parcela ${d.parcela_atual} de ${d.parcela_total}`}
+                            >
+                              parcela {d.parcela_atual}/{d.parcela_total}
                             </span>
                           )}
                           {d.recorrente && !d.parcela_total && (

@@ -9,7 +9,7 @@ export interface Despesa {
   centro_custo: string; banco_nome: string | null; valor: number
   data_vencimento: string | null; paga_em: string | null; status: string
   recorrente: boolean; parcela_atual: number | null; parcela_total: number | null
-  criado_em: string | null
+  criado_em: string | null; atualizado_em?: string | null
 }
 export interface DespesasResp { total: number; items: Despesa[]; soma_total: number; total_pendentes: number }
 
@@ -17,7 +17,7 @@ export interface Receita {
   id: string; competencia: string; tipo_lancamento_id: string | null; banco_id: string | null
   tipo_nome: string | null; descricao: string; centro_custo: string | null
   banco_nome: string | null; valor: number; data_vencimento: string | null; recebido_em: string | null
-  observacao: string | null; origem: string; criado_em: string | null
+  observacao: string | null; origem: string; criado_em: string | null; atualizado_em?: string | null
 }
 export interface ReceitasResp { total: number; items: Receita[]; soma_total: number }
 
@@ -25,7 +25,7 @@ export interface OrdemCompra {
   id: string; solicitante: string; assunto: string; descricao: string
   valor: number | null; data_solicitacao: string; status: string
   criado_por: string | null; aprovado_por: string | null
-  aprovado_em: string | null; rejeitado_motivo: string | null; criado_em: string | null
+  aprovado_em: string | null; rejeitado_motivo: string | null; criado_em: string | null; atualizado_em?: string | null
 }
 export interface OrdensCompraResp { total: number; items: OrdemCompra[]; soma_total: number; total_pendentes: number }
 

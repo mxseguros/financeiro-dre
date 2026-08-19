@@ -178,10 +178,18 @@ async def efetivar_importacao(
     lancamentos: list[LancamentoPreview],
     usuario_id: str,
     db_admin: Client,
+    tenant_id: str | None = None,
 ) -> ResultadoImportacao:
     """
     Insere em batch os lançamentos confirmados.
     Apenas lançamentos mapeados e não 'revisar' são inseridos.
+
+    `tenant_id` é obrigatório na prática: sem ele a linha nasce órfã e as
+    policies de UPDATE (que começam com `_tenant_ok(tenant_id)`) a tornam
+    imutável para todos os papéis. Como aqui se escreve com service_role,
+    que ignora a RLS, o insert passa e o problema só aparece quando alguém
+    tenta editar. Fica opcional na assinatura para não quebrar o CLI
+    `etl/import_balancete.py`, que roda fora do contexto de requisição.
     """
     despesas_batch: list[dict] = []
     receitas_batch: list[dict] = []
@@ -223,7 +231,9 @@ async def efetivar_importacao(
                     "categoria":          lanc.categoria,
                     "tipo_lancamento_id": tipo_id,
                     "criado_por":         usuario_id,
-                    "status":             "aprovada",
+                    "tenant_id":          tenant_id,
+                    # Importar não aprova — mesma regra do extrato (extrato_service).
+                    "status":             "pendente",
                 })
 
             elif lanc.tipo == "receita":
@@ -233,6 +243,8 @@ async def efetivar_importacao(
                     "competencia":        competencia,
                     "centro_custo":       lanc.centro_custo,
                     "tipo_lancamento_id": tipo_receita_padrao,
+                    "tenant_id":          tenant_id,
+                    "status":             "pendente",
                 })
             else:
                 ignorados += 1

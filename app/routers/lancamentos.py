@@ -268,6 +268,58 @@ async def rejeitar_despesa(
     return item
 
 
+@router.patch(
+    "/receitas/{receita_id}/aprovar",
+    response_model=ReceitaItem,
+    summary="Aprovar receita (admin/gestor)",
+)
+async def aprovar_receita(
+    request: Request,
+    receita_id: UUID,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_aprovacao(usuario)
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    db = get_supabase_usuario(token)
+    item = await financeiro_service.aprovar_receita_outra(receita_id, usuario, db)
+    await registrar_auditoria(
+        usuario, "aprovar_receita",
+        {"receita_id": str(receita_id)},
+        request.client.host if request.client else None,
+        get_supabase_admin(),
+    )
+    return item
+
+
+@router.patch(
+    "/receitas/{receita_id}/rejeitar",
+    response_model=ReceitaItem,
+    summary="Rejeitar receita com justificativa (admin/gestor)",
+)
+async def rejeitar_receita(
+    request: Request,
+    receita_id: UUID,
+    payload: DespesaAprovacaoRejeicao,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_aprovacao(usuario)
+    if not payload.motivo:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Justificativa é obrigatória para rejeição.",
+        )
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    db = get_supabase_usuario(token)
+    item = await financeiro_service.rejeitar_receita_outra(receita_id, payload.motivo, usuario, db)
+    await registrar_auditoria(
+        usuario, "rejeitar_receita",
+        {"receita_id": str(receita_id), "motivo": payload.motivo},
+        request.client.host if request.client else None,
+        get_supabase_admin(),
+    )
+    return item
+
+
 # ── RECEITAS ──────────────────────────────────────────────────
 
 @router.get(

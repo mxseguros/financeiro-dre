@@ -355,6 +355,9 @@ class DespesaItem(RespostaBase):
     parcela_atual:      int | None
     parcela_total:      int | None
     criado_em:          Any | None = None
+    # Ultima movimentacao (criacao OU edicao) — mantida por trigger na migration
+    # 0034. E o campo pelo qual Lancamentos e Aprovacoes ordenam por padrao.
+    atualizado_em:      Any | None = None
     # Campos do fluxo de aprovação
     status:             str = "aprovada"    # 'pendente' | 'aprovada' | 'rejeitada'
     criado_por:         UUID | None = None
@@ -493,6 +496,7 @@ class ReceitaItem(RespostaBase):
     centro_custo:       str | None = None
     observacao:         str | None = None
     criado_em:          Any | None = None
+    atualizado_em:      Any | None = None
 
 
 class ReceitasResponse(RespostaBase):

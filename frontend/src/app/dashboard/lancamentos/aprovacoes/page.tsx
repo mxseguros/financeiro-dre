@@ -284,7 +284,7 @@ export default function AprovacoesPage() {
     const [inicio, fim] = mesParaDatas(mes)
     setLoading(true)
     Promise.all([
-      api.get<DespesasResponse>(`/lancamentos/despesas?inicio=${inicio}&fim=${fim}`, token).then(r => r.items).catch(() => []),
+      api.get<DespesasResponse>(`/lancamentos/despesas?inicio=${inicio}&fim=${fim}&ordenar_por=registro&ordem=desc`, token).then(r => r.items).catch(() => []),
       api.get<OrdensCompraResp>(`/ordens-compra?inicio=${inicio}&fim=${fim}`, token).then(r => r.items).catch(() => []),
     ])
       .then(([d, o]) => { setDespesas(d); setOrdens(o) })
@@ -360,10 +360,17 @@ export default function AprovacoesPage() {
 
   // Lista unificada (despesa + ordem) por status, com discriminador de tipo
   type ItemKanban = { tipo: 'despesa'; dado: Despesa } | { tipo: 'ordem'; dado: OrdemCompra }
+  // Ordem: ultima movimentacao primeiro. Os cards vem de dois endpoints, entao
+  // a ordenacao do servidor nao basta — depois do merge a lista voltaria a ficar
+  // agrupada por origem. `atualizado_em` cobre criacao e edicao; o fallback para
+  // `criado_em` mantem a tela coerente enquanto a migration 0034 nao roda.
+  const quando = (d: { atualizado_em?: string | null; criado_em: string | null }) =>
+    new Date(d.atualizado_em ?? d.criado_em ?? 0).getTime()
+
   const todos: ItemKanban[] = [
     ...despesas.map(d => ({ tipo: 'despesa' as const, dado: d })),
     ...ordens.map(o => ({ tipo: 'ordem' as const, dado: o })),
-  ]
+  ].sort((a, b) => quando(b.dado) - quando(a.dado))
   const lancadas   = todos.filter(i => i.dado.status !== 'rejeitada')
   const pendentes  = todos.filter(i => i.dado.status === 'pendente')
   const aprovadas  = todos.filter(i => i.dado.status === 'aprovada')

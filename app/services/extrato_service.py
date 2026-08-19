@@ -122,6 +122,14 @@ async def confirmar(payload: ConfirmarExtratoRequest, usuario: UsuarioAtual, db_
     receitas: list[dict] = []
     erros: list[str] = []
 
+    # Sem tenant_id a linha fica órfã: as policies de UPDATE começam com
+    # _tenant_ok(tenant_id), e _tenant_ok(NULL) é falso — o lançamento nasce
+    # imutável para TODOS os papéis, inclusive admin. Foi o que deixou 80 de 91
+    # despesas ineditáveis até a migration 0032. Como aqui se usa service_role
+    # (que ignora a RLS na escrita), o insert passa e o problema só aparece na
+    # primeira tentativa de edição.
+    tenant_id = getattr(usuario, "tenant_id", None)
+
     for it in payload.itens:
         try:
             data = (it.data or date.today().isoformat())[:10]
@@ -139,7 +147,12 @@ async def confirmar(payload: ConfirmarExtratoRequest, usuario: UsuarioAtual, db_
                     "banco_id":           payload.banco_id,
                     "tipo_lancamento_id": it.tipo_lancamento_id,
                     "criado_por":         usuario.user_id,
-                    "status":             "aprovada",
+                    "tenant_id":          tenant_id,
+                    # Importar não aprova. Antes nascia "aprovada", então o mesmo
+                    # contador que criava despesa manual como "pendente" gerava
+                    # lançamento já aprovado ao importar extrato — o extrato virava
+                    # caminho para pular a aprovação sem que ninguém decidisse isso.
+                    "status":             "pendente",
                 })
             else:
                 receitas.append({
@@ -150,6 +163,8 @@ async def confirmar(payload: ConfirmarExtratoRequest, usuario: UsuarioAtual, db_
                     "banco_id":           payload.banco_id,
                     "recebido_em":        data,
                     "tipo_lancamento_id": it.tipo_lancamento_id,
+                    "tenant_id":          tenant_id,
+                    "status":             "pendente",
                 })
         except Exception as e:  # noqa: BLE001
             erros.append(f"{it.descricao[:40]}: {e}")

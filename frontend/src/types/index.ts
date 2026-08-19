@@ -126,7 +126,7 @@ export interface Despesa {
   recorrente: boolean
   parcela_atual: number | null
   parcela_total: number | null
-  criado_em: string | null
+  criado_em: string | null; atualizado_em?: string | null
   status: StatusDespesa
   criado_por: string | null
   aprovado_por: string | null

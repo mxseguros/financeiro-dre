@@ -225,7 +225,13 @@ _COLUNAS_ORDEM_DESPESA = {
     "vencimento":   "data_vencimento",
     "pagamento":    "paga_em",
     "valor":        "valor",
-    "registro":     "criado_em",
+    # "registro" ordena por ULTIMA MOVIMENTACAO, nao por criacao: um lancamento
+    # editado hoje precisa subir para o topo, porque a edicao o devolveu para a
+    # fila de aprovacao (migration 0032). Mantido em criado_em ele afundaria na
+    # lista justamente quando exige atencao. A coluna e mantida por trigger
+    # (migration 0034), entao vale para qualquer caminho de escrita.
+    "registro":     "atualizado_em",
+    "criacao":      "criado_em",
 }
 
 _COLUNAS_ORDEM_RECEITA = {
@@ -233,21 +239,51 @@ _COLUNAS_ORDEM_RECEITA = {
     "vencimento":   "data_vencimento",
     "pagamento":    "recebido_em",
     "valor":        "valor",
-    "registro":     "criado_em",
+    "registro":     "atualizado_em",
+    "criacao":      "criado_em",
 }
 
 
 def _termo_busca(q: str | None) -> str | None:
-    """Sanitiza o termo para uso dentro de um filtro `or=(...)` do PostgREST.
+    """Normaliza o termo para casar com a coluna gerada `descricao_busca`.
 
-    Vírgula, parênteses e aspas delimitam a sintaxe do filtro e `*` é o coringa
-    do ilike — todos são removidos em vez de escapados, porque não têm valor
-    numa busca de descrição e escapar exigiria replicar o parser do PostgREST.
+    A coluna guarda o texto sem acento e em minúsculas (migration 0033), então
+    o termo passa pelo mesmo tratamento — é isso que faz "Caminhão" encontrar
+    "COMPRA CAMINHAO", que é como o extrato bancário costuma escrever.
+
+    A versão anterior REMOVIA `, ( ) * " \\` do termo. Isso produzia dois bugs:
+    digitar uma vírgula que existe no dado gerava um padrão que nunca casava, e
+    `%` / `_` passavam intactos — como são curingas do LIKE, buscar `%` devolvia
+    a tabela inteira (91 de 91 linhas, medido). Agora os curingas são escapados
+    e o valor vai entre aspas no filtro, o que torna vírgula e parêntese
+    inofensivos para o parser do PostgREST.
     """
     if not q:
         return None
-    limpo = "".join(c for c in q.strip() if c not in ',()*"\\')[:100]
-    return limpo or None
+
+    limpo = _sem_acento(q.strip().lower())[:100]
+    if not limpo:
+        return None
+
+    # Ordem importa: a barra invertida primeiro, senão ela escaparia as barras
+    # que as linhas seguintes acabaram de inserir.
+    for char in ("\\", "%", "_"):
+        limpo = limpo.replace(char, "\\" + char)
+    # Aspas fechariam o valor citado no filtro antes da hora.
+    limpo = limpo.replace('"', '\\"')
+    return limpo
+
+
+def _sem_acento(texto: str) -> str:
+    """Remove acentos, espelhando o `imutavel_unaccent` da migration 0033.
+
+    Precisa ser equivalente ao que o banco fez ao gerar a coluna: se os dois
+    lados divergirem, a busca deixa de casar exatamente nos termos acentuados
+    que a mudança veio resolver.
+    """
+    import unicodedata
+    decomposto = unicodedata.normalize("NFKD", texto)
+    return "".join(c for c in decomposto if not unicodedata.combining(c))
 
 
 async def buscar_despesas(
@@ -284,7 +320,11 @@ async def buscar_despesas(
         # A busca entra aqui (e não só na query de itens) para que o total e a
         # soma do período reflitam o que a tela está mostrando.
         if termo:
-            q = q.or_(f"descricao.ilike.*{termo}*,subcategoria.ilike.*{termo}*")
+            # Uma coluna só (migration 0033): descricao_busca já concatena
+            # descricao + subcategoria, sem acento e em minusculas. Some o OR
+            # que comparava duas vezes o mesmo texto — subcategoria e descricao
+            # sao identicas em todo o codigo que grava.
+            q = q.ilike("descricao_busca", f"%{termo}%")
         return q
 
     coluna_ordem = _COLUNAS_ORDEM_DESPESA.get(ordenar_por, "competencia")
@@ -292,7 +332,7 @@ async def buscar_despesas(
         db.table("despesas").select(
             "id, categoria, subcategoria, descricao, valor, competencia, "
             "data_vencimento, paga_em, centro_custo, recorrente, parcela_atual, parcela_total, "
-            "criado_em, tipo_lancamento_id, banco_id, "
+            "criado_em, atualizado_em, tipo_lancamento_id, banco_id, "
             "status, criado_por, aprovado_por, aprovado_em, rejeitado_motivo, "
             "subitens_lancamento(nome), bancos(nome)"
         )
@@ -326,6 +366,7 @@ async def buscar_despesas(
             parcela_atual=row.get("parcela_atual"),
             parcela_total=row.get("parcela_total"),
             criado_em=row.get("criado_em"),
+            atualizado_em=row.get("atualizado_em"),
             status=row.get("status", "aprovada"),
             criado_por=row.get("criado_por"),
             aprovado_por=row.get("aprovado_por"),
@@ -541,6 +582,7 @@ async def criar_despesa(
         parcela_atual=row.get("parcela_atual"),
         parcela_total=row.get("parcela_total"),
         criado_em=row.get("criado_em"),
+            atualizado_em=row.get("atualizado_em"),
         status=row.get("status", status_inicial),
         criado_por=row.get("criado_por"),
         aprovado_por=row.get("aprovado_por"),
@@ -613,6 +655,7 @@ def _row_para_despesa_item(row: dict) -> DespesaItem:
         parcela_atual=row.get("parcela_atual"),
         parcela_total=row.get("parcela_total"),
         criado_em=row.get("criado_em"),
+            atualizado_em=row.get("atualizado_em"),
         status=row.get("status", "pendente"),
         criado_por=row.get("criado_por"),
         aprovado_por=row.get("aprovado_por"),
@@ -643,8 +686,28 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
     if "banco_id" in set_fields:
         campos["banco_id"] = str(payload.banco_id) if payload.banco_id else None
 
-    # Edição volta ao status pendente — precisa de nova aprovação
-    campos["status"] = "pendente"
+    from fastapi import HTTPException
+
+    # Estado anterior: decide se a edição volta para aprovação e distingue
+    # "não existe" de "existe mas a RLS barrou" — ver o bloco de erro abaixo.
+    atual = (
+        db.table("despesas")
+        .select("id, paga_em, status")
+        .eq("id", str(despesa_id))
+        .neq("status", "excluida")
+        .execute()
+    )
+    if not atual.data:
+        raise HTTPException(status_code=404, detail="Despesa não encontrada.")
+
+    ja_paga = bool(atual.data[0].get("paga_em"))
+
+    # Editou, volta para aprovação — MENOS se já foi paga. Uma despesa paga que
+    # retorna a "pendente" fica inconsistente: o dinheiro saiu, mas o lançamento
+    # consta como não aprovado e some dos totais aprovados do DRE. Nesse caso o
+    # ajuste vale, o status é preservado, e o rastro fica no audit_log.
+    if not ja_paga:
+        campos["status"] = "pendente"
 
     resp = (
         db.table("despesas")
@@ -654,15 +717,21 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
         .execute()
     )
     if not resp.data:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Despesa não encontrada.")
+        # A linha existe (o SELECT acima achou) mas o UPDATE afetou 0 linhas:
+        # a policy despesas_update barrou. Antes isto virava 404 "não
+        # encontrada", mensagem que escondeu por semanas um problema de
+        # permissão — quem investigava procurava o registro, não o acesso.
+        raise HTTPException(
+            status_code=403,
+            detail="Seu perfil não tem permissão para editar este lançamento.",
+        )
 
     full = (
         db.table("despesas")
         .select(
             "id, categoria, subcategoria, descricao, valor, competencia, "
             "data_vencimento, paga_em, centro_custo, recorrente, parcela_atual, parcela_total, "
-            "criado_em, tipo_lancamento_id, banco_id, "
+            "criado_em, atualizado_em, tipo_lancamento_id, banco_id, "
             "status, criado_por, aprovado_por, aprovado_em, rejeitado_motivo, "
             "subitens_lancamento(nome), bancos(nome)"
         )
@@ -689,6 +758,7 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
         parcela_atual=row.get("parcela_atual"),
         parcela_total=row.get("parcela_total"),
         criado_em=row.get("criado_em"),
+            atualizado_em=row.get("atualizado_em"),
         status=row.get("status", "pendente"),
         criado_por=row.get("criado_por"),
         aprovado_por=row.get("aprovado_por"),
@@ -786,7 +856,7 @@ async def buscar_receitas(
     q_rec = (
         db.table("receitas_outras")
         .select(
-            "id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, "
+            "id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, "
             "observacao, tipo_lancamento_id, banco_id, criado_por, criado_em, "
             "subitens_lancamento(nome), bancos(nome)"
         )
@@ -802,7 +872,7 @@ async def buscar_receitas(
     if banco_id:
         q_rec = q_rec.eq("banco_id", banco_id)
     if termo:
-        q_rec = q_rec.or_(f"descricao.ilike.*{termo}*,observacao.ilike.*{termo}*")
+        q_rec = q_rec.ilike("descricao_busca", f"%{termo}%")
 
     resp_rec = q_rec.execute()
     for row in (resp_rec.data or []):
@@ -825,6 +895,7 @@ async def buscar_receitas(
             centro_custo=row.get("centro_custo", "matriz"),
             observacao=row.get("observacao"),
             criado_em=row.get("criado_em"),
+            atualizado_em=row.get("atualizado_em"),
         ))
 
     # A lista é a união de duas fontes (comissões + manuais), então a ordenação
@@ -967,6 +1038,87 @@ async def criar_receita_outra(
     )
 
 
+async def _obter_receita_item(receita_id: UUID, db_admin) -> ReceitaItem:
+    """Le a receita completa e monta o ReceitaItem.
+
+    Extraido de atualizar_receita_outra, que montava isto inline — as tres
+    funcoes (atualizar, aprovar, rejeitar) precisam do mesmo retorno.
+    """
+    full = (
+        db_admin.table("receitas_outras")
+        .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, "
+                "observacao, tipo_lancamento_id, banco_id, subitens_lancamento(nome), bancos(nome)")
+        .eq("id", str(receita_id))
+        .single()
+        .execute()
+    )
+    row = full.data
+    return ReceitaItem(
+        id=row["id"],
+        origem="manual",
+        tipo_lancamento_id=row.get("tipo_lancamento_id"),
+        tipo_nome=(row.get("subitens_lancamento") or {}).get("nome"),
+        banco_id=row.get("banco_id"),
+        banco_nome=(row.get("bancos") or {}).get("nome"),
+        descricao=row["descricao"],
+        valor=_dec(row["valor"]),
+        competencia=row["competencia"],
+        data_vencimento=row.get("data_vencimento"),
+        recebido_em=row.get("recebido_em"),
+        centro_custo=row.get("centro_custo", "matriz"),
+        observacao=row.get("observacao"),
+    )
+
+
+async def aprovar_receita_outra(receita_id: UUID, usuario: UsuarioAtual, db: Client) -> ReceitaItem:
+    """Espelha aprovar_despesa. A coluna status em receitas_outras nasceu na
+    migration 0032 — antes disso receita nao passava por aprovacao nenhuma."""
+    from datetime import datetime, timezone
+
+    from fastapi import HTTPException
+
+    db_admin = get_supabase_admin()
+    resp = (
+        db_admin.table("receitas_outras")
+        .update({
+            "status":       "aprovada",
+            "aprovado_por": usuario.user_id,
+            "aprovado_em":  datetime.now(timezone.utc).isoformat(),
+        })
+        .eq("id", str(receita_id))
+        .neq("status", "excluida")
+        .execute()
+    )
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Receita nao encontrada.")
+    return await _obter_receita_item(receita_id, db_admin)
+
+
+async def rejeitar_receita_outra(
+    receita_id: UUID,
+    motivo: str,
+    usuario: UsuarioAtual,
+    db: Client,
+) -> ReceitaItem:
+    from fastapi import HTTPException
+
+    db_admin = get_supabase_admin()
+    resp = (
+        db_admin.table("receitas_outras")
+        .update({
+            "status":           "rejeitada",
+            "aprovado_por":     usuario.user_id,
+            "rejeitado_motivo": motivo,
+        })
+        .eq("id", str(receita_id))
+        .neq("status", "excluida")
+        .execute()
+    )
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Receita nao encontrada.")
+    return await _obter_receita_item(receita_id, db_admin)
+
+
 async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate, db: Client) -> ReceitaItem:
     db_admin = get_supabase_admin()
     campos: dict = {}
@@ -990,14 +1142,31 @@ async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate,
     if "banco_id" in set_fields:
         campos["banco_id"] = str(payload.banco_id) if payload.banco_id else None
 
+    from fastapi import HTTPException
+
+    atual = (
+        db_admin.table("receitas_outras")
+        .select("id, recebido_em, status")
+        .eq("id", str(receita_id))
+        .neq("status", "excluida")
+        .execute()
+    )
+    if not atual.data:
+        raise HTTPException(status_code=404, detail="Receita não encontrada.")
+
+    # Mesma regra da despesa: editou volta para aprovação, exceto se já foi
+    # recebida — o valor entrou no caixa e não faz sentido tirá-lo dos totais
+    # aprovados por causa de um ajuste de cadastro.
+    if not atual.data[0].get("recebido_em"):
+        campos["status"] = "pendente"
+
     resp = db_admin.table("receitas_outras").update(campos).eq("id", str(receita_id)).execute()
     if not resp.data:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Receita não encontrada.")
 
     full = (
         db_admin.table("receitas_outras")
-        .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, "
+        .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, "
                 "observacao, tipo_lancamento_id, banco_id, subitens_lancamento(nome), bancos(nome)")
         .eq("id", str(receita_id))
         .single()
