@@ -44,31 +44,56 @@ async def obter_usuario_atual(
     Dependency do FastAPI: valida o JWT via Supabase Auth.
     O perfil (role) e tenant_id NUNCA vêm do token — vêm da tabela usuarios.
     """
-    from supabase import create_client
     token = credenciais.credentials
 
+    # Caminho rápido: confere a assinatura com a chave pública do projeto, sem
+    # sair da máquina. Substitui um get_user() que custava ~250ms em TODA rota
+    # depois que o banco foi para São Paulo e o backend ficou nos EUA.
+    # Ver app/jwt_local.py para o que isso muda em revogação de sessão.
+    from jose.exceptions import JWTError
+
+    from app import jwt_local
+
+    user_id: str | None = None
+    email: str = ""
     try:
-        admin = create_client(cfg.supabase_url, cfg.supabase_service_role_key)
-        resp = admin.auth.get_user(token)
-        user = resp.user
-    except Exception as e:
+        claims = jwt_local.validar(token)
+        if claims:
+            user_id = claims.get("sub")
+            email = claims.get("email") or ""
+    except JWTError as e:
+        # Assinatura inválida ou expirado: resposta definitiva, sem fallback.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Token inválido: {e}",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuário não autenticado.",
-        )
+    if not user_id:
+        # Só chega aqui se a validação local não foi possível (JWKS fora do ar,
+        # ou projeto ainda em HS256). Cai para o Supabase, que é lento mas sabe.
+        from supabase import create_client
+        try:
+            admin = create_client(cfg.supabase_url, cfg.supabase_service_role_key)
+            user = admin.auth.get_user(token).user
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Token inválido: {e}",
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from e
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Usuário não autenticado.",
+            )
+        user_id, email = user.id, (user.email or "")
 
-    role, tenant_id, equipe_id, produtor_id, permissions = await _buscar_perfil_no_banco(user.id)
+    role, tenant_id, equipe_id, produtor_id, permissions = await _buscar_perfil_no_banco(user_id)
 
     return UsuarioAtual(
-        user_id=user.id,
-        email=user.email or "",
+        user_id=user_id,
+        email=email,
         role=role,
         tenant_id=tenant_id,
         equipe_id=equipe_id,
