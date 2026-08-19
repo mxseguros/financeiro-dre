@@ -856,7 +856,7 @@ async def buscar_receitas(
     q_rec = (
         db.table("receitas_outras")
         .select(
-            "id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, "
+            "id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
             "observacao, tipo_lancamento_id, banco_id, criado_por, criado_em, "
             "subitens_lancamento(nome), bancos(nome)"
         )
@@ -883,6 +883,7 @@ async def buscar_receitas(
         items.append(ReceitaItem(
             id=row["id"],
             origem="manual",
+            status=row.get("status"),
             tipo_lancamento_id=row.get("tipo_lancamento_id"),
             tipo_nome=tipo_nome,
             banco_id=row.get("banco_id"),
@@ -1024,6 +1025,7 @@ async def criar_receita_outra(
     return ReceitaItem(
         id=row["id"],
         origem="manual",
+        status=row.get("status"),
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
         tipo_nome=tipo_nome,
         banco_id=row.get("banco_id"),
@@ -1046,7 +1048,7 @@ async def _obter_receita_item(receita_id: UUID, db_admin) -> ReceitaItem:
     """
     full = (
         db_admin.table("receitas_outras")
-        .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, "
+        .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
                 "observacao, tipo_lancamento_id, banco_id, subitens_lancamento(nome), bancos(nome)")
         .eq("id", str(receita_id))
         .single()
@@ -1056,6 +1058,7 @@ async def _obter_receita_item(receita_id: UUID, db_admin) -> ReceitaItem:
     return ReceitaItem(
         id=row["id"],
         origem="manual",
+        status=row.get("status"),
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
         tipo_nome=(row.get("subitens_lancamento") or {}).get("nome"),
         banco_id=row.get("banco_id"),
@@ -1166,7 +1169,7 @@ async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate,
 
     full = (
         db_admin.table("receitas_outras")
-        .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, "
+        .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
                 "observacao, tipo_lancamento_id, banco_id, subitens_lancamento(nome), bancos(nome)")
         .eq("id", str(receita_id))
         .single()
@@ -1176,6 +1179,7 @@ async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate,
     return ReceitaItem(
         id=row["id"],
         origem="manual",
+        status=row.get("status"),
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
         tipo_nome=(row.get("subitens_lancamento") or {}).get("nome"),
         banco_id=row.get("banco_id"),

@@ -497,6 +497,9 @@ class ReceitaItem(RespostaBase):
     observacao:         str | None = None
     criado_em:          Any | None = None
     atualizado_em:      Any | None = None
+    # Só receita manual tem status (migration 0032). Comissão vem de apólice e
+    # não passa por aprovação — por isso o default None em vez de "pendente".
+    status:             str | None = None
 
 
 class ReceitasResponse(RespostaBase):

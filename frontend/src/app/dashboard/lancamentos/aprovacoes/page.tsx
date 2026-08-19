@@ -8,9 +8,9 @@ import { Modal } from '@/components/ui/Modal'
 import { Button, Spinner } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Field'
 import type { Despesa, DespesasResponse } from '@/types'
-import type { OrdemCompra, OrdensCompraResp } from '../_components/shared'
+import type { OrdemCompra, OrdensCompraResp, Receita, ReceitasResp } from '../_components/shared'
 
-type TipoCard = 'despesa' | 'ordem'
+type TipoCard = 'despesa' | 'ordem' | 'receita'
 interface DragRef { id: string; tipo: TipoCard }
 
 function mesAtualStr() {
@@ -177,6 +177,72 @@ interface ColunaProps {
   children: React.ReactNode
 }
 
+interface ReceitaCardProps {
+  receita: Receita
+  processandoId: string | null
+  onAprovar?: (id: string) => void
+  onIniciarRejeicao?: (id: string) => void
+  onDragStart?: (id: string) => void
+}
+
+/* Espelha o DespesaCard. A borda verde e o sinal "+" distinguem receita de
+   despesa numa coluna que mistura os tres tipos — sem isso o unico indicio
+   seria o rotulo, facil de perder no meio do Kanban. */
+function ReceitaCard({ receita, processandoId, onAprovar, onIniciarRejeicao, onDragStart }: ReceitaCardProps) {
+  const ocupado = processandoId === receita.id
+  const arrastavel = !ocupado
+
+  return (
+    <div
+      draggable={arrastavel}
+      onDragStart={arrastavel && onDragStart ? (e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart(receita.id) } : undefined}
+      className={`rounded-xl border border-green-100 bg-white p-4 shadow-sm transition-opacity select-none
+        ${ocupado ? 'opacity-60' : ''}
+        ${arrastavel ? 'cursor-grab active:cursor-grabbing active:shadow-lg active:scale-[1.02] transition-transform' : ''}
+      `}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 truncate max-w-[65%]">
+          {receita.tipo_nome ?? 'Receita'}
+        </span>
+        <span className="shrink-0 text-sm font-bold tabular-nums text-green-600">+{fmtBRL(receita.valor)}</span>
+      </div>
+
+      <p className="mt-2 text-sm font-medium text-gray-800 line-clamp-2">{receita.descricao}</p>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
+        {receita.centro_custo && <><span className="capitalize">{receita.centro_custo.replace('_', ' ')}</span><span>·</span></>}
+        <span>{fmtCompetencia(receita.competencia)}</span>
+      </div>
+
+      {receita.status === 'rejeitada' && receita.rejeitado_motivo && (
+        <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+          <span className="font-semibold">Motivo: </span>{receita.rejeitado_motivo}
+        </div>
+      )}
+
+      {onAprovar && onIniciarRejeicao && receita.status === 'pendente' && (
+        <div className="mt-3 flex gap-2 border-t border-gray-100 pt-3">
+          <button
+            onClick={() => onAprovar(receita.id)}
+            disabled={ocupado}
+            className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-green-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-600 disabled:opacity-50 transition-colors"
+          >
+            Aprovar
+          </button>
+          <button
+            onClick={() => onIniciarRejeicao(receita.id)}
+            disabled={ocupado}
+            className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors"
+          >
+            Rejeitar
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function KanbanColuna({ titulo, contagem, cor, corTexto, aceitaDrop, onDrop, children }: ColunaProps) {
   const [dragOver, setDragOver] = useState(false)
 
@@ -264,6 +330,7 @@ export default function AprovacoesPage() {
   const { token } = useAuth()
   const [despesas, setDespesas] = useState<Despesa[]>([])
   const [ordens, setOrdens] = useState<OrdemCompra[]>([])
+  const [receitas, setReceitas] = useState<Receita[]>([])
   const [loading, setLoading] = useState(true)
   const [processandoId, setProcessandoId] = useState<string | null>(null)
   const [rejeitando, setRejeitando] = useState<DragRef | null>(null)
@@ -286,8 +353,12 @@ export default function AprovacoesPage() {
     Promise.all([
       api.get<DespesasResponse>(`/lancamentos/despesas?inicio=${inicio}&fim=${fim}&ordenar_por=registro&ordem=desc`, token).then(r => r.items).catch(() => []),
       api.get<OrdensCompraResp>(`/ordens-compra?inicio=${inicio}&fim=${fim}`, token).then(r => r.items).catch(() => []),
+      api.get<ReceitasResp>(`/lancamentos/receitas?inicio=${inicio}&fim=${fim}&ordenar_por=registro&ordem=desc`, token)
+        // Comissao (origem=comissao) e derivada de apolice e nao tem status —
+        // so receita manual entra na fila de aprovacao.
+        .then(r => r.items.filter(i => i.origem === 'manual')).catch(() => []),
     ])
-      .then(([d, o]) => { setDespesas(d); setOrdens(o) })
+      .then(([d, o, r]) => { setDespesas(d); setOrdens(o); setReceitas(r) })
       .finally(() => setLoading(false))
   }, [token, mes])
 
@@ -310,7 +381,10 @@ export default function AprovacoesPage() {
     kanbanRef.current.scrollTo({ left: idx * colWidth, behavior: 'smooth' })
   }
 
-  const endpointBase = (tipo: TipoCard) => tipo === 'despesa' ? '/lancamentos/despesas' : '/ordens-compra'
+  const endpointBase = (tipo: TipoCard) =>
+    tipo === 'despesa' ? '/lancamentos/despesas'
+    : tipo === 'receita' ? '/lancamentos/receitas'
+    : '/ordens-compra'
 
   function aplicarStatus(id: string, tipo: TipoCard, novo: 'aprovada' | 'rejeitada', motivo?: string) {
     if (tipo === 'despesa') {
@@ -359,7 +433,10 @@ export default function AprovacoesPage() {
   }
 
   // Lista unificada (despesa + ordem) por status, com discriminador de tipo
-  type ItemKanban = { tipo: 'despesa'; dado: Despesa } | { tipo: 'ordem'; dado: OrdemCompra }
+  type ItemKanban =
+    | { tipo: 'despesa'; dado: Despesa }
+    | { tipo: 'ordem';   dado: OrdemCompra }
+    | { tipo: 'receita'; dado: Receita }
   // Ordem: ultima movimentacao primeiro. Os cards vem de dois endpoints, entao
   // a ordenacao do servidor nao basta — depois do merge a lista voltaria a ficar
   // agrupada por origem. `atualizado_em` cobre criacao e edicao; o fallback para
@@ -370,6 +447,7 @@ export default function AprovacoesPage() {
   const todos: ItemKanban[] = [
     ...despesas.map(d => ({ tipo: 'despesa' as const, dado: d })),
     ...ordens.map(o => ({ tipo: 'ordem' as const, dado: o })),
+    ...receitas.map(r => ({ tipo: 'receita' as const, dado: r })),
   ].sort((a, b) => quando(b.dado) - quando(a.dado))
   const lancadas   = todos.filter(i => i.dado.status !== 'rejeitada')
   const pendentes  = todos.filter(i => i.dado.status === 'pendente')
@@ -385,6 +463,15 @@ export default function AprovacoesPage() {
           onAprovar={comAcoes ? (id) => handleAprovar(id, 'despesa') : undefined}
           onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'despesa' }) : undefined}
           onDragStart={(id) => { dragId.current = { id, tipo: 'despesa' } }}
+        />
+      )
+    }
+    if (i.tipo === 'receita') {
+      return (
+        <ReceitaCard key={`r-${i.dado.id}`} receita={i.dado} processandoId={processandoId}
+          onAprovar={comAcoes ? (id) => handleAprovar(id, 'receita') : undefined}
+          onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'receita' }) : undefined}
+          onDragStart={(id) => { dragId.current = { id, tipo: 'receita' } }}
         />
       )
     }
