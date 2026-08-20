@@ -54,8 +54,8 @@ O **MX DRE-IA** substitui planilhas Excel usadas pela MX Corretora de Seguros pa
 | Serviço | URL |
 |---------|-----|
 | Frontend | https://mx-app-dre-final-version.vercel.app |
-| Backend API | https://alert-patience-production-86b7.up.railway.app |
-| API Docs (Swagger) | https://alert-patience-production-86b7.up.railway.app/docs |
+| Backend API | https://web-production-606a2.up.railway.app |
+| API Docs (Swagger) | https://web-production-606a2.up.railway.app/docs |
 | Supabase Dashboard | https://supabase.com/dashboard/project/jrqmntvmtukmhlmnukgn |
 
 ---
@@ -432,7 +432,7 @@ npx vercel --prod
 
 **Como fazer deploy:**
 ```bash
-npx railway up --service alert-patience
+npx railway up --service web
 ```
 
 ### 8.3 Supabase
@@ -644,7 +644,7 @@ Frontend: Renderiza resposta em streaming
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://jrqmntvmtukmhlmnukgn.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
-NEXT_PUBLIC_API_URL=https://alert-patience-production-86b7.up.railway.app
+NEXT_PUBLIC_API_URL=https://web-production-606a2.up.railway.app
 ```
 
 > ⚠️ Se o arquivo `.env` estiver codificado em UTF-8-BOM, as variáveis terão `﻿` no início. O código tem proteção via `stripBom()`.
