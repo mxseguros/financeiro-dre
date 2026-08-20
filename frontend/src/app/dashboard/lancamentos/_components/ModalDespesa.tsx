@@ -119,6 +119,9 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   const valorTotal  = parseFloat(form.valor_total) || 0
   const valorMensal = numParcelas > 1 && valorTotal > 0 ? valorTotal / numParcelas : valorTotal
   const parcelado   = numParcelas > 1
+  // Reparcelar reescreve datas e numeração de todo o grupo a partir da 1ª
+  // parcela, então o backend só aceita o pedido vindo dela (422 caso contrário).
+  const naoEhPrimeiraParcela = !!editando && (despesa?.parcela_atual ?? 1) > 1
 
   const nMesesRecorrencia = (() => {
     if (!form.recorrente || !form.repetir_ate || form.repetir_ate < form.competencia) return 0
@@ -159,6 +162,9 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
           centro_custo:       form.centro_custo,
+          // O backend reconstrói o grupo quando este número muda; quando é
+          // igual ao atual, ignora. `valor` acima já é o valor POR PARCELA.
+          num_parcelas:       numParcelas,
         }
         payload.paga_em = form.paga_em || null
         await api.patch(`/lancamentos/despesas/${despesa!.id}`, token, payload)
@@ -359,7 +365,12 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           <Campo label="Nº de Parcelas">
             <input type="number" min="1" max="60" value={form.num_parcelas}
               onChange={e => set('num_parcelas', e.target.value)} className={inputCls}
-              disabled={editando || form.recorrente} />
+              disabled={form.recorrente || naoEhPrimeiraParcela} />
+            {naoEhPrimeiraParcela && (
+              <p className="mt-1 text-[11px] text-gray-400">
+                Para reparcelar, edite a 1ª parcela do grupo.
+              </p>
+            )}
           </Campo>
           <Field label="Competência (1ª parc.)" required error={erros.competencia}>
             {p => (

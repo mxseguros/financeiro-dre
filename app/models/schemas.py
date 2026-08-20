@@ -383,6 +383,12 @@ class DespesaUpdate(RespostaBase):
     data_vencimento:    date | None = None
     paga_em:            date | None = None
     centro_custo:       str | None = None
+    # Reparcelamento. Quando informado e diferente do parcela_total atual, o
+    # backend reconstrói o grupo com N parcelas mensais, preservando o valor
+    # total. `1` desfaz o parcelamento e devolve um lançamento avulso.
+    # Existe para o caso de uma despesa importada do extrato que, na verdade,
+    # era a primeira cobrança de um financiamento.
+    num_parcelas:       int | None = Field(default=None, ge=1, le=60)
 
     @field_validator("centro_custo")
     @classmethod

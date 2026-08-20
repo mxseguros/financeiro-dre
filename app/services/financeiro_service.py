@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from supabase import Client
 
@@ -507,9 +507,14 @@ async def criar_despesa(
     # Parcelamento atômico: cria N parcelas (uma por mês) em um único INSERT.
     # Todas gravam ou nenhuma grava — sem risco de criação parcial.
     if payload.num_parcelas and payload.num_parcelas > 1:
+        # Marcador explícito do grupo (migration 0035). Sem ele, a correlação
+        # entre as parcelas seria por descricao+valor+total, que quebra assim
+        # que alguém edita a descrição de uma delas.
+        grupo = str(uuid4())
         parcelas = []
         for i in range(payload.num_parcelas):
             p = dict(dados)
+            p["grupo_parcelamento"] = grupo
             p["competencia"]     = _somar_meses(payload.competencia, i).isoformat()
             p["data_vencimento"] = _somar_meses_preservando_dia(payload.data_vencimento, i).isoformat()
             p["parcela_atual"]   = i + 1
@@ -664,6 +669,138 @@ def _row_para_despesa_item(row: dict) -> DespesaItem:
     )
 
 
+def _quantizar(v: Decimal) -> Decimal:
+    return v.quantize(Decimal("0.01"))
+
+
+async def _plano_reparcelamento(
+    despesa_id: UUID, novo_n: int, valor_informado: Decimal | None, db: Client
+) -> dict | None:
+    """Valida um pedido de reparcelamento e devolve o plano a executar.
+
+    Devolve None quando não há nada a fazer (o total já é o pedido).
+    O plano traz os campos a gravar na âncora e as irmãs a criar/remover;
+    quem executa é `atualizar_despesa`, depois de atualizar a âncora — assim
+    as parcelas novas herdam as edições feitas na mesma requisição.
+    """
+    from fastapi import HTTPException
+
+    atual = (
+        db.table("despesas")
+        .select("id, valor, competencia, data_vencimento, parcela_atual, "
+                "parcela_total, grupo_parcelamento, paga_em")
+        .eq("id", str(despesa_id))
+        .neq("status", "excluida")
+        .single()
+        .execute()
+    )
+    linha = atual.data
+    grupo = linha.get("grupo_parcelamento")
+    total_atual = linha.get("parcela_total") or 1
+
+    if novo_n == total_atual:
+        return None
+
+    # Irmãs do grupo, em ordem de competência. Sem grupo, o lançamento é
+    # avulso e ele próprio é o grupo inteiro — é o caso da despesa importada.
+    if grupo:
+        irmas = (
+            db.table("despesas")
+            .select("id, valor, competencia, data_vencimento, paga_em, parcela_atual")
+            .eq("grupo_parcelamento", grupo)
+            .neq("status", "excluida")
+            .order("competencia")
+            .execute()
+        ).data or []
+    else:
+        irmas = [linha]
+
+    # O reparcelamento reescreve datas e numeração de todo o grupo a partir da
+    # primeira competência. Fazer isso a partir do meio produziria um grupo
+    # com datas retroativas ou buracos, então exigimos a âncora certa.
+    if irmas and irmas[0]["id"] != str(despesa_id):
+        raise HTTPException(
+            status_code=422,
+            detail="Para alterar o número de parcelas, edite a primeira parcela do grupo.",
+        )
+
+    # Parcelas já pagas não podem ser descartadas: o dinheiro saiu e o
+    # lançamento é o registro disso. A primeira é exceção — ela permanece,
+    # é justamente a cobrança que originou o parcelamento.
+    pagas_adiante = [r for r in irmas[1:] if r.get("paga_em")]
+    if pagas_adiante:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Este grupo já tem {len(pagas_adiante)} parcela(s) paga(s) além da "
+                "primeira. Exclua ou ajuste essas parcelas antes de reparcelar."
+            ),
+        )
+
+    soma_atual = sum((_dec(r["valor"]) for r in irmas), Decimal("0"))
+    valor_parcela = (
+        _quantizar(valor_informado) if valor_informado is not None
+        else _quantizar(soma_atual / novo_n)
+    )
+
+    return {
+        "novo_n":         novo_n,
+        "grupo":          (grupo or str(uuid4())) if novo_n > 1 else None,
+        "valor_parcela":  valor_parcela,
+        "remover":        [r["id"] for r in irmas[1:]],
+        "base_comp":      date.fromisoformat(linha["competencia"][:10]),
+        "base_venc":      date.fromisoformat(linha["data_vencimento"][:10])
+                          if linha.get("data_vencimento") else None,
+    }
+
+
+def _executar_reparcelamento(plano: dict, ancora: dict, db: Client) -> None:
+    """Remove as irmãs antigas e cria as novas, espelhando a âncora já atualizada.
+
+    A âncora (parcela 1) permanece — preserva id, histórico e o `paga_em` da
+    cobrança que originou o parcelamento. As demais são recriadas do zero:
+    tentar casar linha a linha renderia pouco e complicaria muito, já que o
+    número de parcelas mudou justamente porque o desenho anterior estava errado.
+    """
+    remover = plano["remover"]
+    if remover:
+        # Soft-delete: o DRE de meses fechados não pode perder o histórico.
+        db.table("despesas").update({"status": "excluida"}).in_("id", remover).execute()
+
+    n = plano["novo_n"]
+    if n <= 1:
+        return
+
+    base = {
+        "descricao":          ancora["descricao"],
+        "subcategoria":       ancora.get("subcategoria"),
+        "categoria":          ancora.get("categoria"),
+        "valor":              str(plano["valor_parcela"]),
+        "centro_custo":       ancora.get("centro_custo"),
+        "tipo_lancamento_id": ancora.get("tipo_lancamento_id"),
+        "banco_id":           ancora.get("banco_id"),
+        "criado_por":         ancora.get("criado_por"),
+        "tenant_id":          ancora.get("tenant_id"),
+        "grupo_parcelamento": plano["grupo"],
+        "parcela_total":      n,
+        "recorrente":         False,
+        # Parcela futura nunca nasce paga nem aprovada — segue a fila normal.
+        "status":             "pendente",
+    }
+
+    novas = []
+    for i in range(1, n):
+        p = dict(base)
+        p["parcela_atual"] = i + 1
+        p["competencia"]   = _somar_meses(plano["base_comp"], i).isoformat()
+        if plano["base_venc"]:
+            p["data_vencimento"] = _somar_meses_preservando_dia(plano["base_venc"], i).isoformat()
+        novas.append(p)
+
+    # Um único INSERT: ou todas as parcelas entram, ou nenhuma entra.
+    db.table("despesas").insert(novas).execute()
+
+
 async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client) -> DespesaItem:
     campos: dict = {}
     set_fields = payload.model_fields_set
@@ -709,6 +846,22 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
     if not ja_paga:
         campos["status"] = "pendente"
 
+    # Reparcelamento: planeja antes de gravar. O plano só é EXECUTADO depois
+    # que a âncora é atualizada, para que as parcelas novas herdem as edições
+    # feitas nesta mesma requisição (descrição, subitem, centro de custo...).
+    plano = None
+    if "num_parcelas" in set_fields and payload.num_parcelas:
+        plano = await _plano_reparcelamento(
+            despesa_id, payload.num_parcelas, payload.valor, db
+        )
+        if plano:
+            n = plano["novo_n"]
+            campos["parcela_atual"]      = 1 if n > 1 else None
+            campos["parcela_total"]      = n if n > 1 else None
+            campos["grupo_parcelamento"] = plano["grupo"]
+            campos["valor"]              = str(plano["valor_parcela"])
+            campos["recorrente"]         = False
+
     resp = (
         db.table("despesas")
         .update(campos)
@@ -733,6 +886,7 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
             "data_vencimento, paga_em, centro_custo, recorrente, parcela_atual, parcela_total, "
             "criado_em, atualizado_em, tipo_lancamento_id, banco_id, "
             "status, criado_por, aprovado_por, aprovado_em, rejeitado_motivo, "
+            "tenant_id, grupo_parcelamento, "
             "subitens_lancamento(nome), bancos(nome)"
         )
         .eq("id", str(despesa_id))
@@ -740,6 +894,9 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
         .execute()
     )
     row = full.data
+
+    if plano:
+        _executar_reparcelamento(plano, row, db)
     return DespesaItem(
         id=row["id"],
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
@@ -771,11 +928,22 @@ async def deletar_despesa(despesa_id: UUID, db: Client, excluir_futuras: bool = 
     # Busca a despesa antes de excluir para identificar parcelas/ocorrências irmãs
     if excluir_futuras:
         resp = db.table("despesas").select(
-            "tipo_lancamento_id, descricao, valor, parcela_total, recorrente, competencia, criado_por"
+            "tipo_lancamento_id, descricao, valor, parcela_total, recorrente, competencia, "
+            "criado_por, grupo_parcelamento"
         ).eq("id", str(despesa_id)).neq("status", "excluida").maybe_single().execute()
 
         if resp and getattr(resp, "data", None):
             row = resp.data
+
+            # Caminho preferencial (migration 0035): o grupo é explícito, então
+            # a exclusão não depende de os campos continuarem iguais entre as
+            # irmãs. A heurística abaixo fica só para grupos anteriores ao
+            # backfill e para recorrências, que não têm marcador.
+            if row.get("grupo_parcelamento"):
+                db.table("despesas").update({"status": "excluida"})                     .eq("grupo_parcelamento", row["grupo_parcelamento"])                     .neq("status", "excluida")                     .gt("competencia", row["competencia"])                     .execute()
+                db.table("despesas").update({"status": "excluida"})                     .eq("id", str(despesa_id)).execute()
+                return
+
             eh_parcelamento = bool(row.get("parcela_total") and row["parcela_total"] > 1)
             # Grupo de recorrência (repetir_ate): recorrente=true e sem parcela_total,
             # já que parcelamento e recorrência são mutuamente exclusivos na criação.
