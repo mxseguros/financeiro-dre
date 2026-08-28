@@ -17,11 +17,23 @@ _startup_time = _time.monotonic()
 
 @router.get("/health", summary="Health check público")
 async def health():
-    """Endpoint de status para uptime monitors (Uptime Robot, Betterstack, etc.)."""
-    from app.database import get_supabase_admin
+    """Endpoint de status para uptime monitors (Uptime Robot, Betterstack, etc.).
+
+    Prefere o pool asyncpg como teste de banco: além de ser o caminho que as
+    rotas quentes usam (testa o que importa), cada ping do keep-alive (10 min)
+    renova as conexões ociosas — sem isso elas expiram e a primeira requisição
+    real paga a reconexão até São Paulo. Fallback: PostgREST.
+    """
+    from app.database import executar_sem_bloquear, get_asyncpg_pool, get_supabase_admin
     db_ok = True
     try:
-        get_supabase_admin().table("usuarios").select("id").limit(1).execute()
+        pool = get_asyncpg_pool()
+        if pool is not None:
+            await pool.fetchval("SELECT 1")
+        else:
+            await executar_sem_bloquear(
+                get_supabase_admin().table("usuarios").select("id").limit(1)
+            )
     except Exception:
         db_ok = False
 

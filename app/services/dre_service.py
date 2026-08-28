@@ -14,7 +14,9 @@ from decimal import Decimal
 from supabase import Client
 
 from app.auth import UsuarioAtual
-from app.database import conn_as_user, get_asyncpg_pool, get_supabase_admin
+from app.database import (
+    conn_as_user, executar_sem_bloquear as _exec, get_asyncpg_pool, get_supabase_admin,
+)
 from app.logging_config import get_logger
 from app.models.schemas import (
     ComissaoItem, ComissoesResponse,
@@ -64,12 +66,14 @@ async def _buscar_snapshot_fechamento(inicio: date) -> dict | None:
     """
     db_admin = get_supabase_admin()
     competencia = date(inicio.year, inicio.month, 1).isoformat()
-    resp = db_admin.table("fechamentos") \
-        .select("snapshot_dre") \
-        .eq("competencia", competencia) \
-        .is_("reaberto_em", "null") \
-        .maybe_single() \
-        .execute()
+    # Roda em TODO /dashboard de mês único — não pode bloquear o event loop.
+    resp = await _exec(
+        db_admin.table("fechamentos")
+        .select("snapshot_dre")
+        .eq("competencia", competencia)
+        .is_("reaberto_em", "null")
+        .maybe_single()
+    )
 
     if resp is not None and getattr(resp, "data", None):
         return resp.data.get("snapshot_dre")
@@ -105,10 +109,10 @@ async def buscar_dre(
                 inicio, fim,
             ) or {}
     else:
-        resp = db.rpc("dre_por_periodo", {
+        resp = await _exec(db.rpc("dre_por_periodo", {
             "p_inicio": inicio.isoformat(),
             "p_fim":    fim.isoformat(),
-        }).execute()
+        }))
         dados = resp.data or {}
 
     return _montar_dre_response(dados, usuario)
@@ -209,7 +213,7 @@ async def buscar_metas(
                 items.append(MetaItem(**{k: str(v) if v is not None else None for k, v in d.items()}))
     else:
         try:
-            resp = db.rpc("atingimento_metas", {"p_competencia": comp.isoformat()}).execute()
+            resp = await _exec(db.rpc("atingimento_metas", {"p_competencia": comp.isoformat()}))
             for row in (resp.data or []):
                 items.append(MetaItem(**row))
         except Exception as e:

@@ -7,11 +7,12 @@ supabase-py permanece para auth.get_user() e audit_log (admin operations).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 import asyncpg
 from supabase import Client, ClientOptions, create_client
@@ -21,6 +22,19 @@ from app.config import cfg
 logger = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
+
+
+async def executar_sem_bloquear(consulta: Any) -> Any:
+    """Roda o .execute() do supabase-py fora do event loop.
+
+    O client do supabase-py é síncrono: chamado direto dentro de `async def`,
+    cada round-trip ao PostgREST (~200ms até São Paulo) congela o event loop
+    inteiro — inclusive as OUTRAS requisições do mesmo worker. Foi isso que
+    fez o carregamento do dashboard (6 endpoints em paralelo no navegador)
+    serializar em ~4-5s: o `asyncio.gather` existia, mas nada nele cedia o
+    controle. `to_thread` devolve o loop durante o I/O, tornando o gather real.
+    """
+    return await asyncio.to_thread(consulta.execute)
 
 
 async def _init_conn(conn: asyncpg.Connection) -> None:
@@ -72,6 +86,11 @@ async def init_asyncpg_pool() -> None:
             max_size=10,
             command_timeout=30,
             init=_init_conn,
+            # Default do asyncpg é 300s: as conexões ociosas morriam em 5 min
+            # (medido em produção: pool_size=0 no /health/detailed) e cada
+            # rajada nova pagava TCP+TLS+auth até São Paulo (~700ms). Com 15
+            # min, o keep-alive de 10 min (keepalive.yml) mantém o pool quente.
+            max_inactive_connection_lifetime=900,
         )
         host = cfg.database_url.split("@")[-1].split("/")[0]
         logger.info("asyncpg pool criado → %s (min=2, max=10)", host)

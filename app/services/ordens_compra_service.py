@@ -8,6 +8,7 @@ data do servidor (o cliente não envia esse campo).
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -16,6 +17,7 @@ from fastapi import HTTPException
 from supabase import Client
 
 from app.auth import UsuarioAtual
+from app.database import executar_sem_bloquear as _exec
 from app.models.schemas import (
     OrdemCompraCreate, OrdemCompraItem, OrdemCompraUpdate, OrdensCompraResponse,
 )
@@ -176,26 +178,27 @@ async def buscar_ordens_dia_mes(inicio: date, fim: date, db: Client):
     hoje, cri_ini, cri_fim = _janela_hoje_br()
     cols = "id, solicitante, assunto, valor, data_solicitacao, status, criado_em"
 
-    resp_hoje = (
-        db.table("ordens_compra").select(cols)
-        .neq("status", "excluida").eq("data_solicitacao", hoje.isoformat())
-        .execute()
-    )
-    resp_criado_hoje = (
-        db.table("ordens_compra").select(cols)
-        .neq("status", "excluida")
-        .gte("criado_em", cri_ini).lt("criado_em", cri_fim)
-        .order("criado_em", desc=True).limit(8)
-        .execute()
-    )
-    resp_mes = (
-        db.table("ordens_compra").select(cols)
-        .neq("status", "excluida")
-        .gte("data_solicitacao", inicio.isoformat())
-        .lte("data_solicitacao", fim.isoformat())
-        .order("data_solicitacao", desc=True)
-        .limit(8)
-        .execute()
+    # 3 consultas independentes em paralelo, fora do event loop (ver
+    # executar_sem_bloquear em app/database.py).
+    resp_hoje, resp_criado_hoje, resp_mes = await asyncio.gather(
+        _exec(
+            db.table("ordens_compra").select(cols)
+            .neq("status", "excluida").eq("data_solicitacao", hoje.isoformat())
+        ),
+        _exec(
+            db.table("ordens_compra").select(cols)
+            .neq("status", "excluida")
+            .gte("criado_em", cri_ini).lt("criado_em", cri_fim)
+            .order("criado_em", desc=True).limit(8)
+        ),
+        _exec(
+            db.table("ordens_compra").select(cols)
+            .neq("status", "excluida")
+            .gte("data_solicitacao", inicio.isoformat())
+            .lte("data_solicitacao", fim.isoformat())
+            .order("data_solicitacao", desc=True)
+            .limit(8)
+        ),
     )
 
     def _mapear(rows: list[dict]) -> list:

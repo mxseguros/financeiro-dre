@@ -12,6 +12,7 @@ from decimal import Decimal
 from supabase import Client
 
 from app.auth import UsuarioAtual
+from app.database import executar_sem_bloquear as _exec
 from app.logging_config import get_logger
 from app.models.schemas import (
     AlertaDashboard, BancoResumoItem, DashboardPorBancoResponse, DashboardResponse,
@@ -106,26 +107,27 @@ async def buscar_por_banco(
 ) -> DashboardPorBancoResponse:
     """Agrega receitas_outras e despesas do período por banco. Comissões não
     têm banco_id, então "receita por banco" cobre apenas receitas manuais."""
-    bancos_resp = db.table("bancos").select("id, nome").eq("ativo", True).order("nome").execute()
+    # As três consultas são independentes — com o wrapper de thread o gather
+    # paralela de verdade: 3 round-trips a São Paulo pelo preço de 1.
+    bancos_resp, receitas_resp, despesas_resp = await asyncio.gather(
+        _exec(db.table("bancos").select("id, nome").eq("ativo", True).order("nome")),
+        _exec(
+            db.table("receitas_outras")
+            .select("banco_id, valor")
+            .gte("competencia", inicio.isoformat())
+            .lte("competencia", fim.isoformat())
+            .not_.is_("banco_id", "null")
+        ),
+        _exec(
+            db.table("despesas")
+            .select("banco_id, valor")
+            .gte("competencia", inicio.isoformat())
+            .lte("competencia", fim.isoformat())
+            .not_.is_("banco_id", "null")
+            .not_.in_("status", ["excluida", "rejeitada"])
+        ),
+    )
     bancos = bancos_resp.data or []
-
-    receitas_resp = (
-        db.table("receitas_outras")
-        .select("banco_id, valor")
-        .gte("competencia", inicio.isoformat())
-        .lte("competencia", fim.isoformat())
-        .not_.is_("banco_id", "null")
-        .execute()
-    )
-    despesas_resp = (
-        db.table("despesas")
-        .select("banco_id, valor")
-        .gte("competencia", inicio.isoformat())
-        .lte("competencia", fim.isoformat())
-        .not_.is_("banco_id", "null")
-        .not_.in_("status", ["excluida", "rejeitada"])
-        .execute()
-    )
 
     receitas_por_banco: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
     for row in (receitas_resp.data or []):
@@ -157,13 +159,12 @@ async def buscar_despesas_por_classificacao(
     """Agrega despesas do período pela classificação (custo_tipo) do subitem
     vinculado. Despesas sem subitem classificado caem em 'não classificadas',
     de forma que a soma sempre feche com o total geral do período."""
-    resp = (
+    resp = await _exec(
         db.table("despesas")
         .select("valor, tipo_lancamento_id, subitens_lancamento(custo_tipo)")
         .gte("competencia", inicio.isoformat())
         .lte("competencia", fim.isoformat())
         .not_.in_("status", ["excluida", "rejeitada"])
-        .execute()
     )
 
     fixas = Decimal(0)
@@ -212,37 +213,35 @@ async def buscar_despesas_dia_mes(
     hoje, cri_ini, cri_fim = _janela_hoje_br()
     cols = "id, descricao, valor, competencia, data_vencimento, paga_em, criado_em, subitens_lancamento(nome)"
 
-    resp_venc_hoje = (
-        db.table("despesas").select(cols)
-        .neq("status", "excluida").eq("data_vencimento", hoje.isoformat())
-        .execute()
-    )
-    resp_pago_hoje = (
-        db.table("despesas").select(cols)
-        .neq("status", "excluida").eq("paga_em", hoje.isoformat())
-        .execute()
-    )
-    # Também o que foi LANÇADO hoje (criado hoje), mesmo com vencimento/pagamento futuro
-    resp_criado_hoje = (
-        db.table("despesas").select(cols)
-        .neq("status", "excluida")
-        .gte("criado_em", cri_ini).lt("criado_em", cri_fim)
-        .order("criado_em", desc=True).limit(_LIMITE_LISTA_DIA_MES)
-        .execute()
+    # 4 consultas independentes em paralelo — eram sequenciais e bloqueantes.
+    resp_venc_hoje, resp_pago_hoje, resp_criado_hoje, resp_mes = await asyncio.gather(
+        _exec(
+            db.table("despesas").select(cols)
+            .neq("status", "excluida").eq("data_vencimento", hoje.isoformat())
+        ),
+        _exec(
+            db.table("despesas").select(cols)
+            .neq("status", "excluida").eq("paga_em", hoje.isoformat())
+        ),
+        # Também o que foi LANÇADO hoje (criado hoje), mesmo com vencimento/pagamento futuro
+        _exec(
+            db.table("despesas").select(cols)
+            .neq("status", "excluida")
+            .gte("criado_em", cri_ini).lt("criado_em", cri_fim)
+            .order("criado_em", desc=True).limit(_LIMITE_LISTA_DIA_MES)
+        ),
+        _exec(
+            db.table("despesas").select(cols)
+            .neq("status", "excluida")
+            .gte("competencia", inicio.isoformat())
+            .lte("competencia", fim.isoformat())
+            .order("competencia", desc=True)
+            .limit(_LIMITE_LISTA_DIA_MES)
+        ),
     )
     linhas_dia: dict[str, dict] = {r["id"]: r for r in (resp_venc_hoje.data or [])}
     for r in (resp_pago_hoje.data or []) + (resp_criado_hoje.data or []):
         linhas_dia[r["id"]] = r
-
-    resp_mes = (
-        db.table("despesas").select(cols)
-        .neq("status", "excluida")
-        .gte("competencia", inicio.isoformat())
-        .lte("competencia", fim.isoformat())
-        .order("competencia", desc=True)
-        .limit(_LIMITE_LISTA_DIA_MES)
-        .execute()
-    )
 
     def _mapear(rows: list[dict]) -> list[LancamentoResumoItem]:
         itens = []
@@ -272,35 +271,33 @@ async def buscar_receitas_dia_mes(
     hoje, cri_ini, cri_fim = _janela_hoje_br()
     cols = "id, descricao, valor, competencia, data_vencimento, recebido_em, criado_em, subitens_lancamento(nome)"
 
-    resp_venc_hoje = (
-        db.table("receitas_outras").select(cols)
-        .eq("data_vencimento", hoje.isoformat())
-        .execute()
-    )
-    resp_recebido_hoje = (
-        db.table("receitas_outras").select(cols)
-        .eq("recebido_em", hoje.isoformat())
-        .execute()
-    )
-    # Também o que foi LANÇADO hoje (criado hoje)
-    resp_criado_hoje = (
-        db.table("receitas_outras").select(cols)
-        .gte("criado_em", cri_ini).lt("criado_em", cri_fim)
-        .order("criado_em", desc=True).limit(_LIMITE_LISTA_DIA_MES)
-        .execute()
+    # Mesmo desenho das despesas: 4 consultas independentes em paralelo.
+    resp_venc_hoje, resp_recebido_hoje, resp_criado_hoje, resp_mes = await asyncio.gather(
+        _exec(
+            db.table("receitas_outras").select(cols)
+            .eq("data_vencimento", hoje.isoformat())
+        ),
+        _exec(
+            db.table("receitas_outras").select(cols)
+            .eq("recebido_em", hoje.isoformat())
+        ),
+        # Também o que foi LANÇADO hoje (criado hoje)
+        _exec(
+            db.table("receitas_outras").select(cols)
+            .gte("criado_em", cri_ini).lt("criado_em", cri_fim)
+            .order("criado_em", desc=True).limit(_LIMITE_LISTA_DIA_MES)
+        ),
+        _exec(
+            db.table("receitas_outras").select(cols)
+            .gte("competencia", inicio.isoformat())
+            .lte("competencia", fim.isoformat())
+            .order("competencia", desc=True)
+            .limit(_LIMITE_LISTA_DIA_MES)
+        ),
     )
     linhas_dia: dict[str, dict] = {r["id"]: r for r in (resp_venc_hoje.data or [])}
     for r in (resp_recebido_hoje.data or []) + (resp_criado_hoje.data or []):
         linhas_dia[r["id"]] = r
-
-    resp_mes = (
-        db.table("receitas_outras").select(cols)
-        .gte("competencia", inicio.isoformat())
-        .lte("competencia", fim.isoformat())
-        .order("competencia", desc=True)
-        .limit(_LIMITE_LISTA_DIA_MES)
-        .execute()
-    )
 
     def _mapear(rows: list[dict]) -> list[LancamentoResumoItem]:
         itens = []

@@ -6,6 +6,7 @@ bancos, centros de custo e tipos de lançamento.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from decimal import Decimal
@@ -14,7 +15,7 @@ from uuid import UUID, uuid4
 from supabase import Client
 
 from app.auth import UsuarioAtual
-from app.database import get_supabase_admin
+from app.database import executar_sem_bloquear as _exec, get_supabase_admin
 from app.models.schemas import (
     BancoCreate, BancoItem, BancoUpdate,
     CategoriaLancamentoCreate, CategoriaLancamentoItem, CategoriaLancamentoUpdate,
@@ -343,7 +344,20 @@ async def buscar_despesas(
     if limit is not None:
         query = query.range(offset, offset + limit - 1)
 
-    resp = query.execute()
+    if limit is None:
+        resp = await _exec(query)
+    else:
+        # Itens + 3 agregados (total, pendentes, soma) são independentes:
+        # 4 round-trips em paralelo, fora do event loop, em vez de 4 em fila.
+        resp, resp_total, resp_pend, resp_soma = await asyncio.gather(
+            _exec(query),
+            _exec(_aplicar_filtros(db.table("despesas").select("id", count="exact")).limit(1)),
+            _exec(
+                _aplicar_filtros(db.table("despesas").select("id", count="exact"))
+                .eq("status", "pendente").limit(1)
+            ),
+            _exec(_aplicar_filtros(db.table("despesas").select("valor"))),
+        )
     items = []
     for row in (resp.data or []):
         tipo_nome  = (row.get("subitens_lancamento") or {}).get("nome")
@@ -380,7 +394,7 @@ async def buscar_despesas(
         total = len(items)
     else:
         # Paginado: os agregados precisam refletir TODO o período (e a busca),
-        # não a página atual.
+        # não a página atual — as queries já rodaram em paralelo lá em cima.
         #
         # `total` e `pendentes` saem de counts do PostgREST, que não trazem
         # linha alguma. A soma ainda precisa dos valores: agregados no PostgREST
@@ -388,13 +402,8 @@ async def buscar_despesas(
         # resposta é PGRST123 "Use of aggregate functions is not allowed" — então
         # eliminar também essa varredura exigiria uma função no Postgres exposta
         # via RPC, o que é mudança de schema e não cabe aqui.
-        total = _aplicar_filtros(
-            db.table("despesas").select("id", count="exact")
-        ).limit(1).execute().count or 0
-        pendentes = _aplicar_filtros(
-            db.table("despesas").select("id", count="exact")
-        ).eq("status", "pendente").limit(1).execute().count or 0
-        resp_soma = _aplicar_filtros(db.table("despesas").select("valor")).execute()
+        total = resp_total.count or 0
+        pendentes = resp_pend.count or 0
         soma = sum(_dec(r.get("valor", 0)) for r in (resp_soma.data or []))
     return DespesasResponse(total=total, items=items, soma_total=soma, total_pendentes=pendentes)
 
@@ -1000,27 +1009,10 @@ async def buscar_receitas(
         .lte("competencia", fim.isoformat())
         .order("competencia", desc=True)
     )
-    if ver_tudo and not banco_id and not centro_custo:
-        resp_com = q_com.execute()
-        for row in (resp_com.data or []):
-            # A descrição da comissão é montada aqui, não existe como coluna —
-            # por isso a busca nela é filtrada em memória, e não no banco.
-            if termo_lower and termo_lower not in f"comissão — {row.get('tipo', 'padrão')}".lower():
-                continue
-            v = _dec(row["valor"])
-            soma_comissoes += v
-            items.append(ReceitaItem(
-                id=row["id"],
-                origem="comissao",
-                tipo_nome=row.get("tipo"),
-                descricao=f"Comissão — {row.get('tipo', 'padrão')}",
-                valor=v,
-                competencia=row["competencia"],
-                recebido_em=row.get("recebida_em"),
-                centro_custo="matriz",
-            ))
+    incluir_comissoes = ver_tudo and not banco_id and not centro_custo
 
-    # 2. Receitas manuais
+    # 2. Receitas manuais — a query é construída ANTES de executar as duas
+    # fontes, para que comissões e manuais rodem em paralelo (gather abaixo)
     q_rec = (
         db.table("receitas_outras")
         .select(
@@ -1042,7 +1034,32 @@ async def buscar_receitas(
     if termo:
         q_rec = q_rec.ilike("descricao_busca", f"%{termo}%")
 
-    resp_rec = q_rec.execute()
+    if incluir_comissoes:
+        resp_com, resp_rec = await asyncio.gather(_exec(q_com), _exec(q_rec))
+    else:
+        resp_com = None
+        resp_rec = await _exec(q_rec)
+
+    # 1. Comissões (ETL / automáticas) — apenas Admin e Gestor
+    if resp_com is not None:
+        for row in (resp_com.data or []):
+            # A descrição da comissão é montada aqui, não existe como coluna —
+            # por isso a busca nela é filtrada em memória, e não no banco.
+            if termo_lower and termo_lower not in f"comissão — {row.get('tipo', 'padrão')}".lower():
+                continue
+            v = _dec(row["valor"])
+            soma_comissoes += v
+            items.append(ReceitaItem(
+                id=row["id"],
+                origem="comissao",
+                tipo_nome=row.get("tipo"),
+                descricao=f"Comissão — {row.get('tipo', 'padrão')}",
+                valor=v,
+                competencia=row["competencia"],
+                recebido_em=row.get("recebida_em"),
+                centro_custo="matriz",
+            ))
+
     for row in (resp_rec.data or []):
         v = _dec(row["valor"])
         soma_manuais += v
