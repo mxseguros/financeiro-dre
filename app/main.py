@@ -44,8 +44,13 @@ app = FastAPI(
         "Todos os endpoints exigem JWT do Supabase Auth no header Authorization."
     ),
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Em produção a documentação sai do ar: /docs, /redoc e /openapi.json
+    # entregavam o mapa completo da API (63 rotas, parâmetros, schemas) a
+    # qualquer pessoa sem login — material pronto para reconhecimento.
+    # Em desenvolvimento continuam disponíveis.
+    docs_url=None if cfg.is_production else "/docs",
+    redoc_url=None if cfg.is_production else "/redoc",
+    openapi_url=None if cfg.is_production else "/openapi.json",
 )
 
 # ── RATE LIMITING ─────────────────────────────────────────────
@@ -91,10 +96,13 @@ app.add_middleware(
         if not cfg.is_production
         else [_frontend_url_prod] + _frontend_urls_dev
     ),
-    # Libera também os deploys do projeto na Vercel (produção e previews *.vercel.app),
-    # evitando "Failed to fetch" quando o app é acessado por um domínio diferente
-    # de FRONTEND_URL. Combina com allow_origins acima.
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    # Previews da Vercel continuam funcionando, mas SÓ os do time mx-seguros
+    # (financeiro-<hash>-mx-seguros.vercel.app). O regex antigo era
+    # `https://.*\.vercel\.app` — com allow_credentials, qualquer pessoa que
+    # publicasse um site na Vercel virava origem autorizada nesta API
+    # (verificado em 28/08/2026 com uma origem forjada). Âncoras ^$ evitam
+    # bypass por prefixo/sufixo (ex.: vercel.app.malicioso.com).
+    allow_origin_regex=r"^https://financeiro-[a-z0-9]+-mx-seguros\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
