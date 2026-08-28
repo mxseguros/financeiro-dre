@@ -196,20 +196,30 @@ function ListaDiaMes({ titulo, subtitulo, dados, cor, header, resumo }: {
         </div>
       </div>
       {resumo}
+      {/* dados === null é "ainda carregando" (renderização incremental) —
+          diferente de lista vazia, que aí sim diz "nenhum lançamento". */}
+      {!dados ? (
+        <div className="space-y-2">
+          {['w-2/3', 'w-1/2', 'w-3/5'].map(w => (
+            <div key={w} className={`h-3 animate-pulse rounded bg-gray-100 ${w}`} />
+          ))}
+        </div>
+      ) : (
       <div className="space-y-3">
         <div>
           <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Hoje</p>
-          {dados && dados.dia.length > 0 ? (
+          {dados.dia.length > 0 ? (
             <ul className="space-y-1.5">{dados.dia.map(item => linhaItem(item, false))}</ul>
           ) : <p className="text-xs text-gray-400">Nenhum lançamento hoje</p>}
         </div>
         <div className="border-t border-gray-100 pt-3">
           <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">No período</p>
-          {dados && dados.mes.length > 0 ? (
+          {dados.mes.length > 0 ? (
             <ul className="space-y-1.5">{dados.mes.map(item => linhaItem(item, true))}</ul>
           ) : <p className="text-xs text-gray-400">Nenhum lançamento no período</p>}
         </div>
       </div>
+      )}
     </div>
   )
 }
@@ -245,38 +255,43 @@ export default function DashboardPage() {
   const [ordensDiaMes, setOrdensDiaMes] = useState<LancamentosDiaMesResponse | null>(null)
   const [centroDiaMes, setCentroDiaMes] = useState<CentroCustoResumo | null>(null)
   const [erroCentro, setErroCentro] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [mes, setMes] = useState(mesAtual()[0].slice(0, 7)) // YYYY-MM
 
   const buscar = useCallback(() => {
     if (!token) return
-    setLoading(true)
     setErro(null)
     setErroCentro(null)
+    // Zera tudo: cada bloco volta ao skeleton e reaparece quando SEU dado
+    // chega. Antes era um Promise.all — a página inteira esperava o endpoint
+    // mais lento (o /dashboard, que custava 4-5s) para mostrar qualquer número.
+    setData(null); setPorBanco(null); setPorClassificacao(null)
+    setDespesasDiaMes(null); setReceitasDiaMes(null); setOrdensDiaMes(null)
+    setCentroDiaMes(null)
     const [y, m] = mes.split('-')
     const ultimoDia = new Date(Number(y), Number(m), 0).getDate()
     const inicio = `${y}-${m}-01`
     const fim = `${y}-${m}-${String(ultimoDia).padStart(2, '0')}`
-    Promise.all([
-      api.get<DashboardResponse>(`/dashboard?inicio=${inicio}&fim=${fim}`, token),
-      api.get<DashboardPorBancoResponse>(`/dashboard/por-banco?inicio=${inicio}&fim=${fim}`, token),
-      api.get<DespesasPorClassificacaoResponse>(`/dashboard/despesas-por-classificacao?inicio=${inicio}&fim=${fim}`, token),
-      api.get<LancamentosDiaMesResponse>(`/dashboard/despesas-dia-mes?inicio=${inicio}&fim=${fim}`, token),
-      api.get<LancamentosDiaMesResponse>(`/dashboard/receitas-dia-mes?inicio=${inicio}&fim=${fim}`, token),
-      api.get<LancamentosDiaMesResponse>(`/dashboard/ordens-compra-dia-mes?inicio=${inicio}&fim=${fim}`, token),
-      // Fora do Promise.all: o bloco do centro de custo é acessório e não pode
-      // derrubar a Visão Geral inteira se falhar.
-      buscarCentro(inicio, fim, token)
-        .then(r => { setCentroDiaMes(r); return null })
-        .catch((e: unknown) => { setCentroDiaMes(null); setErroCentro(e instanceof Error ? e.message : 'Falha ao carregar'); return null }),
-    ])
-      .then(([d, banco, classificacao, despDiaMes, recDiaMes, ordDiaMes]) => {
-        setData(d); setPorBanco(banco); setPorClassificacao(classificacao)
-        setDespesasDiaMes(despDiaMes); setReceitasDiaMes(recDiaMes); setOrdensDiaMes(ordDiaMes)
-      })
-      .catch((e) => setErro(e.message))
-      .finally(() => setLoading(false))
+    const q = `inicio=${inicio}&fim=${fim}`
+    // Só o /dashboard (KPIs) derruba a página com mensagem de erro; os blocos
+    // acessórios falham em silêncio e simplesmente não aparecem.
+    api.get<DashboardResponse>(`/dashboard?${q}`, token)
+      .then(setData)
+      .catch((e: Error) => setErro(e.message))
+    api.get<DashboardPorBancoResponse>(`/dashboard/por-banco?${q}`, token)
+      .then(setPorBanco).catch(() => setPorBanco(null))
+    api.get<DespesasPorClassificacaoResponse>(`/dashboard/despesas-por-classificacao?${q}`, token)
+      .then(setPorClassificacao).catch(() => setPorClassificacao(null))
+    api.get<LancamentosDiaMesResponse>(`/dashboard/despesas-dia-mes?${q}`, token)
+      .then(setDespesasDiaMes).catch(() => setDespesasDiaMes(null))
+    api.get<LancamentosDiaMesResponse>(`/dashboard/receitas-dia-mes?${q}`, token)
+      .then(setReceitasDiaMes).catch(() => setReceitasDiaMes(null))
+    api.get<LancamentosDiaMesResponse>(`/dashboard/ordens-compra-dia-mes?${q}`, token)
+      .then(setOrdensDiaMes).catch(() => setOrdensDiaMes(null))
+    // Bloco do centro de custo: acessório, com mensagem própria de erro.
+    buscarCentro(inicio, fim, token)
+      .then(setCentroDiaMes)
+      .catch((e: unknown) => { setCentroDiaMes(null); setErroCentro(e instanceof Error ? e.message : 'Falha ao carregar') })
   }, [token, mes])
 
   useEffect(() => { buscar() }, [buscar])
@@ -326,7 +341,7 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-navy md:text-2xl">Visão Geral</h1>
-          {!loading && periodo && (
+          {periodo && (
             <p className="mt-0.5 text-sm text-gray-500">{periodo}</p>
           )}
         </div>
@@ -346,41 +361,47 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} variant="card" />
-          ))}
-        </div>
-      ) : erro ? (
+      {erro ? (
         <div className="rounded-xl bg-red-50 p-4 text-sm text-red-600">{erro}</div>
-      ) : d ? (
+      ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <CardKPI
-              label="Receita Bruta"
-              valor={d.receita_bruta}
-              sub="Competência"
-              iconBg="bg-blue-50"
-              icon={<IconTrendUp />}
-            />
-            <CardKPI
-              label="Receita Líquida"
-              valor={d.receita_liquida}
-              iconBg="bg-green-50"
-              icon={<IconDollar />}
-            />
-            <CardKPI
-              label="EBITDA"
-              valor={d.ebitda}
-              iconBg="bg-purple-50"
-              icon={<IconTarget />}
-            />
-          </div>
+          {/* Cada seção renderiza assim que o SEU endpoint responde — o KPI
+              (endpoint mais pesado) não segura mais os demais blocos. */}
+          {d ? (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <CardKPI
+                  label="Receita Bruta"
+                  valor={d.receita_bruta}
+                  sub="Competência"
+                  iconBg="bg-blue-50"
+                  icon={<IconTrendUp />}
+                />
+                <CardKPI
+                  label="Receita Líquida"
+                  valor={d.receita_liquida}
+                  iconBg="bg-green-50"
+                  icon={<IconDollar />}
+                />
+                <CardKPI
+                  label="EBITDA"
+                  valor={d.ebitda}
+                  iconBg="bg-purple-50"
+                  icon={<IconTarget />}
+                />
+              </div>
 
-          <p className="text-xs text-gray-400">
-            Campos exibidos conforme seu perfil de acesso. &quot;—&quot; indica informação não disponível para seu perfil.
-          </p>
+              <p className="text-xs text-gray-400">
+                Campos exibidos conforme seu perfil de acesso. &quot;—&quot; indica informação não disponível para seu perfil.
+              </p>
+            </>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} variant="card" />
+              ))}
+            </div>
+          )}
 
           {/* Receita/Despesa por banco */}
           {porBanco && porBanco.bancos.length > 0 && (
@@ -501,7 +522,7 @@ export default function DashboardPage() {
             </div>
           )}
         </>
-      ) : null}
+      )}
     </div>
   )
 }
