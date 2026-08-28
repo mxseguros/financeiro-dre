@@ -14,6 +14,7 @@ from app.services.etl_service import (
     efetivar_importacao, processar_preview,
 )
 from app.services.extrato_service import ConfirmarExtratoRequest
+from app.services.sugestao_extrato_service import SugestaoLoteRequest, sugerir_lote
 
 router = APIRouter(prefix="/importacao", tags=["ETL / Importação"])
 
@@ -179,6 +180,21 @@ async def preview_extrato(
         request.client.host if request.client else None, get_supabase_admin(),
     )
     return preview
+
+
+@router.post("/extrato/sugerir", summary="Sugerir subitem para cada linha do extrato (histórico + IA em lote)")
+@limiter.limit("5/minute")
+async def sugerir_extrato(
+    request: Request,
+    payload: SugestaoLoteRequest,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    """Uma chamada para o extrato inteiro — o /lancamentos/sugestao unitário
+    tem limite de 20/min, inviável linha a linha. Sugestão é acessória: se a
+    IA falhar, devolve só o que o histórico resolveu e a importação segue."""
+    _exigir_extrato(usuario)
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    return await sugerir_lote(payload, usuario, get_supabase_usuario(token))
 
 
 @router.post("/extrato/confirmar", status_code=status.HTTP_201_CREATED, summary="Efetivar importação do extrato")

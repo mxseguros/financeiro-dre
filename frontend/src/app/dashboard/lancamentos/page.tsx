@@ -398,7 +398,7 @@ export default function LancamentosPage() {
       )}
       {modalImportar && token && (
         <ModalImportarExtrato
-          token={token} bancos={bancos} centros={centros}
+          token={token} bancos={bancos} centros={centros} tipos={tipos}
           onClose={() => setModalImportar(false)}
           onImported={() => { buscarDespesas(); buscarReceitas() }}
         />
