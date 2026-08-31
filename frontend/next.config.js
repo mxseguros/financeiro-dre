@@ -1,3 +1,4 @@
+// Gatilho de deploy reconectado em 31/08/2026 (GitHub App da Vercel na org).
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
