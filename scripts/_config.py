@@ -26,7 +26,7 @@ SERVICE_KEY = cfg.supabase_service_role_key
 DB_URL = (cfg.database_url or "").replace("postgresql+asyncpg://", "postgresql://")
 
 # URL pública do backend — configurável por env, com fallback para produção
-API = os.environ.get("BACKEND_URL", "https://web-production-606a2.up.railway.app")
+API = os.environ.get("BACKEND_URL", "https://financeiro-api-inky.vercel.app")
 
 _faltando = [
     nome
