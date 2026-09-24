@@ -21,7 +21,7 @@ from app.models.schemas import (
     ReceitaItem, ReceitaOutraCreate, ReceitaOutraUpdate, ReceitasResponse,
 )
 from app.services import financeiro_service
-from app.services.dre_service import auditar_em_background, registrar_auditoria
+from app.services.dre_service import auditar_leitura, registrar_auditoria
 
 router = APIRouter(prefix="/lancamentos", tags=["Lançamentos"])
 
@@ -128,7 +128,7 @@ async def listar_despesas(
         limit=limit, offset=offset,
         busca=busca, ordenar_por=ordenar_por, ordem_desc=(ordem == "desc"),
     )
-    auditar_em_background(
+    await auditar_leitura(
         usuario, "consulta_despesas",
         {"inicio": str(inicio), "fim": str(fim)},
         request.client.host if request.client else None,
@@ -346,7 +346,7 @@ async def listar_receitas(
         inicio, fim, usuario, db, centro_custo, banco_id,
         busca=busca, ordenar_por=ordenar_por, ordem_desc=(ordem == "desc"),
     )
-    auditar_em_background(
+    await auditar_leitura(
         usuario, "consulta_receitas",
         {"inicio": str(inicio), "fim": str(fim)},
         request.client.host if request.client else None,

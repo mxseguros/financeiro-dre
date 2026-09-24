@@ -433,22 +433,23 @@ async def registrar_auditoria(
     _registrar_auditoria_sync(usuario, acao, detalhes, ip, db_admin)
 
 
-def auditar_em_background(
+async def auditar_leitura(
     usuario: UsuarioAtual,
     acao: str,
     detalhes: dict,
     ip: str | None,
     db_admin: Client,
 ) -> None:
-    """Dispara a auditoria sem bloquear a resposta — usado nos endpoints de
-    LEITURA, onde o INSERT síncrono no audit_log era a maior fonte de latência
-    evitável (uma round-trip extra ao Supabase por consulta). Roda numa thread
-    para não travar o event loop; falhas ficam no log (o registro de leitura
-    é best-effort, escritas continuam auditadas de forma síncrona)."""
+    """Auditoria dos endpoints de LEITURA — aguardada, mas fora do event loop.
+
+    Era fire-and-forget (create_task) quando cada round-trip ao Supabase
+    custava ~200ms (backend nos EUA). No serverless da Vercel esse desenho
+    perde registros: a instância pode congelar logo após a resposta, antes
+    de a task rodar. Com o backend em gru1 o INSERT custa ~15ms, então
+    aguardar ficou mais barato do que o risco que evitava. Falha aqui não
+    derruba a requisição — auditoria de leitura segue best-effort."""
     import asyncio
-    asyncio.create_task(
-        asyncio.to_thread(_registrar_auditoria_sync, usuario, acao, detalhes, ip, db_admin)
-    )
+    await asyncio.to_thread(_registrar_auditoria_sync, usuario, acao, detalhes, ip, db_admin)
 
 
 def _registrar_auditoria_sync(

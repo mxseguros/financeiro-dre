@@ -49,7 +49,7 @@ async def get_dre(
 
     # Auditoria (em background — leitura não espera o INSERT no audit_log)
     from app.database import get_supabase_admin
-    dre_service.auditar_em_background(
+    await dre_service.auditar_leitura(
         usuario, "consulta_dre",
         {"inicio": str(inicio), "fim": str(fim)},
         request.client.host if request.client else None,

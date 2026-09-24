@@ -20,7 +20,7 @@ from app.models.schemas import (
     OrdemCompraUpdate, OrdensCompraResponse,
 )
 from app.services import ordens_compra_service
-from app.services.dre_service import auditar_em_background, registrar_auditoria
+from app.services.dre_service import auditar_leitura, registrar_auditoria
 
 router = APIRouter(prefix="/ordens-compra", tags=["Ordens de Compra"])
 
@@ -81,7 +81,7 @@ async def listar_ordens(
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
     resultado = await ordens_compra_service.buscar_ordens_compra(inicio, fim, usuario, db, status_filter)
-    auditar_em_background(
+    await auditar_leitura(
         usuario, "consulta_ordens_compra",
         {"inicio": str(inicio), "fim": str(fim)},
         request.client.host if request.client else None,

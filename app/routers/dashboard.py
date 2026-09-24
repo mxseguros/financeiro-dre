@@ -36,7 +36,7 @@ async def get_dashboard(
 
     resultado = await dashboard_service.buscar_dashboard(inicio, fim, usuario, db)
 
-    dre_service.auditar_em_background(
+    await dre_service.auditar_leitura(
         usuario, "consulta_dashboard",
         {"inicio": str(inicio), "fim": str(fim), "latencia_ms": resultado.latencia_ms},
         request.client.host if request.client else None,
