@@ -3,7 +3,8 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
-import { fmtBRL, fmtData, mesAtual } from '@/lib/utils'
+import { usePeriodo } from '@/contexts/PeriodoContext'
+import { fmtBRL, fmtData } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
 import { Button, Spinner } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Field'
@@ -26,11 +27,6 @@ type ItemKanban =
   | { tipo: 'ordem';   dado: OrdemCompra }
   | { tipo: 'receita'; dado: Receita }
 interface DragRef { id: string; tipo: TipoCard }
-
-function mesAtualStr() {
-  const [inicio] = mesAtual()
-  return inicio.slice(0, 7)
-}
 
 function fmtCompetencia(d: string) {
   return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
@@ -394,7 +390,8 @@ export default function AprovacoesPage() {
   const [processandoId, setProcessandoId] = useState<string | null>(null)
   const [rejeitando, setRejeitando] = useState<DragRef | null>(null)
   const [erroGlobal, setErroGlobal] = useState<string | null>(null)
-  const [mes, setMes] = useState(mesAtualStr)
+  // Periodo compartilhado entre telas (ver contexts/PeriodoContext.tsx).
+  const { mesInicio: mes, definirMes: setMes } = usePeriodo()
   const dragId = useRef<DragRef | null>(null)
   const kanbanRef = useRef<HTMLDivElement>(null)
   const [colunaAtiva, setColunaAtiva] = useState(0)

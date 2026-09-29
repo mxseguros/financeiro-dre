@@ -9,6 +9,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { ToastProvider } from '@/components/ui/Toast'
 import { Spinner } from '@/components/ui/Button'
 import { UserContext } from '@/contexts/UserContext'
+import { PeriodoProvider, limparPeriodoSalvo } from '@/contexts/PeriodoContext'
 import type { Usuario, Permissions } from '@/types'
 import { getDefaultPermissions } from '@/types'
 
@@ -30,6 +31,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [token])
 
   async function handleSignOut() {
+    // Sair zera o periodo: o proximo login comeca no mes atual.
+    limparPeriodoSalvo()
     await signOut()
     router.push('/login')
   }
@@ -54,6 +57,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <ToastProvider>
       <UserContext.Provider value={{ userId: session.user.id, role, nome, email, permissions }}>
+      <PeriodoProvider>
         <div className="flex h-screen overflow-hidden bg-canvas">
           <Sidebar
             role={role}
@@ -96,6 +100,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </main>
           </div>
         </div>
+      </PeriodoProvider>
       </UserContext.Provider>
     </ToastProvider>
   )

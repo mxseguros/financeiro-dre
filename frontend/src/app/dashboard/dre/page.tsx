@@ -2,7 +2,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
-import { fmtBRL, mesAtual } from '@/lib/utils'
+import { usePeriodo } from '@/contexts/PeriodoContext'
+import { fmtBRL } from '@/lib/utils'
+import { periodoParaDatas } from '../lancamentos/_components/shared'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import type { DREResponse, LinhasDRE } from '@/types'
@@ -47,7 +49,13 @@ function DateInput({ label, value, onChange }: { label: string; value: string; o
 
 export default function DrePage() {
   const { token } = useAuth()
-  const [[inicio, fim], setPeriodo] = useState(mesAtual())
+  // Periodo compartilhado entre telas; o DRE trabalha com datas completas.
+  const { mesInicio, mesFim, definirPeriodo } = usePeriodo()
+  const [inicio, fim] = periodoParaDatas(mesInicio, mesFim)
+  const setPeriodo = ([ini, f]: [string, string]) => {
+    const mi = ini.slice(0, 7), mf = f.slice(0, 7)
+    definirPeriodo(mi, mf < mi ? mi : mf)
+  }
   const [dre, setDre] = useState<DREResponse | null>(null)
   const [tipos, setTipos] = useState<ReceitaTipo[]>([])
   const [evolucao, setEvolucao] = useState<EvolucaoMes[]>([])

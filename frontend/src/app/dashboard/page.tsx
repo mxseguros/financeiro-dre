@@ -3,7 +3,8 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
-import { fmtBRL, fmtData, mesAtual } from '@/lib/utils'
+import { usePeriodo } from '@/contexts/PeriodoContext'
+import { fmtBRL, fmtData } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ShareButton } from '@/components/ui/ShareButton'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -256,7 +257,8 @@ export default function DashboardPage() {
   const [centroDiaMes, setCentroDiaMes] = useState<CentroCustoResumo | null>(null)
   const [erroCentro, setErroCentro] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [mes, setMes] = useState(mesAtual()[0].slice(0, 7)) // YYYY-MM
+  // Periodo compartilhado entre telas (ver contexts/PeriodoContext.tsx).
+  const { mesInicio: mes, definirMes: setMes } = usePeriodo()
 
   const buscar = useCallback(() => {
     if (!token) return

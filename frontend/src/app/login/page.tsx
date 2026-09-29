@@ -1,5 +1,6 @@
 ﻿'use client'
 import { useState } from 'react'
+import { limparPeriodoSalvo } from '@/contexts/PeriodoContext'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { useAuth } from '@/hooks/useAuth'
@@ -21,6 +22,8 @@ export default function LoginPage() {
       setErro('E-mail ou senha inválidos.')
       setLoading(false)
     } else {
+      // Entrar sempre comeca no mes atual, mesmo se a sessao anterior expirou sem logout.
+      limparPeriodoSalvo()
       router.push('/dashboard')
     }
   }

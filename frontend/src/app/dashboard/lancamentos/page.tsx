@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
 import { api } from '@/lib/api'
-import { fmtBRL, fmtData, mesAtual } from '@/lib/utils'
+import { usePeriodo } from '@/contexts/PeriodoContext'
+import { fmtBRL, fmtData } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
 import { Tabs } from '@/components/ui/Tabs'
@@ -29,8 +30,8 @@ export default function LancamentosPage() {
   const { token } = useAuth()
   const { role, userId } = useUser()
   const podeAprovar = role === 'admin' || role === 'gestor'
-  const [mesInicio, setMesInicio] = useState(mesAtual()[0].slice(0, 7))
-  const [mesFim, setMesFim] = useState(mesAtual()[0].slice(0, 7))
+  // Periodo compartilhado entre telas (ver contexts/PeriodoContext.tsx).
+  const { mesInicio, mesFim, definirPeriodo } = usePeriodo()
   const [filtroBanco, setFiltroBanco] = useState('')
   const [filtroCentro, setFiltroCentro] = useState('')
   const [erroLista, setErroLista] = useState<string | null>(null)
@@ -440,15 +441,14 @@ export default function LancamentosPage() {
               <input type="month" value={mesInicio}
                 onChange={(e) => {
                   const v = e.target.value
-                  setMesInicio(v)
-                  if (v > mesFim) setMesFim(v)
+                  definirPeriodo(v, v > mesFim ? v : mesFim)
                 }}
                 className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus-ring focus:outline-none" />
               <span className="shrink-0">Até</span>
               <input type="month" value={mesFim} min={mesInicio}
                 onChange={(e) => {
                   const v = e.target.value
-                  setMesFim(v < mesInicio ? mesInicio : v)
+                  definirPeriodo(mesInicio, v < mesInicio ? mesInicio : v)
                 }}
                 className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus-ring focus:outline-none" />
             </div>
