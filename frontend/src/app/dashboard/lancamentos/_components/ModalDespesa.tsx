@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { mesAtual } from '@/lib/utils'
 import { InputMoeda } from '@/components/ui/InputMoeda'
@@ -48,6 +48,18 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   const [sugestao, setSugestao] = useState<SugestaoIA | null>(null)
   const [sugerindo, setSugerindo] = useState(false)
   const [sugestaoErro, setSugestaoErro] = useState<string | null>(null)
+
+  // Se o modal abriu antes de a taxonomia terminar de carregar, a categoria
+  // nasceu vazia — o useState acima só calcula o valor inicial uma vez — e o
+  // Salvar ficava barrado por "Selecione a categoria.". Completa quando os
+  // subitens chegarem, sem sobrescrever uma escolha já feita pelo usuário.
+  useEffect(() => {
+    if (!despesa?.tipo_lancamento_id) return
+    const t = tipos.find(x => x.id === despesa.tipo_lancamento_id)
+    if (!t?.categoria_id) return
+    setForm(f => (f.categoria_id ? f : { ...f, categoria_id: t.categoria_id as string }))
+    setClassificacao(c => c || (t.custo_tipo ?? ''))
+  }, [tipos, despesa?.tipo_lancamento_id])
 
   const limparErro = (k: string) => setErros(e => (k in e ? { ...e, [k]: '' } : e))
   const set = (k: string, v: string | boolean) => {
@@ -143,14 +155,22 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     if (valorParcela <= 0) e.valor_parcela = 'Informe um valor maior que zero.'
     if (!form.competencia) e.competencia = 'Informe a competência.'
     if (!form.data_vencimento) e.data_vencimento = 'Informe a data de vencimento.'
-    if (form.recorrente && !form.repetir_ate) e.repetir_ate = 'Informe até quando repetir.'
+    // Só na criação: o campo "Repetir até" não é desenhado na edição, e exigi-lo
+    // ali travava o Salvar de toda despesa recorrente em silêncio (erro num
+    // campo invisível).
+    if (!editando && form.recorrente && !form.repetir_ate) e.repetir_ate = 'Informe até quando repetir.'
     setErros(e)
     return Object.keys(e).length === 0
   }
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
-    if (!validar()) return
+    if (!validar()) {
+      // Rede de segurança: se algum erro cair num campo fora da tela, o
+      // usuário ainda vê que o salvamento foi barrado — nunca mais botão "morto".
+      setErro('Revise os campos destacados antes de salvar.')
+      return
+    }
     setSalvando(true)
     setErro(null)
     const [y, m] = form.competencia.split('-')
