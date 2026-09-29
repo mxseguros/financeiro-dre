@@ -35,7 +35,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     recorrente:         despesa?.recorrente ?? false,
     repetir_ate:        '',
     // Parcelamento
-    valor_total:        despesa ? (despesa.valor * (despesa.parcela_total ?? 1)).toFixed(2) : '',
+    valor_parcela:      despesa ? despesa.valor.toFixed(2) : '',
     num_parcelas:       String(despesa?.parcela_total ?? 1),
   })
   const [classificacao, setClassificacao] = useState(tipoInicial?.custo_tipo ?? '')
@@ -92,7 +92,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
       const s = await api.post<SugestaoIA>('/lancamentos/sugestao', token, {
         descricao: desc,
         natureza: 'despesa',
-        valor: valorMensal > 0 ? valorMensal : undefined,
+        valor: valorParcela > 0 ? valorParcela : undefined,
         competencia: y && m ? `${y}-${m}-01` : undefined,
       })
       setSugestao(s.disponivel || s.duplicata ? s : null)
@@ -116,9 +116,12 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   const subitensDaCategoria = tipos.filter(t => t.natureza === 'despesa' && t.categoria_id === form.categoria_id)
 
   const numParcelas = Math.max(1, parseInt(form.num_parcelas) || 1)
-  const valorTotal  = parseFloat(form.valor_total) || 0
-  const valorMensal = numParcelas > 1 && valorTotal > 0 ? valorTotal / numParcelas : valorTotal
-  const parcelado   = numParcelas > 1
+  // Digita-se o valor de CADA parcela (o que cai no mes) e o total e derivado.
+  // Antes era o inverso: total digitado, dividido por N ao salvar — com
+  // arredondamento no meio, ja que no banco `valor` sempre foi por parcela.
+  const valorParcela = parseFloat(form.valor_parcela) || 0
+  const valorTotal   = valorParcela * numParcelas
+  const parcelado    = numParcelas > 1
   // Reparcelar reescreve datas e numeração de todo o grupo a partir da 1ª
   // parcela, então o backend só aceita o pedido vindo dela (422 caso contrário).
   const naoEhPrimeiraParcela = !!editando && (despesa?.parcela_atual ?? 1) > 1
@@ -136,7 +139,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     if (!form.categoria_id) e.categoria_id = 'Selecione a categoria.'
     if (!form.tipo_lancamento_id) e.tipo_lancamento_id = 'Selecione o subitem.'
     if (!form.descricao.trim()) e.descricao = 'Informe a descrição.'
-    if (valorMensal <= 0) e.valor_total = 'Informe um valor maior que zero.'
+    if (valorParcela <= 0) e.valor_parcela = 'Informe um valor maior que zero.'
     if (!form.competencia) e.competencia = 'Informe a competência.'
     if (!form.data_vencimento) e.data_vencimento = 'Informe a data de vencimento.'
     if (form.recorrente && !form.repetir_ate) e.repetir_ate = 'Informe até quando repetir.'
@@ -158,7 +161,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           banco_id:           form.banco_id || null,
           descricao:          form.descricao,
           subcategoria:       form.descricao,
-          valor:              valorMensal,
+          valor:              valorParcela,
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
           centro_custo:       form.centro_custo,
@@ -175,7 +178,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           banco_id:           form.banco_id || null,
           descricao:          form.descricao,
           subcategoria:       form.descricao,
-          valor:              valorMensal,
+          valor:              valorParcela,
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
           centro_custo:       form.centro_custo,
@@ -200,7 +203,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           banco_id:           form.banco_id || null,
           descricao:          form.descricao,
           subcategoria:       form.descricao,
-          valor:              valorMensal,
+          valor:              valorParcela,
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
           centro_custo:       form.centro_custo,
@@ -230,7 +233,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           banco_id:           form.banco_id || null,
           descricao:          form.descricao,
           subcategoria:       form.descricao,
-          valor:              valorMensal,
+          valor:              valorParcela,
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
           centro_custo:       form.centro_custo,
@@ -359,13 +362,18 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
 
         {/* Valor, Parcelamento e Competência */}
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
-          <Field label={parcelado ? 'Valor Total' : 'Valor'} required error={erros.valor_total}>
-            {() => <InputMoeda value={form.valor_total} onChange={v => set('valor_total', v)} />}
+          <Field label={parcelado ? 'Valor da parcela' : 'Valor'} required error={erros.valor_parcela}>
+            {() => <InputMoeda value={form.valor_parcela} onChange={v => set('valor_parcela', v)} />}
           </Field>
           <Campo label="Nº de Parcelas">
             <input type="number" min="1" max="60" value={form.num_parcelas}
               onChange={e => set('num_parcelas', e.target.value)} className={inputCls}
               disabled={form.recorrente || naoEhPrimeiraParcela} />
+            {form.recorrente && !naoEhPrimeiraParcela && (
+              <p className="mt-1 text-[11px] text-gray-400">
+                Lançamento recorrente (repete todo mês) — não pode ser parcelado.
+              </p>
+            )}
             {naoEhPrimeiraParcela && (
               <p className="mt-1 text-[11px] text-gray-400">
                 Para reparcelar, edite a 1ª parcela do grupo.
@@ -382,7 +390,8 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
 
         {parcelado && valorTotal > 0 && (
           <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5 text-xs text-blue-700">
-            Valor mensal calculado: <strong>R$ {valorMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> × {numParcelas} parcelas
+            Valor total: <strong>R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+            {' '}({numParcelas} parcelas de R$ {valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
           </div>
         )}
 
