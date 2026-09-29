@@ -35,7 +35,8 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     recorrente:         despesa?.recorrente ?? false,
     repetir_ate:        '',
     // Parcelamento
-    valor_parcela:      despesa ? despesa.valor.toFixed(2) : '',
+    // A API serializa Decimal como texto ("4500.00") — Number() antes de formatar.
+    valor_parcela:      despesa ? Number(despesa.valor).toFixed(2) : '',
     num_parcelas:       String(despesa?.parcela_total ?? 1),
   })
   const [classificacao, setClassificacao] = useState(tipoInicial?.custo_tipo ?? '')
