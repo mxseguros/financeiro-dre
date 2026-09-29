@@ -363,25 +363,32 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
 
         {/* Valor, Parcelamento e Competência */}
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
-          <Field label={parcelado ? 'Valor da parcela' : 'Valor'} required error={erros.valor_parcela}>
+          <Field label="Valor da Parcela" required error={erros.valor_parcela}>
             {() => <InputMoeda value={form.valor_parcela} onChange={v => set('valor_parcela', v)} />}
           </Field>
           <Campo label="Nº de Parcelas">
+            {/* Sempre editavel (pedido de 29/09/2026). Recorrencia e parcelamento
+                continuam exclusivos, mas agora a troca e automatica: na criacao,
+                parcelar desmarca "repetir"; na edicao, o backend converte a serie. */}
             <input type="number" min="1" max="60" value={form.num_parcelas}
-              onChange={e => set('num_parcelas', e.target.value)} className={inputCls}
-              disabled={form.recorrente || naoEhPrimeiraParcela} />
-            {form.recorrente && !naoEhPrimeiraParcela && (
-              <p className="mt-1 text-[11px] text-gray-400">
-                Lançamento recorrente (repete todo mês) — não pode ser parcelado.
+              onChange={e => {
+                const v = e.target.value
+                set('num_parcelas', v)
+                if (!editando && (parseInt(v) || 1) > 1 && form.recorrente) set('recorrente', false)
+              }}
+              className={inputCls} />
+            {editando && form.recorrente && numParcelas > 1 && (
+              <p className="mt-1 text-[11px] text-amber-600">
+                Esta despesa é recorrente: ao salvar, a série deste mês em diante vira {numParcelas} parcelas.
               </p>
             )}
             {naoEhPrimeiraParcela && (
               <p className="mt-1 text-[11px] text-gray-400">
-                Para reparcelar, edite a 1ª parcela do grupo.
+                Parcela {despesa?.parcela_atual} de {despesa?.parcela_total} — alterar o número refaz o parcelamento a partir da 1ª parcela.
               </p>
             )}
           </Campo>
-          <Field label="Competência (1ª parc.)" required error={erros.competencia}>
+          <Field label={naoEhPrimeiraParcela ? 'Competência' : 'Competência (1ª parc.)'} required error={erros.competencia}>
             {p => (
               <Input {...p} size="sm" type="month" value={form.competencia}
                 onChange={e => set('competencia', e.target.value)} />
@@ -389,10 +396,10 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           </Field>
         </div>
 
-        {parcelado && valorTotal > 0 && (
+        {valorParcela > 0 && (
           <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5 text-xs text-blue-700">
-            Valor total: <strong>R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-            {' '}({numParcelas} parcelas de R$ {valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+            Valor Total: <strong>R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+            {' '}({numParcelas} {numParcelas === 1 ? 'parcela' : 'parcelas'} de R$ {valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
           </div>
         )}
 

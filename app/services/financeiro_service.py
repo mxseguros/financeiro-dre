@@ -683,21 +683,32 @@ def _quantizar(v: Decimal) -> Decimal:
 
 
 async def _plano_reparcelamento(
-    despesa_id: UUID, novo_n: int, valor_informado: Decimal | None, db: Client
+    despesa_id: UUID,
+    novo_n: int,
+    valor_informado: Decimal | None,
+    db: Client,
+    preservar_aprovadas: bool = False,
 ) -> dict | None:
     """Valida um pedido de reparcelamento e devolve o plano a executar.
 
     Devolve None quando não há nada a fazer (o total já é o pedido).
-    O plano traz os campos a gravar na âncora e as irmãs a criar/remover;
-    quem executa é `atualizar_despesa`, depois de atualizar a âncora — assim
-    as parcelas novas herdam as edições feitas na mesma requisição.
+
+    O "grupo" refeito depende do lançamento editado:
+    - parcelamento: o grupo inteiro, ancorado na 1ª parcela — mesmo que a
+      edição tenha partido da parcela 3 de 12 (pedido de 29/09/2026: todos
+      os campos editáveis; antes isto devolvia 422);
+    - recorrente: esta ocorrência e as seguintes da série. Informar parcelas
+      numa recorrência a converte, deste mês em diante, em parcelamento —
+      sem remover as futuras, elas duplicariam as parcelas novas;
+    - avulso: só ele (caso da despesa importada do extrato).
     """
     from fastapi import HTTPException
 
     atual = (
         db.table("despesas")
-        .select("id, valor, competencia, data_vencimento, parcela_atual, "
-                "parcela_total, grupo_parcelamento, paga_em")
+        .select("id, valor, competencia, data_vencimento, parcela_atual, parcela_total, "
+                "grupo_parcelamento, paga_em, status, descricao, recorrente, "
+                "tipo_lancamento_id, criado_por")
         .eq("id", str(despesa_id))
         .neq("status", "excluida")
         .single()
@@ -710,41 +721,60 @@ async def _plano_reparcelamento(
     if novo_n == total_atual:
         return None
 
-    # Irmãs do grupo, em ordem de competência. Sem grupo, o lançamento é
-    # avulso e ele próprio é o grupo inteiro — é o caso da despesa importada.
+    cols = "id, valor, competencia, data_vencimento, paga_em, parcela_atual, status"
     if grupo:
         irmas = (
-            db.table("despesas")
-            .select("id, valor, competencia, data_vencimento, paga_em, parcela_atual")
+            db.table("despesas").select(cols)
             .eq("grupo_parcelamento", grupo)
             .neq("status", "excluida")
             .order("competencia")
             .execute()
         ).data or []
+    elif linha.get("recorrente") and not linha.get("parcela_total"):
+        # Mesma correlação que deletar_despesa usa para "esta e as futuras":
+        # recorrência não tem marcador de grupo.
+        q = (
+            db.table("despesas").select(cols)
+            .eq("descricao", linha["descricao"])
+            .eq("recorrente", True)
+            .is_("parcela_total", "null")
+            .neq("status", "excluida")
+            .gt("competencia", linha["competencia"])
+        )
+        if linha.get("tipo_lancamento_id"):
+            q = q.eq("tipo_lancamento_id", str(linha["tipo_lancamento_id"]))
+        if linha.get("criado_por"):
+            q = q.eq("criado_por", str(linha["criado_por"]))
+        irmas = [linha] + ((q.order("competencia").execute()).data or [])
     else:
         irmas = [linha]
 
-    # O reparcelamento reescreve datas e numeração de todo o grupo a partir da
-    # primeira competência. Fazer isso a partir do meio produziria um grupo
-    # com datas retroativas ou buracos, então exigimos a âncora certa.
-    if irmas and irmas[0]["id"] != str(despesa_id):
-        raise HTTPException(
-            status_code=422,
-            detail="Para alterar o número de parcelas, edite a primeira parcela do grupo.",
-        )
+    ancora = irmas[0] if irmas else linha
+    demais = [r for r in irmas if r["id"] != ancora["id"]]
 
     # Parcelas já pagas não podem ser descartadas: o dinheiro saiu e o
-    # lançamento é o registro disso. A primeira é exceção — ela permanece,
-    # é justamente a cobrança que originou o parcelamento.
-    pagas_adiante = [r for r in irmas[1:] if r.get("paga_em")]
-    if pagas_adiante:
+    # lançamento é o registro disso. A âncora é exceção — ela permanece.
+    pagas = [r for r in demais if r.get("paga_em")]
+    if pagas:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Este grupo já tem {len(pagas_adiante)} parcela(s) paga(s) além da "
-                "primeira. Exclua ou ajuste essas parcelas antes de reparcelar."
+                f"Este grupo tem {len(pagas)} parcela(s) já paga(s) além da primeira. "
+                "Exclua ou ajuste essas parcelas antes de reparcelar."
             ),
         )
+    # Quem não aprova não pode, reparcelando, descartar o que já foi aprovado
+    # — seria um atalho para contornar a regra de exclusão.
+    if preservar_aprovadas:
+        aprovadas = [r for r in demais if r.get("status") == "aprovada"]
+        if aprovadas:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Este grupo tem {len(aprovadas)} parcela(s) já aprovada(s). "
+                    "Só Admin ou Gestor podem refazer o parcelamento."
+                ),
+            )
 
     soma_atual = sum((_dec(r["valor"]) for r in irmas), Decimal("0"))
     valor_parcela = (
@@ -756,10 +786,9 @@ async def _plano_reparcelamento(
         "novo_n":         novo_n,
         "grupo":          (grupo or str(uuid4())) if novo_n > 1 else None,
         "valor_parcela":  valor_parcela,
-        "remover":        [r["id"] for r in irmas[1:]],
-        "base_comp":      date.fromisoformat(linha["competencia"][:10]),
-        "base_venc":      date.fromisoformat(linha["data_vencimento"][:10])
-                          if linha.get("data_vencimento") else None,
+        "ancora_id":      ancora["id"],
+        "ancora_paga":    bool(ancora.get("paga_em")),
+        "remover":        [r["id"] for r in demais],
     }
 
 
@@ -797,20 +826,27 @@ def _executar_reparcelamento(plano: dict, ancora: dict, db: Client) -> None:
         "status":             "pendente",
     }
 
+    base_comp = date.fromisoformat(ancora["competencia"][:10])
+    base_venc = (date.fromisoformat(ancora["data_vencimento"][:10])
+                 if ancora.get("data_vencimento") else None)
     novas = []
     for i in range(1, n):
         p = dict(base)
         p["parcela_atual"] = i + 1
-        p["competencia"]   = _somar_meses(plano["base_comp"], i).isoformat()
-        if plano["base_venc"]:
-            p["data_vencimento"] = _somar_meses_preservando_dia(plano["base_venc"], i).isoformat()
+        # Base = âncora já atualizada: se a mesma edição mudou a competência,
+        # as parcelas seguem a data nova (antes seguiam a antiga).
+        p["competencia"]   = _somar_meses(base_comp, i).isoformat()
+        if base_venc:
+            p["data_vencimento"] = _somar_meses_preservando_dia(base_venc, i).isoformat()
         novas.append(p)
 
     # Um único INSERT: ou todas as parcelas entram, ou nenhuma entra.
     db.table("despesas").insert(novas).execute()
 
 
-async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client) -> DespesaItem:
+async def atualizar_despesa(
+    despesa_id: UUID, payload: DespesaUpdate, db: Client, preservar_aprovadas: bool = False,
+) -> DespesaItem:
     campos: dict = {}
     set_fields = payload.model_fields_set
     if "descricao" in set_fields and payload.descricao:
@@ -859,11 +895,27 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
     # que a âncora é atualizada, para que as parcelas novas herdem as edições
     # feitas nesta mesma requisição (descrição, subitem, centro de custo...).
     plano = None
+    alvo_id = despesa_id
     if "num_parcelas" in set_fields and payload.num_parcelas:
         plano = await _plano_reparcelamento(
-            despesa_id, payload.num_parcelas, payload.valor, db
+            despesa_id, payload.num_parcelas, payload.valor, db,
+            preservar_aprovadas=preservar_aprovadas,
         )
         if plano:
+            alvo_id = UUID(plano["ancora_id"])
+            if alvo_id != despesa_id:
+                # Editou-se uma parcela do meio: o grupo é refeito a partir da
+                # 1ª. Competência/vencimento/pagamento do formulário descrevem
+                # a parcela editada, não a 1ª — aplicá-los à âncora deslocaria
+                # o grupo inteiro para a data da parcela do meio.
+                for k in ("competencia", "data_vencimento", "paga_em"):
+                    campos.pop(k, None)
+                # A regra "editou volta para aprovação, salvo se paga" vale
+                # para a âncora, que é quem de fato é gravada.
+                if plano["ancora_paga"]:
+                    campos.pop("status", None)
+                else:
+                    campos["status"] = "pendente"
             n = plano["novo_n"]
             campos["parcela_atual"]      = 1 if n > 1 else None
             campos["parcela_total"]      = n if n > 1 else None
@@ -874,7 +926,7 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
     resp = (
         db.table("despesas")
         .update(campos)
-        .eq("id", str(despesa_id))
+        .eq("id", str(alvo_id))
         .neq("status", "excluida")
         .execute()
     )
@@ -898,7 +950,7 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
             "tenant_id, grupo_parcelamento, "
             "subitens_lancamento(nome), bancos(nome)"
         )
-        .eq("id", str(despesa_id))
+        .eq("id", str(alvo_id))
         .single()
         .execute()
     )

@@ -185,7 +185,10 @@ async def editar_despesa(
     _exigir_leitura(usuario)
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    item = await financeiro_service.atualizar_despesa(despesa_id, payload, db)
+    # Quem não aprova não refaz, reparcelando, uma série com parcela aprovada.
+    item = await financeiro_service.atualizar_despesa(
+        despesa_id, payload, db, preservar_aprovadas=not pode_excluir_qualquer(usuario),
+    )
     await registrar_auditoria(
         usuario, "editar_despesa",
         {"despesa_id": str(despesa_id)},
