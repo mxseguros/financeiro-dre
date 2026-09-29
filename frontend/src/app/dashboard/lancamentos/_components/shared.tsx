@@ -10,6 +10,7 @@ export interface Despesa {
   data_vencimento: string | null; paga_em: string | null; status: string
   recorrente: boolean; parcela_atual: number | null; parcela_total: number | null
   criado_em: string | null; atualizado_em?: string | null
+  criado_por?: string | null
 }
 export interface DespesasResp { total: number; items: Despesa[]; soma_total: number; total_pendentes: number }
 
@@ -110,4 +111,18 @@ export function periodoParaDatas(mIni: string, mFim: string): [string, string] {
   const [yf, mof] = mFim.split('-')
   const last = new Date(Number(yf), Number(mof), 0).getDate()
   return [`${yi}-${moi}-01`, `${yf}-${mof}-${String(last).padStart(2, '0')}`]
+}
+
+/**
+ * Espelha app/regras_lancamento.py: admin/gestor excluem qualquer lançamento;
+ * os demais só o que criaram, e só enquanto não aprovado. Serve para esconder
+ * o botão que o backend recusaria — a regra de verdade é a do servidor.
+ */
+export function podeExcluirLancamento(
+  item: { status?: string | null; criado_por?: string | null },
+  role: string | null,
+  userId: string | null,
+): boolean {
+  if (role === 'admin' || role === 'gestor') return true
+  return item.status !== 'aprovada' && !!userId && item.criado_por === userId
 }

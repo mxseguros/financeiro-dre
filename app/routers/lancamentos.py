@@ -16,6 +16,7 @@ from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_admin, get_supabase_usuario
 from app.middleware.periodo import validar_periodo
 from app.middleware.rate_limit import limiter
+from app.regras_lancamento import garantir_exclusao_propria, pode_excluir_qualquer
 from app.models.schemas import (
     DespesaAprovacaoRejeicao, DespesaCreate, DespesaItem, DespesasResponse, DespesaUpdate,
     ReceitaItem, ReceitaOutraCreate, ReceitaOutraUpdate, ReceitasResponse,
@@ -205,9 +206,18 @@ async def deletar_despesa(
     excluir_futuras: bool = Query(False, description="Excluir também parcelas futuras do mesmo grupo"),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
-    _exigir_admin_ou_gestor(usuario)
+    _exigir_despesas_leitura(usuario)
     db_admin = get_supabase_admin()
-    await financeiro_service.deletar_despesa(despesa_id, db_admin, excluir_futuras=excluir_futuras)
+    # Admin/gestor excluem qualquer despesa. Os demais, só a própria e só
+    # enquanto não aprovada — depois de aprovada ela já compõe o DRE, e
+    # removê-la é decisão de quem aprova. A checagem é explícita aqui porque
+    # a exclusão roda com service_role, que ignora a RLS.
+    restrito = not pode_excluir_qualquer(usuario)
+    if restrito:
+        garantir_exclusao_propria("despesas", despesa_id, usuario, db_admin)
+    await financeiro_service.deletar_despesa(
+        despesa_id, db_admin, excluir_futuras=excluir_futuras, preservar_aprovadas=restrito,
+    )
     await registrar_auditoria(
         usuario, "deletar_despesa",
         {"despesa_id": str(despesa_id), "excluir_futuras": excluir_futuras},

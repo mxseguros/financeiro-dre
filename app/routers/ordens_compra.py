@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
+from app.regras_lancamento import garantir_exclusao_propria, pode_excluir_qualquer
 from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_admin, get_supabase_usuario
 from app.middleware.periodo import validar_periodo
@@ -174,9 +175,12 @@ async def deletar_ordem(
     ordem_id: UUID,
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
-    if usuario.role not in ("admin", "gestor"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Apenas Admin e Gestor podem remover ordens de compra.")
+    _exigir_leitura(usuario)
     db_admin = get_supabase_admin()
+    # Admin/gestor excluem qualquer ordem; os demais, a própria antes da
+    # aprovação (ver app/regras_lancamento.py).
+    if not pode_excluir_qualquer(usuario):
+        garantir_exclusao_propria("ordens_compra", ordem_id, usuario, db_admin)
     await ordens_compra_service.deletar_ordem_compra(ordem_id, db_admin)
     await registrar_auditoria(
         usuario, "deletar_ordem_compra", {"ordem_id": str(ordem_id)},

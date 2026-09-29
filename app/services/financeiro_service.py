@@ -933,7 +933,24 @@ async def atualizar_despesa(despesa_id: UUID, payload: DespesaUpdate, db: Client
     )
 
 
-async def deletar_despesa(despesa_id: UUID, db: Client, excluir_futuras: bool = False) -> None:
+async def deletar_despesa(
+    despesa_id: UUID,
+    db: Client,
+    excluir_futuras: bool = False,
+    preservar_aprovadas: bool = False,
+) -> None:
+    """Soft-delete (status='excluida'), opcionalmente com as irmãs futuras.
+
+    `preservar_aprovadas` existe para quem NÃO é admin/gestor: essa pessoa
+    pode excluir o próprio lançamento enquanto ele não foi aprovado, mas
+    "esta e as futuras" não pode levar junto uma parcela que já passou pela
+    aprovação — aprovada, só admin/gestor remove (ver deletar_despesa no
+    router).
+    """
+    def _irmas(q):
+        q = q.neq("status", "excluida")
+        return q.neq("status", "aprovada") if preservar_aprovadas else q
+
     # Busca a despesa antes de excluir para identificar parcelas/ocorrências irmãs
     if excluir_futuras:
         resp = db.table("despesas").select(
@@ -949,8 +966,12 @@ async def deletar_despesa(despesa_id: UUID, db: Client, excluir_futuras: bool = 
             # irmãs. A heurística abaixo fica só para grupos anteriores ao
             # backfill e para recorrências, que não têm marcador.
             if row.get("grupo_parcelamento"):
-                db.table("despesas").update({"status": "excluida"})                     .eq("grupo_parcelamento", row["grupo_parcelamento"])                     .neq("status", "excluida")                     .gt("competencia", row["competencia"])                     .execute()
-                db.table("despesas").update({"status": "excluida"})                     .eq("id", str(despesa_id)).execute()
+                _irmas(
+                    db.table("despesas").update({"status": "excluida"})
+                    .eq("grupo_parcelamento", row["grupo_parcelamento"])
+                    .gt("competencia", row["competencia"])
+                ).execute()
+                db.table("despesas").update({"status": "excluida"}).eq("id", str(despesa_id)).execute()
                 return
 
             eh_parcelamento = bool(row.get("parcela_total") and row["parcela_total"] > 1)
@@ -960,10 +981,11 @@ async def deletar_despesa(despesa_id: UUID, db: Client, excluir_futuras: bool = 
 
             if eh_parcelamento or eh_recorrencia:
                 # Exclui todas as parcelas/ocorrências futuras do mesmo grupo
-                q = db.table("despesas").update({"status": "excluida"}) \
-                    .eq("descricao", row["descricao"]) \
-                    .neq("status", "excluida") \
+                q = _irmas(
+                    db.table("despesas").update({"status": "excluida"})
+                    .eq("descricao", row["descricao"])
                     .gt("competencia", row["competencia"])
+                )
                 if eh_parcelamento:
                     q = q.eq("parcela_total", row["parcela_total"])
                 else:

@@ -53,7 +53,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // sobreviver a um re-render do usuário e a um erro capturado de página.
   return (
     <ToastProvider>
-      <UserContext.Provider value={{ role, nome, email, permissions }}>
+      <UserContext.Provider value={{ userId: session.user.id, role, nome, email, permissions }}>
         <div className="flex h-screen overflow-hidden bg-canvas">
           <Sidebar
             role={role}

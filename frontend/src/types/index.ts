@@ -121,6 +121,7 @@ export interface Despesa {
   descricao: string
   valor: number
   competencia: string
+  data_vencimento: string | null
   paga_em: string | null
   centro_custo: string
   recorrente: boolean

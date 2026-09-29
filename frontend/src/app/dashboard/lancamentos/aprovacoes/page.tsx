@@ -7,10 +7,24 @@ import { fmtBRL, fmtData, mesAtual } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
 import { Button, Spinner } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Field'
+import { useUser } from '@/contexts/UserContext'
+import { ModalDespesa } from '../_components/ModalDespesa'
+import { ModalReceita } from '../_components/ModalReceita'
+import { ModalOrdemCompra } from '../_components/ModalOrdemCompra'
+import { DialogExcluirGrupo } from '../_components/DialogExcluirGrupo'
 import type { Despesa, DespesasResponse } from '@/types'
-import type { OrdemCompra, OrdensCompraResp, Receita, ReceitasResp } from '../_components/shared'
+import {
+  IconLapis, IconLixo, podeExcluirLancamento,
+  type Banco, type Categoria, type CentroCusto, type TipoLancamento,
+  type OrdemCompra, type OrdensCompraResp, type Receita, type ReceitasResp,
+} from '../_components/shared'
 
 type TipoCard = 'despesa' | 'ordem' | 'receita'
+// Lista unificada dos tres tipos, com discriminador — por status no Kanban.
+type ItemKanban =
+  | { tipo: 'despesa'; dado: Despesa }
+  | { tipo: 'ordem';   dado: OrdemCompra }
+  | { tipo: 'receita'; dado: Receita }
 interface DragRef { id: string; tipo: TipoCard }
 
 function mesAtualStr() {
@@ -22,6 +36,32 @@ function fmtCompetencia(d: string) {
   return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
 }
 
+/* Editar/Excluir no rodape do card. A pagina decide quem recebe cada acao
+   (a regra muda por tipo — ver renderItem); o card so desenha o que vier. */
+function AcoesEdicao({ ocupado, onEditar, onExcluir }: {
+  ocupado: boolean
+  onEditar?: () => void
+  onExcluir?: () => void
+}) {
+  if (!onEditar && !onExcluir) return null
+  return (
+    <div className="mt-2 flex justify-end gap-3 text-xs">
+      {onEditar && (
+        <button type="button" onClick={onEditar} disabled={ocupado}
+          className="focus-ring inline-flex items-center gap-1 rounded text-gray-400 transition-colors hover:text-blue-600 disabled:opacity-50">
+          <IconLapis /> Editar
+        </button>
+      )}
+      {onExcluir && (
+        <button type="button" onClick={onExcluir} disabled={ocupado}
+          className="focus-ring inline-flex items-center gap-1 rounded text-gray-400 transition-colors hover:text-red-500 disabled:opacity-50">
+          <IconLixo /> Excluir
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Card de despesa no Kanban ──────────────────────────────────
 interface CardProps {
   despesa: Despesa
@@ -29,9 +69,11 @@ interface CardProps {
   onAprovar?: (id: string) => void
   onIniciarRejeicao?: (id: string) => void
   onDragStart?: (id: string) => void
+  onEditar?: () => void
+  onExcluir?: () => void
 }
 
-function DespesaCard({ despesa, processandoId, onAprovar, onIniciarRejeicao, onDragStart }: CardProps) {
+function DespesaCard({ despesa, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: CardProps) {
   const ocupado = processandoId === despesa.id
   const arrastavel = !ocupado
 
@@ -96,6 +138,7 @@ function DespesaCard({ despesa, processandoId, onAprovar, onIniciarRejeicao, onD
           </button>
         </div>
       )}
+      <AcoesEdicao ocupado={ocupado} onEditar={onEditar} onExcluir={onExcluir} />
     </div>
   )
 }
@@ -107,9 +150,11 @@ interface OrdemCardProps {
   onAprovar?: (id: string) => void
   onIniciarRejeicao?: (id: string) => void
   onDragStart?: (id: string) => void
+  onEditar?: () => void
+  onExcluir?: () => void
 }
 
-function OrdemCard({ ordem, processandoId, onAprovar, onIniciarRejeicao, onDragStart }: OrdemCardProps) {
+function OrdemCard({ ordem, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: OrdemCardProps) {
   const ocupado = processandoId === ordem.id
   const arrastavel = !ocupado
 
@@ -162,6 +207,7 @@ function OrdemCard({ ordem, processandoId, onAprovar, onIniciarRejeicao, onDragS
           </button>
         </div>
       )}
+      <AcoesEdicao ocupado={ocupado} onEditar={onEditar} onExcluir={onExcluir} />
     </div>
   )
 }
@@ -183,12 +229,14 @@ interface ReceitaCardProps {
   onAprovar?: (id: string) => void
   onIniciarRejeicao?: (id: string) => void
   onDragStart?: (id: string) => void
+  onEditar?: () => void
+  onExcluir?: () => void
 }
 
 /* Espelha o DespesaCard. A borda verde e o sinal "+" distinguem receita de
    despesa numa coluna que mistura os tres tipos — sem isso o unico indicio
    seria o rotulo, facil de perder no meio do Kanban. */
-function ReceitaCard({ receita, processandoId, onAprovar, onIniciarRejeicao, onDragStart }: ReceitaCardProps) {
+function ReceitaCard({ receita, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: ReceitaCardProps) {
   const ocupado = processandoId === receita.id
   const arrastavel = !ocupado
 
@@ -239,6 +287,7 @@ function ReceitaCard({ receita, processandoId, onAprovar, onIniciarRejeicao, onD
           </button>
         </div>
       )}
+      <AcoesEdicao ocupado={ocupado} onEditar={onEditar} onExcluir={onExcluir} />
     </div>
   )
 }
@@ -328,6 +377,16 @@ function ModalRejeicao({
 // ── Página principal ───────────────────────────────────────────
 export default function AprovacoesPage() {
   const { token } = useAuth()
+  const { role, userId } = useUser()
+  const podeAprovar = role === 'admin' || role === 'gestor'
+  // Taxonomia que os modais de edicao precisam — mesma carga da listagem.
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [tipos, setTipos] = useState<TipoLancamento[]>([])
+  const [bancos, setBancos] = useState<Banco[]>([])
+  const [centros, setCentros] = useState<CentroCusto[]>([])
+  const [editando, setEditando] = useState<ItemKanban | null>(null)
+  const [excluindo, setExcluindo] = useState<ItemKanban | null>(null)
+  const [excluindoBusy, setExcluindoBusy] = useState(false)
   const [despesas, setDespesas] = useState<Despesa[]>([])
   const [ordens, setOrdens] = useState<OrdemCompra[]>([])
   const [receitas, setReceitas] = useState<Receita[]>([])
@@ -365,6 +424,17 @@ export default function AprovacoesPage() {
   useEffect(() => { buscar() }, [buscar])
 
   useEffect(() => {
+    if (!token) return
+    Promise.all([
+      api.get<Categoria[]>('/configuracoes/categorias', token),
+      api.get<TipoLancamento[]>('/configuracoes/tipos', token),
+      api.get<Banco[]>('/configuracoes/bancos', token),
+      api.get<CentroCusto[]>('/configuracoes/centros-custo', token),
+    ]).then(([c, t, b, cc]) => { setCategorias(c); setTipos(t); setBancos(b); setCentros(cc) })
+      .catch(() => { /* sem config o modal abre com listas vazias; a fila segue funcionando */ })
+  }, [token])
+
+  useEffect(() => {
     const el = kanbanRef.current
     if (!el) return
     const handler = () => {
@@ -389,6 +459,8 @@ export default function AprovacoesPage() {
   function aplicarStatus(id: string, tipo: TipoCard, novo: 'aprovada' | 'rejeitada', motivo?: string) {
     if (tipo === 'despesa') {
       setDespesas(prev => prev.map(d => d.id === id ? { ...d, status: novo, ...(motivo ? { rejeitado_motivo: motivo } : {}) } : d))
+    } else if (tipo === 'receita') {
+      setReceitas(prev => prev.map(r => r.id === id ? { ...r, status: novo, ...(motivo ? { rejeitado_motivo: motivo } : {}) } : r))
     } else {
       setOrdens(prev => prev.map(o => o.id === id ? { ...o, status: novo, ...(motivo ? { rejeitado_motivo: motivo } : {}) } : o))
     }
@@ -424,6 +496,27 @@ export default function AprovacoesPage() {
     }
   }
 
+  async function confirmarExclusao(futuras: boolean) {
+    if (!token || !excluindo) return
+    setExcluindoBusy(true)
+    setErroGlobal(null)
+    try {
+      const params = futuras ? { excluir_futuras: 'true' } : undefined
+      await api.delete(`${endpointBase(excluindo.tipo)}/${excluindo.dado.id}`, token, params)
+      setExcluindo(null)
+      buscar()
+    } catch (e) {
+      setErroGlobal(e instanceof Error ? e.message : 'Erro ao excluir.')
+      setExcluindo(null)
+    } finally {
+      setExcluindoBusy(false)
+    }
+  }
+
+  // Serie (parcelamento/recorrencia) oferece "esta e as futuras", como na listagem.
+  const ehSerie = (i: ItemKanban) =>
+    i.tipo === 'despesa' && (((i.dado.parcela_total ?? 0) > 1) || !!i.dado.recorrente)
+
   // Drag & Drop: soltar em coluna de destino
   function handleDropAprovar() {
     if (dragId.current) { handleAprovar(dragId.current.id, dragId.current.tipo); dragId.current = null }
@@ -432,11 +525,6 @@ export default function AprovacoesPage() {
     if (dragId.current) { setRejeitando(dragId.current); dragId.current = null }
   }
 
-  // Lista unificada (despesa + ordem) por status, com discriminador de tipo
-  type ItemKanban =
-    | { tipo: 'despesa'; dado: Despesa }
-    | { tipo: 'ordem';   dado: OrdemCompra }
-    | { tipo: 'receita'; dado: Receita }
   // Ordem: ultima movimentacao primeiro. Os cards vem de dois endpoints, entao
   // a ordenacao do servidor nao basta — depois do merge a lista voltaria a ficar
   // agrupada por origem. `atualizado_em` cobre criacao e edicao; o fallback para
@@ -456,13 +544,23 @@ export default function AprovacoesPage() {
 
   const somaAprovadas = aprovadas.reduce((s, i) => s + Number(i.dado.valor ?? 0), 0)
 
-  function renderItem(i: ItemKanban, comAcoes: boolean) {
+  function renderItem(i: ItemKanban, colunaPendente: boolean) {
+    // Antes o botao Aprovar aparecia para todos e o backend recusava com 403.
+    const comAcoes = colunaPendente && podeAprovar
+    // Regras reais do backend, por tipo:
+    //  - despesa/ordem: excluir = admin/gestor, ou o autor antes da aprovacao
+    //  - receita: excluir e aberto a quem le (regra do router, inalterada)
+    //  - ordem: editar = admin/gestor ou o autor (policy ordens_compra_update)
+    const editar = () => setEditando(i)
+    const excluir = () => setExcluindo(i)
     if (i.tipo === 'despesa') {
       return (
         <DespesaCard key={`d-${i.dado.id}`} despesa={i.dado} processandoId={processandoId}
           onAprovar={comAcoes ? (id) => handleAprovar(id, 'despesa') : undefined}
           onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'despesa' }) : undefined}
           onDragStart={(id) => { dragId.current = { id, tipo: 'despesa' } }}
+          onEditar={editar}
+          onExcluir={podeExcluirLancamento(i.dado, role, userId) ? excluir : undefined}
         />
       )
     }
@@ -472,6 +570,8 @@ export default function AprovacoesPage() {
           onAprovar={comAcoes ? (id) => handleAprovar(id, 'receita') : undefined}
           onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'receita' }) : undefined}
           onDragStart={(id) => { dragId.current = { id, tipo: 'receita' } }}
+          onEditar={editar}
+          onExcluir={excluir}
         />
       )
     }
@@ -480,12 +580,56 @@ export default function AprovacoesPage() {
         onAprovar={comAcoes ? (id) => handleAprovar(id, 'ordem') : undefined}
         onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'ordem' }) : undefined}
         onDragStart={(id) => { dragId.current = { id, tipo: 'ordem' } }}
+        onEditar={podeAprovar || i.dado.criado_por === userId ? editar : undefined}
+        onExcluir={podeExcluirLancamento(i.dado, role, userId) ? excluir : undefined}
       />
     )
   }
 
   return (
     <>
+      {editando?.tipo === 'despesa' && token && (
+        <ModalDespesa token={token} categorias={categorias} tipos={tipos} bancos={bancos} centros={centros}
+          despesa={editando.dado} onClose={() => setEditando(null)} onSaved={buscar} />
+      )}
+      {editando?.tipo === 'receita' && token && (
+        <ModalReceita token={token} categorias={categorias} tipos={tipos} bancos={bancos} centros={centros}
+          receita={editando.dado} receitasCarregadas={receitas} onClose={() => setEditando(null)} onSaved={buscar} />
+      )}
+      {editando?.tipo === 'ordem' && token && (
+        <ModalOrdemCompra token={token} ordem={editando.dado} onClose={() => setEditando(null)} onSaved={buscar} />
+      )}
+
+      <DialogExcluirGrupo
+        open={!!excluindo && ehSerie(excluindo)}
+        titulo="Excluir lançamento"
+        mensagem={<>Este lançamento faz parte de uma série. Deseja excluir também os dos meses seguintes?</>}
+        labelSomenteEsta="Só este"
+        excluindo={excluindoBusy}
+        onCancelar={() => setExcluindo(null)}
+        onExcluir={confirmarExclusao}
+      />
+      <Modal
+        open={!!excluindo && !ehSerie(excluindo)}
+        onClose={() => setExcluindo(null)}
+        title="Excluir lançamento"
+        maxWidth="sm:max-w-sm"
+        dismissable={!excluindoBusy}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setExcluindo(null)} disabled={excluindoBusy}>Cancelar</Button>
+            <Button variant="danger" onClick={() => confirmarExclusao(false)} loading={excluindoBusy}>
+              {excluindoBusy ? 'Excluindo…' : 'Excluir'}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          Excluir <strong>{excluindo?.tipo === 'ordem' ? excluindo.dado.assunto : excluindo?.dado.descricao}</strong>?
+          O lançamento sai da fila e dos totais.
+        </p>
+      </Modal>
+
       {rejeitando && (
         <ModalRejeicao
           onConfirmar={handleRejeitar}

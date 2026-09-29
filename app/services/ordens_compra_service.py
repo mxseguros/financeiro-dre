@@ -114,6 +114,10 @@ async def atualizar_ordem_compra(
     if "valor" in set_fields:
         campos["valor"] = str(payload.valor) if payload.valor is not None else None
     campos["atualizado_em"] = datetime.now(timezone.utc).isoformat()
+    # Editou, volta para aprovação — mesma regra de despesas e receitas. Sem
+    # isto, uma ordem aprovada podia ter valor e assunto trocados depois da
+    # aprovação e continuar constando como aprovada.
+    campos["status"] = "pendente"
 
     resp = (
         db.table("ordens_compra")

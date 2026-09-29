@@ -17,8 +17,7 @@ import { DialogExcluirGrupo } from './_components/DialogExcluirGrupo'
 import {
   Badge, StatusBadge, IconLapis, IconLixo, fmtCompetencia, tipoCor, periodoParaDatas,
   type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp,
-  type Receita, type ReceitasResp, type OrdemCompra, type OrdensCompraResp,
-} from './_components/shared'
+  type Receita, type ReceitasResp, type OrdemCompra, type OrdensCompraResp, podeExcluirLancamento } from './_components/shared'
 
 interface DialogGrupo { id: string; grupo: 'parcelamento' | 'recorrencia'; total?: number }
 
@@ -28,7 +27,7 @@ type OrdemCampo = 'registro' | 'competencia' | 'vencimento' | 'pagamento' | 'val
 // ── Página principal ───────────────────────────────────────────
 export default function LancamentosPage() {
   const { token } = useAuth()
-  const { role } = useUser()
+  const { role, userId } = useUser()
   const podeAprovar = role === 'admin' || role === 'gestor'
   const [mesInicio, setMesInicio] = useState(mesAtual()[0].slice(0, 7))
   const [mesFim, setMesFim] = useState(mesAtual()[0].slice(0, 7))
@@ -639,7 +638,9 @@ export default function LancamentosPage() {
                       ) : (
                         <span className="inline-flex items-center gap-2">
                           <button onClick={() => setEditandoDespesa(d)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar despesa ${d.descricao}`}><IconLapis /></button>
-                          <button onClick={() => abrirDialogExclusao(d)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir despesa ${d.descricao}`}><IconLixo /></button>
+                          {podeExcluirLancamento(d, role, userId) && (
+                            <button onClick={() => abrirDialogExclusao(d)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir despesa ${d.descricao}`}><IconLixo /></button>
+                          )}
                         </span>
                       )}
                     </div>
@@ -707,7 +708,9 @@ export default function LancamentosPage() {
                           ) : (
                             <span className="inline-flex items-center gap-2">
                               <button onClick={() => setEditandoDespesa(d)} className="text-gray-300 hover:text-blue-500 transition-colors" title="Editar"><IconLapis /></button>
-                              <button onClick={() => abrirDialogExclusao(d)} className="text-gray-300 hover:text-red-400 transition-colors" title="Excluir"><IconLixo /></button>
+                              {podeExcluirLancamento(d, role, userId) && (
+                            <button onClick={() => abrirDialogExclusao(d)} className="text-gray-300 hover:text-red-400 transition-colors" title="Excluir"><IconLixo /></button>
+                          )}
                             </span>
                           )}
                         </td>
@@ -867,7 +870,7 @@ export default function LancamentosPage() {
                       ) : (
                         <span className="inline-flex items-center gap-2">
                           <button onClick={() => setEditandoOrdem(o)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar ordem de compra ${o.assunto}`}><IconLapis /></button>
-                          {podeAprovar && (
+                          {podeExcluirLancamento(o, role, userId) && (
                             <button onClick={() => setConfirmandoId(o.id)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir ordem de compra ${o.assunto}`}><IconLixo /></button>
                           )}
                         </span>
@@ -918,7 +921,7 @@ export default function LancamentosPage() {
                           ) : (
                             <span className="inline-flex items-center gap-2">
                               <button onClick={() => setEditandoOrdem(o)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar ordem de compra ${o.assunto}`}><IconLapis /></button>
-                              {podeAprovar && (
+                              {podeExcluirLancamento(o, role, userId) && (
                                 <button onClick={() => setConfirmandoId(o.id)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir ordem de compra ${o.assunto}`}><IconLixo /></button>
                               )}
                             </span>
