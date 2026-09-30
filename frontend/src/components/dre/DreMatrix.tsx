@@ -82,8 +82,8 @@ export function DreMatrix({ linhas, mesRef, abertos, alternar, ocultarZeradas }:
                   <Serie l={l} mesRef={mesRef} rotulo={l.nome} />
                 </tr>
                 {aberto && contas.map(c => (
-                  <tr key={c.codigo} className="text-gray-600">
-                    <td className={cn(fixa, 'border-b border-gray-50 bg-white py-1.5 pl-8 pr-3')} title={c.nome}>{c.nome}</td>
+                  <tr key={c.codigo} className="text-gray-600 [&>td]:border-b [&>td]:border-gray-100">
+                    <td className={cn(fixa, 'bg-white py-1.5 pl-8 pr-3')} title={c.nome}>{c.nome}</td>
                     <Serie l={c} mesRef={mesRef} rotulo={c.nome} />
                   </tr>
                 ))}

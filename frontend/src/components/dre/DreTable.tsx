@@ -73,8 +73,8 @@ export function DreTable({ linhas, abertos, alternar, ocultarZeradas }: {
                   <Celulas l={l} />
                 </tr>
                 {aberto && contas.map(c => (
-                  <tr key={c.codigo} className="text-gray-600">
-                    <td className="border-b border-gray-50 py-1.5 pl-9 pr-3">
+                  <tr key={c.codigo} className="text-gray-600 [&>td]:border-b [&>td]:border-gray-100">
+                    <td className="py-1.5 pl-9 pr-3">
                       {c.nome}{!c.ativo && <span className="ml-1.5 text-[10px] text-gray-400">(inativa)</span>}
                     </td>
                     <Celulas l={c} />

@@ -48,7 +48,9 @@ export default function MetasPage() {
 
   const carregar = useCallback(() => {
     if (!token) return
-    setErro(null); setAviso(null); setDados(null)
+    // Não limpa o `aviso` aqui: salvar recarrega a grade logo em seguida, e
+    // apagar o aviso nesse momento sumia com a confirmação "N meta(s) salva(s)".
+    setErro(null); setDados(null)
     api.get<OrcamentoResp>(`/dre/orcamento?ano=${ano}`, token)
       .then(d => {
         const orig: Record<string, number> = {}
@@ -155,7 +157,7 @@ export default function MetasPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select aria-label="Ano" value={ano} onChange={e => setAno(Number(e.target.value))}
+          <select aria-label="Ano" value={ano} onChange={e => { setAviso(null); setAno(Number(e.target.value)) }}
             className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm focus-ring focus:outline-none">
             {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
@@ -260,7 +262,9 @@ function GrupoLinhas({ g, celulas, original, podeEditar, definir, colar, totalGr
                   className={cn('w-[84px] rounded border px-1.5 py-1 text-right tabular-nums focus:border-navy focus:outline-none',
                     n === null ? 'border-red-300 bg-red-50 text-red-700'
                       : mudou ? 'border-amber-300 bg-amber-50'
-                        : 'border-transparent hover:border-gray-200',
+                        // Borda leve sempre visível: sem ela a grade vazia parecia
+                        // uma tabela de leitura, sem indicar que dá para digitar.
+                        : podeEditar ? 'border-gray-200 hover:border-gray-300' : 'border-transparent',
                     !podeEditar && 'cursor-default bg-transparent')} />
               </td>
             )
