@@ -10,7 +10,8 @@ from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_usuario
 from app.middleware.rate_limit import limiter
 from app.models.schemas import DREResponse, ReceitaRamoResponse, ReceitaTipoResponse
-from app.services import dre_service
+from app.services import dre_gerencial_service, dre_service
+from app.services.dre_gerencial_service import SalvarOrcamentoRequest
 
 router = APIRouter(prefix="/dre", tags=["DRE"])
 
@@ -151,3 +152,74 @@ async def get_evolucao_mensal(
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
     return await dre_service.buscar_evolucao_mensal(inicio, fim, db)
+
+
+# ── DRE Previsto x Realizado (PLANEJAMENTO_DRE.md) ─────────────
+# As rotas acima (/dre, /dre/tipos, /dre/evolucao) seguem servindo o que já
+# existia; a página nova usa só estas.
+
+_ROLES_DRE = ("admin", "gestor", "contador")
+_ROLES_METAS = ("admin", "gestor")
+
+
+def _exigir_dre(usuario: UsuarioAtual) -> None:
+    if usuario.role not in _ROLES_DRE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="DRE disponível apenas para Admin, Gestor e Contador.",
+        )
+
+
+@router.get("/previsto-realizado", summary="DRE Previsto x Realizado (mês, acumulado ou 12 meses)")
+@limiter.limit("60/minute")
+async def get_previsto_realizado(
+    request: Request,
+    ano: int = Query(..., ge=2000, le=2100),
+    mes: int = Query(..., ge=1, le=12, description="Mês de referência"),
+    visao: str = Query("mes", pattern="^(mes|acumulado|anual)$"),
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_dre(usuario)
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    resultado = await dre_gerencial_service.buscar_previsto_realizado(ano, mes, visao, get_supabase_usuario(token))
+    from app.database import get_supabase_admin
+    await dre_service.auditar_leitura(
+        usuario, "consulta_dre_previsto_realizado", {"ano": ano, "mes": mes, "visao": visao},
+        request.client.host if request.client else None, get_supabase_admin(),
+    )
+    return resultado
+
+
+@router.get("/orcamento", summary="Previsto (metas) do ano: contas por grupo × 12 meses")
+async def get_orcamento(
+    request: Request,
+    ano: int = Query(..., ge=2000, le=2100),
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_dre(usuario)
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    return await dre_gerencial_service.buscar_orcamento(ano, get_supabase_usuario(token))
+
+
+@router.put("/orcamento", summary="Grava metas em lote (upsert por conta e mês)")
+@limiter.limit("30/minute")
+async def put_orcamento(
+    request: Request,
+    payload: SalvarOrcamentoRequest,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    if usuario.role not in _ROLES_METAS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Somente Admin e Gestor podem alterar as metas.",
+        )
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    resultado = await dre_gerencial_service.salvar_orcamento(payload, usuario, get_supabase_usuario(token))
+    from app.database import get_supabase_admin
+    from app.services.dre_service import registrar_auditoria
+    await registrar_auditoria(
+        usuario, "salvar_metas_dre", {"ano": payload.ano, "celulas": len(payload.itens)},
+        request.client.host if request.client else None, get_supabase_admin(),
+    )
+    return resultado
+
