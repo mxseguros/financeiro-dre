@@ -397,16 +397,6 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
                 if (!editando && (parseInt(v) || 1) > 1 && form.recorrente) set('recorrente', false)
               }}
               className={inputCls} />
-            {editando && form.recorrente && numParcelas > 1 && (
-              <p className="mt-1 text-[11px] text-amber-600">
-                Esta despesa é recorrente: ao salvar, a série deste mês em diante vira {numParcelas} parcelas.
-              </p>
-            )}
-            {naoEhPrimeiraParcela && (
-              <p className="mt-1 text-[11px] text-gray-400">
-                Parcela {despesa?.parcela_atual} de {despesa?.parcela_total} — alterar o número refaz o parcelamento a partir da 1ª parcela.
-              </p>
-            )}
           </Campo>
           <Field label={naoEhPrimeiraParcela ? 'Competência' : 'Competência (1ª parc.)'} required error={erros.competencia}>
             {p => (
@@ -415,6 +405,19 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
             )}
           </Field>
         </div>
+
+        {/* Avisos em largura inteira: dentro da coluna do Nº de Parcelas
+            (1/3 do modal) quebravam em quatro linhas. */}
+        {editando && form.recorrente && numParcelas > 1 && (
+          <p className="-mt-1 text-xs text-amber-600">
+            Esta despesa é recorrente: ao salvar, a série deste mês em diante vira {numParcelas} parcelas.
+          </p>
+        )}
+        {naoEhPrimeiraParcela && (
+          <p className="-mt-1 text-xs text-gray-400">
+            Parcela {despesa?.parcela_atual} de {despesa?.parcela_total} — alterar o número refaz o parcelamento a partir da 1ª parcela.
+          </p>
+        )}
 
         {valorParcela > 0 && (
           <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5 text-xs text-blue-700">
