@@ -43,7 +43,8 @@ function CardKPI({ label, valor, sub, iconBg, icon }: CardKPIProps) {
   )
 }
 
-interface BancoResumoItem { banco_id: string; banco_nome: string; receitas: number; despesas: number; saldo: number }
+// Decimal do backend chega como string no JSON.
+interface BancoResumoItem { banco_id: string; banco_nome: string; receitas: number | string; despesas: number | string; saldo: number | string }
 interface DashboardPorBancoResponse { periodo: { inicio: string; fim: string }; bancos: BancoResumoItem[] }
 interface DespesasPorClassificacaoResponse {
   periodo: { inicio: string; fim: string }
@@ -301,8 +302,10 @@ export default function DashboardPage() {
   const d = data?.dre
   const periodo = data ? nomeMes(data.periodo.inicio) : ''
 
-  const totalReceitaBancos = porBanco?.bancos.reduce((acc, b) => acc + b.receitas, 0) ?? 0
-  const totalDespesaBancos = porBanco?.bancos.reduce((acc, b) => acc + b.despesas, 0) ?? 0
+  // O backend serializa Decimal como string ("23311.18"): sem Number(), o `+`
+  // concatena texto e o Total sai NaN — exibido como "—".
+  const totalReceitaBancos = porBanco?.bancos.reduce((acc, b) => acc + Number(b.receitas), 0) ?? 0
+  const totalDespesaBancos = porBanco?.bancos.reduce((acc, b) => acc + Number(b.despesas), 0) ?? 0
   const totalSaldoBancos   = totalReceitaBancos - totalDespesaBancos
   // Box do Sicredi oculto na Visão Geral a pedido — valores/cálculos do Total continuam somando todos os bancos
   const bancosExibidos = porBanco?.bancos.filter(b => b.banco_nome.toLowerCase() !== 'sicredi') ?? []
@@ -424,7 +427,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="flex justify-between border-t border-gray-100 pt-1">
                         <span className="text-gray-500">Saldo</span>
-                        <span className={`font-semibold tabular-nums ${b.saldo >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtBRL(b.saldo)}</span>
+                        <span className={`font-semibold tabular-nums ${Number(b.saldo) >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtBRL(b.saldo)}</span>
                       </div>
                     </div>
                   </div>
