@@ -74,7 +74,8 @@ def criar(nome: str, natureza: str, ordem: int, usuario: UsuarioAtual, db: Clien
     base = codigo = _slug(nome)
     n = 2
     while codigo in existentes:
-        codigo = f"{base}_{n}"; n += 1
+        codigo = f"{base}_{n}"
+        n += 1
     dados = {"codigo": codigo, "nome": nome, "natureza": natureza, "ordem": ordem, "usada_dre": usada_dre}
     if getattr(usuario, "tenant_id", None):
         dados["tenant_id"] = usuario.tenant_id

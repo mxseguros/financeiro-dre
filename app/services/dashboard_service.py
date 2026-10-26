@@ -374,7 +374,8 @@ async def _quadro_por_banco(
         for c in por_banco:
             for i in getattr(c, chave).itens:
                 t = tot.setdefault(i.subitem, [0, Decimal(0)])
-                t[0] += i.qtd; t[1] += i.valor
+                t[0] += i.qtd
+                t[1] += i.valor
         itens = [EmprestimoSubitem(subitem=n, qtd=q, valor=v) for n, (q, v) in sorted(tot.items())]
         return EmprestimoLado(itens=itens, total=sum((i.valor for i in itens), Decimal(0)))
 
