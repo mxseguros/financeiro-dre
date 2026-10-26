@@ -34,7 +34,7 @@ const MENU: Passo[] = [
   { el: 'menu-lancamentos',   lado: 'right', titulo: 'Lançamentos',      texto: 'Onde se registram despesas, receitas e ordens de compra, e se importa o extrato do banco.' },
   { el: 'menu-aprovacoes',    lado: 'right', titulo: 'Aprovações',       texto: 'Quadro para aprovar ou rejeitar o que foi lançado.' },
   { el: 'menu-exports',       lado: 'right', titulo: 'Exportações',      texto: 'Baixe os relatórios em planilha.' },
-  { el: 'menu-assistente',    lado: 'right', titulo: 'Monitoramento IA', texto: 'Pontos de atenção do mês: duplicatas, pendências antigas e valores fora do padrão.' },
+  { el: 'menu-relatorios',    lado: 'right', titulo: 'Relatórios',       texto: 'Monte o seu relatório como na tabela dinâmica do Excel: escolha o que vai nas linhas, nas colunas e o que somar.' },
   { el: 'menu-ajuda',         lado: 'right', titulo: 'FAQ',              texto: 'Respostas para as dúvidas mais comuns.' },
   { el: 'menu-configuracoes', lado: 'right', titulo: 'Configurações',    texto: 'Cadastros (categorias, subitens, bancos e centros de custo) e usuários.' },
   { el: 'menu-tour',          lado: 'right', titulo: 'Tour guiado',      texto: 'Clique aqui quando quiser rever o passo a passo da tela em que estiver.' },
@@ -70,6 +70,13 @@ const TELAS: Record<string, Passo[]> = {
     { el: 'severidades', titulo: 'Pontos de atenção', texto: 'Quantos alertas há em cada nível: Crítico, Atenção e Info. A lista detalhada fica logo abaixo.' },
     { el: 'conciliacao', titulo: 'Visão Geral × DRE', texto: 'Por que a receita da Visão Geral é diferente da linha Receita da DRE, motivo a motivo, com o que corrigir.', lado: 'top' },
     { el: 'resumo-ia',   titulo: 'Resumo com IA',     texto: 'Gera um resumo priorizado dos alertas do mês.' },
+  ],
+  '/dashboard/relatorios': [
+    PERIODO('O relatório usa os lançamentos deste período.'),
+    { el: 'rel-modelos', titulo: 'Modelos prontos', texto: 'Comece por um modelo (despesas por categoria × mês, fluxo por banco…) e ajuste a partir dele.' },
+    { el: 'rel-campos',  titulo: 'Campos',          texto: 'Arraste um campo para uma das áreas ao lado, ou clique no + do campo. Para tirar, arraste de volta ou clique no ×.', lado: 'right' },
+    { el: 'rel-areas',   titulo: 'Linhas, colunas, valores e filtros', texto: 'Linhas e Colunas agrupam; Valores escolhe o que somar (Soma, Média, % do total…); Filtros abre uma lista com caixas de marcar.' },
+    { el: 'rel-tabela',  titulo: 'Resultado',       texto: 'Recalcula a cada mudança. Clique num número para ver os lançamentos que o formam; ▾ recolhe um grupo.', lado: 'top' },
   ],
 }
 

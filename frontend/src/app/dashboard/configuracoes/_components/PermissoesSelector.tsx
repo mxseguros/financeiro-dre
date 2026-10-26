@@ -18,7 +18,7 @@ const TELAS_CONFIG: Array<{
     { key: 'visualizar', label: 'Ver' },
     { key: 'aprovar',    label: 'Aprovar' },
   ]},
-  { id: 'assistente',    label: 'Assistente IA',  acoes: [{ key: 'visualizar', label: 'Ver' }] },
+  { id: 'assistente',    label: 'Relatórios',     acoes: [{ key: 'visualizar', label: 'Ver' }] },
   { id: 'configuracoes', label: 'Configurações',  acoes: [
     { key: 'visualizar', label: 'Ver' },
     { key: 'criar',      label: 'Criar' },

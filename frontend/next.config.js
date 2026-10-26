@@ -7,6 +7,10 @@ const nextConfig = {
   // Headers de segurança — a Vercel só adiciona HSTS sozinha; o resto é nosso.
   // Auditoria de 28/08/2026: sem X-Frame-Options a tela de login podia ser
   // embutida em iframe de terceiro (clickjacking sobre um sistema financeiro).
+  // Relatórios substituiu o Monitoramento IA (26/10/2026); o endereço antigo segue valendo.
+  async redirects() {
+    return [{ source: '/dashboard/assistente', destination: '/dashboard/relatorios', permanent: false }]
+  },
   async headers() {
     return [
       {
