@@ -1,11 +1,93 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { mesAtual } from '@/lib/utils'
 import { InputMoeda } from '@/components/ui/InputMoeda'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Select } from '@/components/ui/Field'
-import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type SugestaoIA } from './shared'
+import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type SugestaoIA, type Classificacao, classificacoesDe } from './shared'
+
+// Limites espelhados de DespesaCreate/DespesaUpdate (app/models/schemas.py).
+// Sem eles o backend devolvia 422 e a tela mostrava só "HTTP 422".
+// Parcelas: sem limite de negócio (pedido de 07/10/2026). 999 é só teto técnico —
+// cada parcela vira um lançamento mensal, e um erro de digitação como "12000"
+// gravaria milhares de linhas de uma vez. A lista oferece atalhos de 1 a 120.
+const MAX_PARCELAS = 999
+const OPCOES_PARCELAS = Array.from({ length: 120 }, (_, i) => i + 1)
+const DESCRICAO_MIN = 3
+const DESCRICAO_MAX = 500
+const SUBCATEGORIA_MAX = 100
+
+/** Último mês aceito como competência: até 2 meses à frente do atual (AAAA-MM). */
+function competenciaMaxima(): string {
+  const d = new Date()
+  d.setDate(1)
+  d.setMonth(d.getMonth() + 2)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+interface SeletorParcelasProps {
+  id: string
+  value: string
+  onChange: (v: string) => void
+  'aria-invalid': boolean | undefined
+  'aria-describedby': string | undefined
+}
+
+/** Nº de parcelas: escolhe na lista (atalhos de 1 a 120) ou digita qualquer número. */
+function SeletorParcelas({ id, value, onChange, ...aria }: SeletorParcelasProps) {
+  const [aberto, setAberto] = useState(false)
+  const listaRef = useRef<HTMLUListElement>(null)
+  const atual = parseInt(value) || 0
+  const listaId = `${id}-opcoes`
+
+  useEffect(() => {
+    if (!aberto) return
+    listaRef.current?.querySelector<HTMLElement>(`[data-n="${atual}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [aberto, atual])
+
+  const escolher = (n: number) => { onChange(String(n)); setAberto(false) }
+
+  return (
+    <div className="relative">
+      <Input {...aria} id={id} size="sm" type="text" inputMode="numeric" autoComplete="off"
+        role="combobox" aria-expanded={aberto} aria-controls={listaId}
+        value={value} placeholder="Ex.: 12" className="pr-8"
+        onChange={e => { onChange(e.target.value.replace(/\D/g, '').slice(0, 4)); setAberto(true) }}
+        onFocus={() => setAberto(true)}
+        onBlur={() => { setAberto(false); if (!value) onChange('1') }}
+        onKeyDown={e => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault()
+            const n = Math.min(MAX_PARCELAS, Math.max(1, (atual || 1) + (e.key === 'ArrowDown' ? 1 : -1)))
+            onChange(String(n)); setAberto(true)
+          } else if (e.key === 'Enter' && aberto) {
+            e.preventDefault(); setAberto(false)
+          }
+        }} />
+      <button type="button" tabIndex={-1} aria-label="Abrir lista de parcelas"
+        onMouseDown={e => { e.preventDefault(); setAberto(a => !a) }}
+        className="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-gray-400 hover:text-gray-600">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {aberto && (
+        <ul ref={listaRef} id={listaId} role="listbox"
+          className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg">
+          {OPCOES_PARCELAS.map(n => (
+            <li key={n} data-n={n} role="option" aria-selected={n === atual}
+              // mousedown (e não click) para escolher antes do blur do campo fechar a lista
+              onMouseDown={e => { e.preventDefault(); escolher(n) }}
+              className={`cursor-pointer px-2.5 py-1 ${n === atual ? 'bg-navy text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+              {n === 1 ? '1x (sem parcelar)' : `${n}x`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 interface ModalDespesaProps {
   token: string
@@ -17,10 +99,10 @@ interface ModalDespesaProps {
   mesDefault?: string
   onClose: () => void
   onSaved: () => void
-  onTipoAtualizado?: (tipoId: string, custoTipo: string) => void
+  classificacoes?: Classificacao[]
 }
 
-export function ModalDespesa({ token, categorias, tipos, bancos, centros, despesa, mesDefault, onClose, onSaved, onTipoAtualizado }: ModalDespesaProps) {
+export function ModalDespesa({ token, categorias, tipos, bancos, centros, despesa, mesDefault, onClose, onSaved, classificacoes }: ModalDespesaProps) {
   const editando = !!despesa
   const tipoInicial = despesa ? tipos.find(t => t.id === despesa.tipo_lancamento_id) : undefined
   const [form, setForm] = useState({
@@ -39,9 +121,9 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     valor_parcela:      despesa ? Number(despesa.valor).toFixed(2) : '',
     num_parcelas:       String(despesa?.parcela_total ?? 1),
   })
-  const [classificacao, setClassificacao] = useState(tipoInicial?.custo_tipo ?? '')
-  const [salvandoClassificacao, setSalvandoClassificacao] = useState(false)
-  const [erroClassificacao, setErroClassificacao] = useState<string | null>(null)
+  // Classificação é do LANÇAMENTO (migration 0040): ao escolher o subitem,
+  // vem preenchida com o padrão dele, se ainda estiver vazia.
+  const [classificacao, setClassificacao] = useState(despesa?.custo_tipo ?? '')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [erros, setErros] = useState<Record<string, string>>({})
@@ -58,7 +140,6 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     const t = tipos.find(x => x.id === despesa.tipo_lancamento_id)
     if (!t?.categoria_id) return
     setForm(f => (f.categoria_id ? f : { ...f, categoria_id: t.categoria_id as string }))
-    setClassificacao(c => c || (t.custo_tipo ?? ''))
   }, [tipos, despesa?.tipo_lancamento_id])
 
   const limparErro = (k: string) => setErros(e => (k in e ? { ...e, [k]: '' } : e))
@@ -69,30 +150,12 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
 
   function selecionarCategoria(categoriaId: string) {
     setForm(f => ({ ...f, categoria_id: categoriaId, tipo_lancamento_id: '' }))
-    setClassificacao('')
     limparErro('categoria_id')
   }
 
   function selecionarSubitem(tipoId: string) {
     set('tipo_lancamento_id', tipoId)
-    setClassificacao(tipos.find(t => t.id === tipoId)?.custo_tipo ?? '')
-  }
-
-  // Altera a classificação do subitem escolhido — grava em Configurações
-  // (é um atributo do subitem, não do lançamento) e reflete aqui na hora.
-  async function alterarClassificacao(novoValor: string) {
-    setClassificacao(novoValor)
-    if (!form.tipo_lancamento_id) return
-    setSalvandoClassificacao(true)
-    setErroClassificacao(null)
-    try {
-      await api.put(`/configuracoes/tipos/${form.tipo_lancamento_id}`, token, { custo_tipo: novoValor || null })
-      onTipoAtualizado?.(form.tipo_lancamento_id, novoValor)
-    } catch (err) {
-      setErroClassificacao(err instanceof Error ? err.message : 'Erro ao salvar classificação')
-    } finally {
-      setSalvandoClassificacao(false)
-    }
+    setClassificacao(c => c || (tipos.find(t => t.id === tipoId)?.custo_tipo ?? ''))
   }
 
   // ── Copiloto de IA: sugere Categoria/Subitem/Classificação pela descrição ──
@@ -151,9 +214,16 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     const e: Record<string, string> = {}
     if (!form.categoria_id) e.categoria_id = 'Selecione a categoria.'
     if (!form.tipo_lancamento_id) e.tipo_lancamento_id = 'Selecione o subitem.'
-    if (!form.descricao.trim()) e.descricao = 'Informe a descrição.'
+    const desc = form.descricao.trim()
+    if (!desc) e.descricao = 'Informe a descrição.'
+    else if (desc.length < DESCRICAO_MIN) e.descricao = `A descrição precisa de pelo menos ${DESCRICAO_MIN} caracteres.`
+    else if (desc.length > DESCRICAO_MAX) e.descricao = `A descrição pode ter no máximo ${DESCRICAO_MAX} caracteres.`
     if (valorParcela <= 0) e.valor_parcela = 'Informe um valor maior que zero.'
+    const nParc = parseInt(form.num_parcelas)
+    if (form.num_parcelas && (!(nParc >= 1) || nParc > MAX_PARCELAS)) e.num_parcelas = `Informe um número de parcelas entre 1 e ${MAX_PARCELAS}.`
     if (!form.competencia) e.competencia = 'Informe a competência.'
+    // A trava de competência futura só existe na criação (DespesaCreate).
+    else if (!editando && form.competencia > competenciaMaxima()) e.competencia = 'A competência pode ser no máximo 2 meses à frente.'
     if (!form.data_vencimento) e.data_vencimento = 'Informe a data de vencimento.'
     // Só na criação: o campo "Repetir até" não é desenhado na edição, e exigi-lo
     // ali travava o Salvar de toda despesa recorrente em silêncio (erro num
@@ -174,14 +244,19 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     setSalvando(true)
     setErro(null)
     const [y, m] = form.competencia.split('-')
+    const descricao = form.descricao.trim()
+    // `subcategoria` repete a descrição, mas no banco o limite é 100 caracteres
+    // (a descrição aceita 500) — descrição longa dava 422 ao salvar.
+    const subcategoria = descricao.slice(0, SUBCATEGORIA_MAX)
 
     try {
       if (editando) {
         const payload: Record<string, unknown> = {
           tipo_lancamento_id: form.tipo_lancamento_id || null,
+          custo_tipo:         classificacao || null,
           banco_id:           form.banco_id || null,
-          descricao:          form.descricao,
-          subcategoria:       form.descricao,
+          descricao,
+          subcategoria,
           valor:              valorParcela,
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
@@ -196,9 +271,10 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
         // Backend cria as N parcelas atomicamente em uma única chamada
         const payload: Record<string, unknown> = {
           tipo_lancamento_id: form.tipo_lancamento_id || null,
+          custo_tipo:         classificacao || null,
           banco_id:           form.banco_id || null,
-          descricao:          form.descricao,
-          subcategoria:       form.descricao,
+          descricao,
+          subcategoria,
           valor:              valorParcela,
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
@@ -221,9 +297,10 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
         const [ey, em] = form.repetir_ate.split('-')
         const payload: Record<string, unknown> = {
           tipo_lancamento_id: form.tipo_lancamento_id || null,
+          custo_tipo:         classificacao || null,
           banco_id:           form.banco_id || null,
-          descricao:          form.descricao,
-          subcategoria:       form.descricao,
+          descricao,
+          subcategoria,
           valor:              valorParcela,
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
@@ -240,7 +317,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           const check = await api.get<DespesasResp>(
             `/lancamentos/despesas?inicio=${ey}-${em}-01&fim=${ey}-${em}-${String(ultimoDia).padStart(2, '0')}`, token)
           const criouUltimoMes = (check.items ?? []).some(d =>
-            d.descricao === form.descricao && d.competencia.slice(0, 7) === form.repetir_ate)
+            d.descricao === descricao && d.competencia.slice(0, 7) === form.repetir_ate)
           if (!criouUltimoMes) {
             throw new Error(
               'O servidor está desatualizado e não suporta recorrência — foi criado apenas o 1º mês. ' +
@@ -251,9 +328,10 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
       } else {
         const payload: Record<string, unknown> = {
           tipo_lancamento_id: form.tipo_lancamento_id || null,
+          custo_tipo:         classificacao || null,
           banco_id:           form.banco_id || null,
-          descricao:          form.descricao,
-          subcategoria:       form.descricao,
+          descricao,
+          subcategoria,
           valor:              valorParcela,
           competencia:        `${y}-${m}-01`,
           data_vencimento:    form.data_vencimento,
@@ -280,11 +358,16 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
       maxWidth="sm:max-w-xl"
       dismissable={!salvando}
     >
-      {editando && (
+      {/* Regra de 19/10/2026: Data de Pagamento aprova a despesa (qualquer perfil). */}
+      {editando && (form.paga_em ? (
+        <div className="mb-3 rounded-lg bg-green-50 border border-green-200 px-3 py-1.5 text-xs text-green-700">
+          Com Data de Pagamento, a despesa fica <strong>Aprovada</strong>.
+        </div>
+      ) : (
         <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs text-amber-700">
           A despesa voltará para <strong>Pendente</strong> e precisará de nova aprovação.
         </div>
-      )}
+      ))}
 
       <form onSubmit={salvar} noValidate className="space-y-2.5">
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
@@ -313,12 +396,12 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
 
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
           <Campo label="Classificação">
-            <select disabled={!form.tipo_lancamento_id} value={classificacao}
-              onChange={e => alterarClassificacao(e.target.value)} className={selectCls}>
-              <option value="">{form.tipo_lancamento_id ? 'Selecionar' : 'Escolha o subitem primeiro'}</option>
-              <option value="fixo">Fixo</option>
-              <option value="variavel">Variável</option>
-              <option value="imposto">Imposto</option>
+            <select value={classificacao}
+              onChange={e => setClassificacao(e.target.value)} className={selectCls}>
+              <option value="">Selecionar</option>
+              {classificacoesDe(classificacoes, 'despesa', classificacao).map(c => (
+                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
+              ))}
             </select>
           </Campo>
           <Campo label="Banco">
@@ -335,15 +418,11 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
             </select>
           </Campo>
         </div>
-        {(salvandoClassificacao || erroClassificacao || (!salvandoClassificacao && !erroClassificacao && form.tipo_lancamento_id)) && (
-          <p className={`-mt-1.5 text-xs ${erroClassificacao ? 'text-red-600' : 'text-gray-400'}`}>
-            {salvandoClassificacao ? 'Salvando classificação…' : erroClassificacao || 'Alterar a classificação altera o subitem em Configurações.'}
-          </p>
-        )}
 
         <Field label="Descrição" required error={erros.descricao}>
           {p => (
             <Input {...p} size="sm" value={form.descricao} onChange={e => set('descricao', e.target.value)}
+              maxLength={DESCRICAO_MAX}
               onBlur={() => { if (!editando && !form.tipo_lancamento_id && !sugestao && !sugerindo) buscarSugestao() }}
               placeholder="Ex: Aluguel sede matriz" />
           )}
@@ -386,18 +465,18 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           <Field label="Valor da Parcela" required error={erros.valor_parcela}>
             {() => <InputMoeda value={form.valor_parcela} onChange={v => set('valor_parcela', v)} />}
           </Field>
-          <Campo label="Nº de Parcelas">
+          <Field label="Nº de Parcelas" error={erros.num_parcelas}>
             {/* Sempre editavel (pedido de 29/09/2026). Recorrencia e parcelamento
                 continuam exclusivos, mas agora a troca e automatica: na criacao,
                 parcelar desmarca "repetir"; na edicao, o backend converte a serie. */}
-            <input type="number" min="1" max="60" value={form.num_parcelas}
-              onChange={e => {
-                const v = e.target.value
-                set('num_parcelas', v)
-                if (!editando && (parseInt(v) || 1) > 1 && form.recorrente) set('recorrente', false)
-              }}
-              className={inputCls} />
-          </Campo>
+            {p => (
+              <SeletorParcelas {...p} value={form.num_parcelas}
+                onChange={v => {
+                  set('num_parcelas', v)
+                  if (!editando && (parseInt(v) || 1) > 1 && form.recorrente) set('recorrente', false)
+                }} />
+            )}
+          </Field>
           <Field label={naoEhPrimeiraParcela ? 'Competência' : 'Competência (1ª parc.)'} required error={erros.competencia}>
             {p => (
               <Input {...p} size="sm" type="month" value={form.competencia}
@@ -443,6 +522,11 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
         {!editando && (parcelado || form.recorrente) && (
           <p className="-mt-1 text-xs text-gray-400">
             A Data de Pagamento se aplica {parcelado ? 'à 1ª parcela' : 'ao 1º mês'}; as demais ficam em aberto para pagamento mês a mês.
+          </p>
+        )}
+        {!editando && form.paga_em && (
+          <p className="-mt-1 text-xs text-green-700">
+            Com Data de Pagamento, a despesa entra como <strong>Aprovada</strong>{parcelado ? ' (a 1ª parcela)' : form.recorrente ? ' (o 1º mês)' : ''}.
           </p>
         )}
 

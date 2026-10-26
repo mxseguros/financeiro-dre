@@ -18,10 +18,22 @@ export interface ShareResumoItem {
   cor?: string
 }
 
+/** Bloco com título próprio (ex.: "Hoje" e "No período" da Visão Geral). */
+export interface ShareSecao {
+  titulo: string
+  itens: ShareItem[]
+  /** Linha de fechamento da seção (ex.: subtotal). */
+  totalTexto?: string
+  /** Texto quando a seção não tem itens. */
+  vazio?: string
+}
+
 interface ShareButtonProps {
   titulo: string
   periodoLabel: string
   itens: ShareItem[]
+  /** Quando informado, o compartilhamento sai em seções e `itens` é ignorado. */
+  secoes?: ShareSecao[]
   resumo?: ShareResumoItem[]
   totalTexto?: string
   emoji?: string
@@ -39,7 +51,7 @@ const IconShare = () => (
   </svg>
 )
 
-export function ShareButton({ titulo, periodoLabel, itens, resumo, totalTexto, emoji = '📋' }: ShareButtonProps) {
+export function ShareButton({ titulo, periodoLabel, itens, secoes, resumo, totalTexto, emoji = '📋' }: ShareButtonProps) {
   const [aberto, setAberto] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [gerando, setGerando] = useState(false)
@@ -56,17 +68,28 @@ export function ShareButton({ titulo, periodoLabel, itens, resumo, totalTexto, e
     return () => document.removeEventListener('mousedown', fora)
   }, [aberto])
 
+  function linhaTexto(it: ShareItem): string {
+    const st = it.status ? `[${STATUS_LABEL[it.status] ?? it.status}] ` : ''
+    const val = it.valor && it.valor > 0 ? ` — ${fmtBRL(it.valor)}` : ''
+    const dt = it.data ? ` — ${fmtData(it.data)}` : ''
+    return `• ${st}${it.nome}${val}${dt}`
+  }
+
   function montarTexto(): string {
     const linha = '─────────────────────'
-    const top = itens.slice(0, 10)
-    const corpo = top.map(it => {
-      const st = it.status ? `[${STATUS_LABEL[it.status] ?? it.status}] ` : ''
-      const val = it.valor && it.valor > 0 ? ` — ${fmtBRL(it.valor)}` : ''
-      const dt = it.data ? ` — ${fmtData(it.data)}` : ''
-      return `• ${st}${it.nome}${val}${dt}`
-    }).join('\n')
-    const maisItens = itens.length > 10 ? `\n…e mais ${itens.length - 10} item(ns)` : ''
-    const rodape = totalTexto ? `\n${linha}\n${totalTexto}` : `\n${linha}\nTotal: ${itens.length} item(ns)`
+    let corpo: string
+    let maisItens = ''
+    if (secoes?.length) {
+      corpo = secoes.map(sc => {
+        const lista = sc.itens.length ? sc.itens.slice(0, 15).map(linhaTexto).join('\n') : (sc.vazio ?? 'Nenhum lançamento')
+        const mais = sc.itens.length > 15 ? `\n…e mais ${sc.itens.length - 15} item(ns)` : ''
+        return `*${sc.titulo.toUpperCase()}*\n${lista}${mais}${sc.totalTexto ? `\n${sc.totalTexto}` : ''}`
+      }).join('\n\n')
+    } else {
+      corpo = itens.slice(0, 10).map(linhaTexto).join('\n')
+      maisItens = itens.length > 10 ? `\n…e mais ${itens.length - 10} item(ns)` : ''
+    }
+    const rodape = totalTexto ? `\n${linha}\n${totalTexto}` : secoes?.length ? '' : `\n${linha}\nTotal: ${itens.length} item(ns)`
     // Os totais vêm antes da lista: é a informação que se lê primeiro no WhatsApp.
     const topo = resumo?.length
       ? `${resumo.map(r => `${r.rotulo}: ${r.valor}`).join('\n')}\n${linha}\n`
@@ -163,6 +186,25 @@ export function ShareButton({ titulo, periodoLabel, itens, resumo, totalTexto, e
               ))}
             </div>
           )}
+          {secoes?.length ? secoes.map((sc, si) => (
+            <div key={si} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: '#9ca3af', marginBottom: 2 }}>{sc.titulo}</div>
+              <div style={{ borderTop: '1px solid #eef1f6' }}>
+                {sc.itens.length === 0 && <div style={{ padding: '6px 0', fontSize: 12, color: '#9ca3af' }}>{sc.vazio ?? 'Nenhum lançamento'}</div>}
+                {sc.itens.slice(0, 15).map((it, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: 12 }}>
+                    <span style={{ color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.nome}</span>
+                    <span style={{ color: '#111827', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      {it.valor && it.valor > 0 ? fmtBRL(it.valor) : ''}
+                      {it.data ? <span style={{ color: '#9ca3af', fontWeight: 400 }}> · {fmtData(it.data)}</span> : null}
+                    </span>
+                  </div>
+                ))}
+                {sc.itens.length > 15 && <div style={{ padding: '6px 0', fontSize: 11, color: '#9ca3af' }}>…e mais {sc.itens.length - 15} item(ns)</div>}
+              </div>
+              {sc.totalTexto && <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: '#071934' }}>{sc.totalTexto}</div>}
+            </div>
+          )) : (
           <div style={{ borderTop: '1px solid #eef1f6' }}>
             {itens.slice(0, 15).map((it, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: 12 }}>
@@ -179,6 +221,7 @@ export function ShareButton({ titulo, periodoLabel, itens, resumo, totalTexto, e
               <div style={{ padding: '6px 0', fontSize: 11, color: '#9ca3af' }}>…e mais {itens.length - 15} item(ns)</div>
             )}
           </div>
+          )}
           {totalTexto && (
             <div style={{ marginTop: 12, fontSize: 13, fontWeight: 700, color: '#071934' }}>{totalTexto}</div>
           )}

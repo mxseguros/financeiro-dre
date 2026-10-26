@@ -4,12 +4,14 @@ Insights determinísticos sobre os apontamentos (Monitor). Somente leitura.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_usuario
+from app.middleware.periodo import validar_base, validar_periodo
 from app.middleware.rate_limit import limiter
 from app.services import monitor_service
 
@@ -22,6 +24,8 @@ _ROLES_MONITOR = ("admin", "gestor", "contador")
 @limiter.limit("30/minute")
 async def insights(
     request: Request,
+    periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     if usuario.role not in _ROLES_MONITOR:
@@ -31,13 +35,15 @@ async def insights(
         )
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    return await monitor_service.gerar_insights(usuario, db)
+    return await monitor_service.gerar_insights(usuario, db, *periodo, base=base)
 
 
 @router.get("/resumo", summary="Resumo executivo dos insights, priorizado por IA")
 @limiter.limit("10/minute")
 async def resumo(
     request: Request,
+    periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     if usuario.role not in _ROLES_MONITOR:
@@ -47,5 +53,5 @@ async def resumo(
         )
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    payload = await monitor_service.gerar_insights(usuario, db)
+    payload = await monitor_service.gerar_insights(usuario, db, *periodo, base=base)
     return monitor_service.gerar_resumo_ia(payload)

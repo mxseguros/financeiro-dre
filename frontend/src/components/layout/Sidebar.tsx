@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import type { Role, Permissions } from '@/types'
 import Image from 'next/image'
+import { iniciarTour } from '@/components/tour/tour'
 
 const Icon = {
   grid:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
@@ -14,12 +15,16 @@ const Icon = {
   download:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
   gear:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
   faq:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>,
+  compass: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>,
   users:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
 }
 
 type PermissaoTela = keyof Permissions
 
 interface NavItem { href: string; label: string; icon: React.ReactNode; permissaoTela?: PermissaoTela }
+
+/** Âncora do tour guiado: `menu-<último trecho da rota>` (ver components/tour/tour.ts). */
+const ancoraTour = (href: string) => `menu-${href.split('/').pop()}`
 
 const NAV: NavItem[] = [
   { href: '/dashboard',                        label: 'Visão Geral',   icon: Icon.grid,     permissaoTela: 'visao_geral'  },
@@ -98,6 +103,7 @@ export function Sidebar({ role, permissions, email, nome, onSignOut, aberta = fa
             <Link
               key={item.href}
               href={item.href}
+              data-tour={ancoraTour(item.href)}
               onClick={onFechar}
               className={navItemCls(isActive(item.href))}
             >
@@ -115,6 +121,7 @@ export function Sidebar({ role, permissions, email, nome, onSignOut, aberta = fa
             <Link
               key={item.href}
               href={item.href}
+              data-tour={ancoraTour(item.href)}
               onClick={onFechar}
               className={navItemCls(isActive(item.href))}
             >
@@ -125,8 +132,22 @@ export function Sidebar({ role, permissions, email, nome, onSignOut, aberta = fa
             </Link>
           ))}
 
+          <button
+            type="button"
+            data-tour="menu-tour"
+            onClick={() => {
+              // No celular o menu é uma gaveta: fecha antes, senão ela cobre a tela destacada.
+              onFechar?.()
+              window.setTimeout(() => iniciarTour(pathname), aberta ? 250 : 0)
+            }}
+            className={cn(navItemCls(false), 'w-full')}
+          >
+            <span className="text-white/45">{Icon.compass}</span>
+            Tour guiado
+          </button>
+
           {/* Perfil */}
-          <div className={cn('px-3 py-2', visibleBottom.length > 0 && 'mt-1 border-t border-white/10 pt-2')}>
+          <div className="mt-1 border-t border-white/10 px-3 py-2 pt-2">
             <p className="truncate text-[11px] text-beige leading-tight">{email}</p>
             <button
               onClick={onSignOut}

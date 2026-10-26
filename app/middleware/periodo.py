@@ -24,3 +24,13 @@ def validar_periodo(
             detail="Período máximo permitido: 12 meses (365 dias).",
         )
     return inicio, fim
+
+
+def validar_base(
+    base: str = Query(
+        "competencia", pattern="^(competencia|data|pagamento)$",
+        description="competencia | data (despesa por vencimento, receita por recebimento) | "
+                    "pagamento (Data de Pagamento; em aberto pelo vencimento — padrão das telas)",
+    ),
+) -> str:
+    return base

@@ -3,29 +3,29 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
-import { usePeriodo } from '@/contexts/PeriodoContext'
+import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
+import { SeletorPeriodo } from '@/components/ui/SeletorPeriodo'
 import { fmtBRL, fmtData } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
 import { Button, Spinner } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Field'
 import { useUser } from '@/contexts/UserContext'
 import { ModalDespesa } from '../_components/ModalDespesa'
-import { ModalReceita } from '../_components/ModalReceita'
 import { ModalOrdemCompra } from '../_components/ModalOrdemCompra'
 import { DialogExcluirGrupo } from '../_components/DialogExcluirGrupo'
 import type { Despesa, DespesasResponse } from '@/types'
 import {
   IconLapis, IconLixo, podeExcluirLancamento,
   type Banco, type Categoria, type CentroCusto, type TipoLancamento,
-  type OrdemCompra, type OrdensCompraResp, type Receita, type ReceitasResp,
+  type OrdemCompra, type OrdensCompraResp, type Classificacao,
 } from '../_components/shared'
 
-type TipoCard = 'despesa' | 'ordem' | 'receita'
-// Lista unificada dos tres tipos, com discriminador — por status no Kanban.
+// Receitas saíram do Kanban em 22/10/2026: toda receita já nasce aprovada.
+type TipoCard = 'despesa' | 'ordem'
+// Lista unificada dos dois tipos, com discriminador — por status no Kanban.
 type ItemKanban =
   | { tipo: 'despesa'; dado: Despesa }
   | { tipo: 'ordem';   dado: OrdemCompra }
-  | { tipo: 'receita'; dado: Receita }
 interface DragRef { id: string; tipo: TipoCard }
 
 function fmtCompetencia(d: string) {
@@ -219,75 +219,6 @@ interface ColunaProps {
   children: React.ReactNode
 }
 
-interface ReceitaCardProps {
-  receita: Receita
-  processandoId: string | null
-  onAprovar?: (id: string) => void
-  onIniciarRejeicao?: (id: string) => void
-  onDragStart?: (id: string) => void
-  onEditar?: () => void
-  onExcluir?: () => void
-}
-
-/* Espelha o DespesaCard. A borda verde e o sinal "+" distinguem receita de
-   despesa numa coluna que mistura os tres tipos — sem isso o unico indicio
-   seria o rotulo, facil de perder no meio do Kanban. */
-function ReceitaCard({ receita, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: ReceitaCardProps) {
-  const ocupado = processandoId === receita.id
-  const arrastavel = !ocupado
-
-  return (
-    <div
-      draggable={arrastavel}
-      onDragStart={arrastavel && onDragStart ? (e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart(receita.id) } : undefined}
-      className={`rounded-xl border border-green-100 bg-white p-4 shadow-sm transition-opacity select-none
-        ${ocupado ? 'opacity-60' : ''}
-        ${arrastavel ? 'cursor-grab active:cursor-grabbing active:shadow-lg active:scale-[1.02] transition-transform' : ''}
-      `}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 truncate max-w-[65%]">
-          {receita.tipo_nome ?? 'Receita'}
-        </span>
-        <span className="shrink-0 text-sm font-bold tabular-nums text-green-600">+{fmtBRL(receita.valor)}</span>
-      </div>
-
-      <p className="mt-2 text-sm font-medium text-gray-800 line-clamp-2">{receita.descricao}</p>
-
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
-        {receita.centro_custo && <><span className="capitalize">{receita.centro_custo.replace('_', ' ')}</span><span>·</span></>}
-        <span>{fmtCompetencia(receita.competencia)}</span>
-      </div>
-
-      {receita.status === 'rejeitada' && receita.rejeitado_motivo && (
-        <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-          <span className="font-semibold">Motivo: </span>{receita.rejeitado_motivo}
-        </div>
-      )}
-
-      {onAprovar && onIniciarRejeicao && receita.status === 'pendente' && (
-        <div className="mt-3 flex gap-2 border-t border-gray-100 pt-3">
-          <button
-            onClick={() => onAprovar(receita.id)}
-            disabled={ocupado}
-            className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-green-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-600 disabled:opacity-50 transition-colors"
-          >
-            Aprovar
-          </button>
-          <button
-            onClick={() => onIniciarRejeicao(receita.id)}
-            disabled={ocupado}
-            className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors"
-          >
-            Rejeitar
-          </button>
-        </div>
-      )}
-      <AcoesEdicao ocupado={ocupado} onEditar={onEditar} onExcluir={onExcluir} />
-    </div>
-  )
-}
-
 function KanbanColuna({ titulo, contagem, cor, corTexto, aceitaDrop, onDrop, children }: ColunaProps) {
   const [dragOver, setDragOver] = useState(false)
 
@@ -380,43 +311,34 @@ export default function AprovacoesPage() {
   const [tipos, setTipos] = useState<TipoLancamento[]>([])
   const [bancos, setBancos] = useState<Banco[]>([])
   const [centros, setCentros] = useState<CentroCusto[]>([])
+  const [classificacoes, setClassificacoes] = useState<Classificacao[]>([])
   const [editando, setEditando] = useState<ItemKanban | null>(null)
   const [excluindo, setExcluindo] = useState<ItemKanban | null>(null)
   const [excluindoBusy, setExcluindoBusy] = useState(false)
   const [despesas, setDespesas] = useState<Despesa[]>([])
   const [ordens, setOrdens] = useState<OrdemCompra[]>([])
-  const [receitas, setReceitas] = useState<Receita[]>([])
   const [loading, setLoading] = useState(true)
   const [processandoId, setProcessandoId] = useState<string | null>(null)
   const [rejeitando, setRejeitando] = useState<DragRef | null>(null)
   const [erroGlobal, setErroGlobal] = useState<string | null>(null)
   // Periodo compartilhado entre telas (ver contexts/PeriodoContext.tsx).
-  const { mesInicio: mes, definirMes: setMes } = usePeriodo()
+  const filtro = filtroDoPeriodo(usePeriodo())
   const dragId = useRef<DragRef | null>(null)
   const kanbanRef = useRef<HTMLDivElement>(null)
   const [colunaAtiva, setColunaAtiva] = useState(0)
 
-  function mesParaDatas(m: string): [string, string] {
-    const [y, mo] = m.split('-')
-    const last = new Date(Number(y), Number(mo), 0).getDate()
-    return [`${y}-${mo}-01`, `${y}-${mo}-${last}`]
-  }
 
   const buscar = useCallback(() => {
     if (!token) return
-    const [inicio, fim] = mesParaDatas(mes)
+    const { inicio, fim, base } = filtro
     setLoading(true)
     Promise.all([
-      api.get<DespesasResponse>(`/lancamentos/despesas?inicio=${inicio}&fim=${fim}&ordenar_por=registro&ordem=desc`, token).then(r => r.items).catch(() => []),
+      api.get<DespesasResponse>(`/lancamentos/despesas?inicio=${inicio}&fim=${fim}&base=${base}&ordenar_por=registro&ordem=desc`, token).then(r => r.items).catch(() => []),
       api.get<OrdensCompraResp>(`/ordens-compra?inicio=${inicio}&fim=${fim}`, token).then(r => r.items).catch(() => []),
-      api.get<ReceitasResp>(`/lancamentos/receitas?inicio=${inicio}&fim=${fim}&ordenar_por=registro&ordem=desc`, token)
-        // Comissao (origem=comissao) e derivada de apolice e nao tem status —
-        // so receita manual entra na fila de aprovacao.
-        .then(r => r.items.filter(i => i.origem === 'manual')).catch(() => []),
     ])
-      .then(([d, o, r]) => { setDespesas(d); setOrdens(o); setReceitas(r) })
+      .then(([d, o]) => { setDespesas(d); setOrdens(o) })
       .finally(() => setLoading(false))
-  }, [token, mes])
+  }, [token, filtro.inicio, filtro.fim, filtro.base])
 
   useEffect(() => { buscar() }, [buscar])
 
@@ -429,6 +351,7 @@ export default function AprovacoesPage() {
       api.get<CentroCusto[]>('/configuracoes/centros-custo', token),
     ]).then(([c, t, b, cc]) => { setCategorias(c); setTipos(t); setBancos(b); setCentros(cc) })
       .catch(() => { /* sem config o modal abre com listas vazias; a fila segue funcionando */ })
+    api.get<Classificacao[]>('/configuracoes/classificacoes', token).then(setClassificacoes).catch(() => { /* lista padrão */ })
   }, [token])
 
   useEffect(() => {
@@ -449,15 +372,11 @@ export default function AprovacoesPage() {
   }
 
   const endpointBase = (tipo: TipoCard) =>
-    tipo === 'despesa' ? '/lancamentos/despesas'
-    : tipo === 'receita' ? '/lancamentos/receitas'
-    : '/ordens-compra'
+    tipo === 'despesa' ? '/lancamentos/despesas' : '/ordens-compra'
 
   function aplicarStatus(id: string, tipo: TipoCard, novo: 'aprovada' | 'rejeitada', motivo?: string) {
     if (tipo === 'despesa') {
       setDespesas(prev => prev.map(d => d.id === id ? { ...d, status: novo, ...(motivo ? { rejeitado_motivo: motivo } : {}) } : d))
-    } else if (tipo === 'receita') {
-      setReceitas(prev => prev.map(r => r.id === id ? { ...r, status: novo, ...(motivo ? { rejeitado_motivo: motivo } : {}) } : r))
     } else {
       setOrdens(prev => prev.map(o => o.id === id ? { ...o, status: novo, ...(motivo ? { rejeitado_motivo: motivo } : {}) } : o))
     }
@@ -532,7 +451,6 @@ export default function AprovacoesPage() {
   const todos: ItemKanban[] = [
     ...despesas.map(d => ({ tipo: 'despesa' as const, dado: d })),
     ...ordens.map(o => ({ tipo: 'ordem' as const, dado: o })),
-    ...receitas.map(r => ({ tipo: 'receita' as const, dado: r })),
   ].sort((a, b) => quando(b.dado) - quando(a.dado))
   const lancadas   = todos.filter(i => i.dado.status !== 'rejeitada')
   const pendentes  = todos.filter(i => i.dado.status === 'pendente')
@@ -546,7 +464,6 @@ export default function AprovacoesPage() {
     const comAcoes = colunaPendente && podeAprovar
     // Regras reais do backend, por tipo:
     //  - despesa/ordem: excluir = admin/gestor, ou o autor antes da aprovacao
-    //  - receita: excluir e aberto a quem le (regra do router, inalterada)
     //  - ordem: editar = admin/gestor ou o autor (policy ordens_compra_update)
     const editar = () => setEditando(i)
     const excluir = () => setExcluindo(i)
@@ -558,17 +475,6 @@ export default function AprovacoesPage() {
           onDragStart={(id) => { dragId.current = { id, tipo: 'despesa' } }}
           onEditar={editar}
           onExcluir={podeExcluirLancamento(i.dado, role, userId) ? excluir : undefined}
-        />
-      )
-    }
-    if (i.tipo === 'receita') {
-      return (
-        <ReceitaCard key={`r-${i.dado.id}`} receita={i.dado} processandoId={processandoId}
-          onAprovar={comAcoes ? (id) => handleAprovar(id, 'receita') : undefined}
-          onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'receita' }) : undefined}
-          onDragStart={(id) => { dragId.current = { id, tipo: 'receita' } }}
-          onEditar={editar}
-          onExcluir={excluir}
         />
       )
     }
@@ -587,11 +493,8 @@ export default function AprovacoesPage() {
     <>
       {editando?.tipo === 'despesa' && token && (
         <ModalDespesa token={token} categorias={categorias} tipos={tipos} bancos={bancos} centros={centros}
+          classificacoes={classificacoes}
           despesa={editando.dado} onClose={() => setEditando(null)} onSaved={buscar} />
-      )}
-      {editando?.tipo === 'receita' && token && (
-        <ModalReceita token={token} categorias={categorias} tipos={tipos} bancos={bancos} centros={centros}
-          receita={editando.dado} receitasCarregadas={receitas} onClose={() => setEditando(null)} onSaved={buscar} />
       )}
       {editando?.tipo === 'ordem' && token && (
         <ModalOrdemCompra token={token} ordem={editando.dado} onClose={() => setEditando(null)} onSaved={buscar} />
@@ -646,14 +549,9 @@ export default function AprovacoesPage() {
               <span className="text-gray-300">/</span>
               <h1 className="text-xl font-bold text-navy md:text-2xl">Aprovações</h1>
             </div>
-            <p className="mt-0.5 text-sm text-gray-500">Arraste os cards para Aprovar ou Rejeitar</p>
+            <p className="mt-0.5 text-sm text-gray-500">Despesas e ordens de compra · arraste os cards para Aprovar ou Rejeitar</p>
           </div>
-          <input
-            type="month"
-            value={mes}
-            onChange={(e) => setMes(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus-ring focus:outline-none sm:py-1.5"
-          />
+          <SeletorPeriodo />
         </div>
 
         {/* Erro global */}
@@ -687,7 +585,7 @@ export default function AprovacoesPage() {
         ) : (
           // ── Kanban ──────────────────────────────────────────
           <div className="space-y-3">
-          <div ref={kanbanRef} className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory sm:grid sm:grid-cols-4 sm:overflow-visible sm:pb-0">
+          <div ref={kanbanRef} data-tour="kanban" className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory sm:grid sm:grid-cols-4 sm:overflow-visible sm:pb-0">
 
             {/* Coluna 1 — Lançadas (pendentes + aprovadas) */}
             <KanbanColuna titulo="Lançadas" contagem={lancadas.length} cor="bg-slate-700" corTexto="text-white">

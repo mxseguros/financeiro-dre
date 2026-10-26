@@ -88,6 +88,12 @@ export interface DashboardResponse {
   periodo: { inicio: string; fim: string }
   dre: LinhasDRE
   perfil: string
+  // Boxes da Visão Geral (escopo de 19/10/2026). Decimal chega como string no JSON.
+  resumo?: {
+    previsto: { receitas: number | string; despesas: number | string; saldo: number | string }
+    despesas_pagas: number | string
+    total_geral: { receitas: number | string; despesas: number | string; saldo: number | string; ate: string }
+  } | null
   alertas: AlertaDashboard[]
   latencia_ms: number
 }

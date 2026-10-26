@@ -1,6 +1,20 @@
 export interface Categoria { id: string; nome: string; natureza: string; ordem: number; ativo: boolean }
-export interface TipoLancamento { id: string; nome: string; natureza: string; categoria_id: string | null; custo_tipo: string | null }
+export interface TipoLancamento { id: string; nome: string; natureza: string; categoria_id: string | null; custo_tipo: string | null; somente_dre?: boolean }
 export interface Banco { id: string; nome: string }
+
+/** Classificação dos subitens — lista editável em Configurações (migration 0039). */
+export interface Classificacao { codigo: string; nome: string; natureza: string; ordem: number; ativo: boolean; sistema: boolean; usada_dre?: boolean }
+export const CLASSIFICACOES_PADRAO: Classificacao[] = [
+  { codigo: 'fixo', nome: 'Fixo', natureza: 'ambas', ordem: 1, ativo: true, sistema: true, usada_dre: true },
+  { codigo: 'variavel', nome: 'Variável', natureza: 'ambas', ordem: 2, ativo: true, sistema: true, usada_dre: true },
+  { codigo: 'imposto', nome: 'Imposto', natureza: 'ambas', ordem: 3, ativo: true, sistema: true, usada_dre: true },
+  { codigo: 'nao_operacional', nome: 'Não Operacional', natureza: 'ambas', ordem: 4, ativo: true, sistema: true, usada_dre: true },
+]
+/** Opções do campo Classificação para a natureza (ativas + a atual, mesmo se desativada). */
+export function classificacoesDe(lista: Classificacao[] | undefined, natureza: 'despesa' | 'receita', atual?: string | null) {
+  return (lista?.length ? lista : CLASSIFICACOES_PADRAO)
+    .filter(c => (c.natureza === natureza || c.natureza === 'ambas') && (c.ativo || c.codigo === atual))
+}
 export interface CentroCusto { id: string; nome: string; codigo: string; ativo: boolean }
 
 export interface Despesa {
@@ -11,6 +25,8 @@ export interface Despesa {
   recorrente: boolean; parcela_atual: number | null; parcela_total: number | null
   criado_em: string | null; atualizado_em?: string | null
   criado_por?: string | null
+  /** Classificação do lançamento (migration 0040). */
+  custo_tipo?: string | null
 }
 export interface DespesasResp { total: number; items: Despesa[]; soma_total: number; total_pendentes: number }
 
@@ -21,7 +37,11 @@ export interface Receita {
   observacao: string | null; origem: string; criado_em: string | null; atualizado_em?: string | null
   /** So receita manual tem status (migration 0032); comissao vem de apolice e nao passa por aprovacao. */
   status?: 'pendente' | 'aprovada' | 'rejeitada' | 'excluida' | null
+  /** Subitem "Constar apenas na DRE": listada, mas fora dos totais. */
+  somente_dre?: boolean
   rejeitado_motivo?: string | null
+  /** Classificação do lançamento (migration 0040). */
+  custo_tipo?: string | null
 }
 export interface ReceitasResp { total: number; items: Receita[]; soma_total: number }
 
@@ -34,8 +54,6 @@ export interface OrdemCompra {
 export interface OrdensCompraResp { total: number; items: OrdemCompra[]; soma_total: number; total_pendentes: number }
 
 // Tipos de receita com valor único mensal
-export const TIPOS_VALOR_UNICO = ['comissões de vendas', 'comissões - adicionais / premiações', 'receitas de vendas']
-
 // Sugestão do Copiloto de IA (POST /lancamentos/sugestao)
 export type SugestaoIA = {
   disponivel: boolean

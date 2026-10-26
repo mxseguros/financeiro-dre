@@ -10,6 +10,7 @@ import { ToastProvider } from '@/components/ui/Toast'
 import { Spinner } from '@/components/ui/Button'
 import { UserContext } from '@/contexts/UserContext'
 import { PeriodoProvider, limparPeriodoSalvo } from '@/contexts/PeriodoContext'
+import { iniciarTour, marcarTourVisto, tourInicialPendente } from '@/components/tour/tour'
 import type { Usuario, Permissions } from '@/types'
 import { getDefaultPermissions } from '@/types'
 
@@ -29,6 +30,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .then(setUsuario)
       .catch(() => {})
   }, [token])
+
+  // Primeiro acesso: tour guiado completo, uma vez por usuário neste navegador.
+  // Espera o /usuarios/me (os itens do menu dependem das permissões) e um
+  // respiro para os blocos da tela carregarem — passo sem elemento é pulado.
+  const userId = session?.user.id
+  useEffect(() => {
+    if (!usuario || !userId || !tourInicialPendente(userId)) return
+    const t = window.setTimeout(() => {
+      marcarTourVisto(userId)
+      iniciarTour(window.location.pathname, { completo: true })
+    }, 1200)
+    return () => window.clearTimeout(t)
+  }, [usuario, userId])
 
   async function handleSignOut() {
     // Sair zera o periodo: o proximo login comeca no mes atual.

@@ -23,3 +23,44 @@
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-offset-2;
   }
 }
+
+/* Tour guiado (Driver.js) — balão nas cores do sistema. Ver components/tour/tour.ts. */
+.driver-popover.tour-mx {
+  border-radius: 14px;
+  padding: 16px 18px;
+  max-width: 320px;
+  color: #374151;
+  font-family: inherit;
+}
+.tour-mx .driver-popover-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #071934;
+}
+.tour-mx .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4b5563;
+}
+.tour-mx .driver-popover-progress-text {
+  font-size: 11px;
+  color: #9ca3af;
+}
+.tour-mx .driver-popover-footer button {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  text-shadow: none;
+}
+.tour-mx .driver-popover-footer button.driver-popover-next-btn {
+  border-color: #071934;
+  background: #071934;
+  color: #fff;
+}
+.tour-mx .driver-popover-footer button.driver-popover-next-btn:hover {
+  background: #132d55;
+}

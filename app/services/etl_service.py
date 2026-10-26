@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.logging_config import get_logger
+from app.services.financeiro_service import campos_aprovacao
 
 # Importa categorizacao da pasta etl (não é package de app)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -244,7 +245,9 @@ async def efetivar_importacao(
                     "centro_custo":       lanc.centro_custo,
                     "tipo_lancamento_id": tipo_receita_padrao,
                     "tenant_id":          tenant_id,
-                    "status":             "pendente",
+                    # Receita não passa por aprovação (22/10/2026). Sem usuário
+                    # no ETL: aprovado_por fica nulo, a regra é quem aprova.
+                    **campos_aprovacao(None),
                 })
             else:
                 ignorados += 1

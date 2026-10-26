@@ -6,8 +6,9 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Field'
 import {
-  Campo, inputCls, selectCls, TIPOS_VALOR_UNICO,
+  Campo, inputCls, selectCls,
   type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Receita, type ReceitasResp, type SugestaoIA,
+  type Classificacao, classificacoesDe,
 } from './shared'
 
 interface ModalReceitaProps {
@@ -17,13 +18,13 @@ interface ModalReceitaProps {
   bancos: Banco[]
   centros: CentroCusto[]
   receita?: Receita
-  receitasCarregadas?: Receita[]
   mesDefault?: string
   onClose: () => void
   onSaved: () => void
+  classificacoes?: Classificacao[]
 }
 
-export function ModalReceita({ token, categorias, tipos, bancos, centros, receita, receitasCarregadas, mesDefault, onClose, onSaved }: ModalReceitaProps) {
+export function ModalReceita({ token, categorias, tipos, bancos, centros, receita, mesDefault, onClose, onSaved, classificacoes }: ModalReceitaProps) {
   const editando = !!receita
   const tipoInicial = receita ? tipos.find(t => t.id === receita.tipo_lancamento_id) : undefined
   const [form, setForm] = useState({
@@ -41,6 +42,9 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
     data_final:         '',
   })
   const [salvando, setSalvando] = useState(false)
+  // Classificação é do LANÇAMENTO (migration 0040): ao escolher o subitem,
+  // vem preenchida com o padrão dele, se ainda estiver vazia.
+  const [classificacao, setClassificacao] = useState(receita?.custo_tipo ?? '')
   const [erro, setErro] = useState<string | null>(null)
   const [erros, setErros] = useState<Record<string, string>>({})
   const [sugestao, setSugestao] = useState<SugestaoIA | null>(null)
@@ -55,6 +59,11 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
 
   function selecionarCategoria(categoriaId: string) {
     setForm(f => ({ ...f, categoria_id: categoriaId, tipo_lancamento_id: '' }))
+  }
+
+  function selecionarSubitem(tipoId: string) {
+    set('tipo_lancamento_id', tipoId)
+    setClassificacao(c => c || (tipos.find(t => t.id === tipoId)?.custo_tipo ?? ''))
   }
 
   // ── Copiloto de IA: sugere Categoria/Subitem pela descrição ──
@@ -83,18 +92,13 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
   function aplicarSugestao(s: SugestaoIA) {
     if (s.categoria_id && s.subitem_id) {
       setForm(f => ({ ...f, categoria_id: s.categoria_id!, tipo_lancamento_id: s.subitem_id! }))
+      setClassificacao(c => c || (tipos.find(t => t.id === s.subitem_id)?.custo_tipo ?? ''))
     }
     setSugestao(null); setSugestaoErro(null)
   }
 
   const categoriasReceita = categorias.filter(c => c.natureza === 'receita' && c.ativo)
   const subitensDaCategoria = tipos.filter(t => t.natureza === 'receita' && t.categoria_id === form.categoria_id)
-
-  // Detecta se o tipo selecionado é de valor único mensal
-  const tipoSelecionado = tipos.find(t => t.id === form.tipo_lancamento_id)
-  const isTipoUnico = tipoSelecionado
-    ? TIPOS_VALOR_UNICO.some(n => tipoSelecionado.nome.toLowerCase().includes(n))
-    : false
 
   /** Validação por campo — a mensagem aparece ao lado do campo, não em faixa única. */
   function validar(): boolean {
@@ -115,21 +119,9 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
     const [y, m] = form.competencia.split('-')
     const compMes = `${y}-${m}-01`
 
-    // Verificação frontend de duplicata para tipos únicos mensais
-    if (!editando && isTipoUnico && Array.isArray(receitasCarregadas)) {
-      const existe = (receitasCarregadas as Receita[]).some((r: Receita) =>
-        r.tipo_lancamento_id === form.tipo_lancamento_id &&
-        r.competencia.slice(0, 7) === form.competencia
-      )
-      if (existe) {
-        setErro(`Já existe um lançamento de "${tipoSelecionado?.nome}" para este mês. Edite o registro existente.`)
-        setSalvando(false)
-        return
-      }
-    }
-
     const basePayload: Record<string, unknown> = {
       tipo_lancamento_id: form.tipo_lancamento_id || null,
+      custo_tipo:         classificacao || null,
       banco_id:           form.banco_id || null,
       descricao:          form.descricao,
       valor:              parseFloat(form.valor),
@@ -197,7 +189,7 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
             </Campo>
             <Campo label="Subitem">
               <select disabled={!form.categoria_id} value={form.tipo_lancamento_id}
-                onChange={e => set('tipo_lancamento_id', e.target.value)} className={selectCls}>
+                onChange={e => selecionarSubitem(e.target.value)} className={selectCls}>
                 <option value="">{form.categoria_id ? 'Selecionar subitem' : 'Escolha a categoria primeiro'}</option>
                 {subitensDaCategoria.map(t => (
                   <option key={t.id} value={t.id}>{t.nome}</option>
@@ -205,8 +197,22 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
               </select>
             </Campo>
           </div>
+          {tipos.find(t => t.id === form.tipo_lancamento_id)?.somente_dre && (
+            <p className="-mt-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs text-indigo-700">
+              Este subitem consta <strong>apenas na DRE</strong>: a receita não entra na Visão Geral nem nos totais de Lançamentos.
+            </p>
+          )}
 
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
+            <Campo label="Classificação">
+              <select value={classificacao}
+                onChange={e => setClassificacao(e.target.value)} className={selectCls}>
+                <option value="">Selecionar</option>
+                {classificacoesDe(classificacoes, 'receita', classificacao).map(c => (
+                  <option key={c.codigo} value={c.codigo}>{c.nome}</option>
+                ))}
+              </select>
+            </Campo>
             <Campo label="Banco">
               <select value={form.banco_id} onChange={e => set('banco_id', e.target.value)} className={selectCls}>
                 <option value="">Sem banco</option>
@@ -221,12 +227,6 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
               </select>
             </Campo>
           </div>
-
-          {isTipoUnico && (
-            <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5 text-xs text-blue-700">
-              Este tipo permite apenas <strong>1 lançamento por mês</strong>. Duplicatas são bloqueadas automaticamente.
-            </div>
-          )}
 
           <Field label="Descrição" required error={erros.descricao}>
             {p => (

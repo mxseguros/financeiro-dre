@@ -1,4 +1,5 @@
 ﻿'use client'
+import { FILTRO_CAMPO } from '@/components/ui/filtros'
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { mesAnterior } from '@/lib/utils'
@@ -50,12 +51,12 @@ export default function ExportsPage() {
           <div className="flex-1 sm:flex-none">
             <label className="block text-xs font-medium text-gray-600">Início</label>
             <input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2.5 text-xs focus:border-navy-light focus-ring focus:outline-none sm:w-auto sm:py-1.5" />
+              className={`${FILTRO_CAMPO} mt-1 w-full sm:w-auto`} />
           </div>
           <div className="flex-1 sm:flex-none">
             <label className="block text-xs font-medium text-gray-600">Fim</label>
             <input type="date" value={fim} onChange={(e) => setFim(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2.5 text-xs focus:border-navy-light focus-ring focus:outline-none sm:w-auto sm:py-1.5" />
+              className={`${FILTRO_CAMPO} mt-1 w-full sm:w-auto`} />
           </div>
         </div>
 

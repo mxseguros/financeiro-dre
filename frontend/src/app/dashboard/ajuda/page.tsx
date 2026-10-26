@@ -115,7 +115,7 @@ const FAQ: FaqItem[] = [
     id: 'a5',
     categoria: 'Aprovação de Despesas',
     pergunta: 'Posso editar uma despesa rejeitada para corrigir e reenviar?',
-    resposta: 'Sim. Clique no lápis na linha da despesa rejeitada, corrija os campos e salve. Ela voltará para Pendente automaticamente para uma nova análise.',
+    resposta: 'Sim. Clique no lápis na linha da despesa rejeitada, corrija os campos e salve. Ela voltará para Pendente automaticamente para uma nova análise — a não ser que você informe a Data de Pagamento: despesa paga fica Aprovada.',
   },
 
   // ── DRE ───────────────────────────────────────────────────────

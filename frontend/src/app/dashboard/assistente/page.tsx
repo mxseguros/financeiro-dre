@@ -1,8 +1,12 @@
 'use client'
+import { FILTRO_BOTAO } from '@/components/ui/filtros'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
+import { SeletorPeriodo } from '@/components/ui/SeletorPeriodo'
+import { ConciliacaoDre, type Conciliacao } from './_components/ConciliacaoDre'
 
 type Severidade = 'critico' | 'aviso' | 'info'
 interface Insight {
@@ -14,6 +18,8 @@ interface Insight {
 }
 interface InsightsResp {
   gerado_em: string
+  periodo?: { inicio: string; fim: string }
+  conciliacao?: Conciliacao
   resumo: Record<Severidade, number>
   total: number
   insights: Insight[]
@@ -38,6 +44,8 @@ const TIPO_LABEL: Record<string, string> = {
   outlier:          'Valor atípico',
   sem_banco:        'Sem banco',
   gap_recorrencia:  'Gap recorrência',
+  conciliacao_receita: 'Visão Geral × DRE',
+  sem_grupo_dre:    'Fora da DRE',
 }
 
 const IconRefresh = () => (
@@ -46,6 +54,18 @@ const IconRefresh = () => (
   </svg>
 )
 
+/** 'YYYY-MM' -> primeiro e último dia do mês. */
+function limitesMes(m: string): [string, string] {
+  const [y, mo] = m.split('-')
+  const last = new Date(Number(y), Number(mo), 0).getDate()
+  return [`${y}-${mo}-01`, `${y}-${mo}-${String(last).padStart(2, '0')}`]
+}
+
+function nomeMes(m: string) {
+  const [y, mo] = m.split('-').map(Number)
+  return new Date(y, mo - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('. de ', '/').replace(' de ', '/')
+}
+
 function nomeDataHora(iso: string) {
   try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }
   catch { return '' }
@@ -53,6 +73,11 @@ function nomeDataHora(iso: string) {
 
 export default function MonitorPage() {
   const { token } = useAuth()
+  // Mesmo período das demais telas (ver contexts/PeriodoContext.tsx). Antes o
+  // Monitor olhava "6 meses atrás em diante", sem limite à frente, e somava as
+  // parcelas futuras — os totais não batiam com Lançamentos/Aprovações.
+  const filtro = filtroDoPeriodo(usePeriodo())
+  const periodoQS = filtro.qs
   const [data, setData] = useState<InsightsResp | null>(null)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -62,18 +87,18 @@ export default function MonitorPage() {
   const buscar = useCallback(() => {
     if (!token) return
     setLoading(true); setErro(null); setResumo(null)
-    api.get<InsightsResp>('/monitor/insights', token)
+    api.get<InsightsResp>(`/monitor/insights?${periodoQS}`, token)
       .then(setData)
       .catch(e => setErro(e instanceof Error ? e.message : 'Erro ao carregar o Monitor.'))
       .finally(() => setLoading(false))
-  }, [token])
+  }, [token, periodoQS])
 
   useEffect(() => { buscar() }, [buscar])
 
   function gerarResumo() {
     if (!token) return
     setResumindo(true); setResumo(null)
-    api.get<ResumoResp>('/monitor/resumo', token)
+    api.get<ResumoResp>(`/monitor/resumo?${periodoQS}`, token)
       .then(r => setResumo(r.resumo ?? r.erro ?? 'Sem resumo disponível.'))
       .catch(e => setResumo(e instanceof Error ? e.message : 'Falha ao gerar o resumo.'))
       .finally(() => setResumindo(false))
@@ -86,21 +111,26 @@ export default function MonitorPage() {
         <div>
           <h1 className="text-xl font-bold text-navy md:text-2xl">Monitoramento IA</h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            Pontos de atenção nos apontamentos — duplicatas, pendências e valores atípicos
+            Pontos de atenção nos apontamentos de{' '}
+            <strong className="font-medium text-gray-700">
+              {filtro.rotulo}
+            </strong>{' '}
+            — duplicatas, pendências e valores atípicos
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <SeletorPeriodo />
           {data && !loading && (
             <span className="text-xs text-gray-400">Atualizado {nomeDataHora(data.gerado_em)}</span>
           )}
           {data && !loading && data.total > 0 && (
-            <button onClick={gerarResumo} disabled={resumindo}
-              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+            <button data-tour="resumo-ia" onClick={gerarResumo} disabled={resumindo}
+              className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md bg-indigo-600 px-3 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50">
               {resumindo ? 'Gerando…' : '✨ Resumo com IA'}
             </button>
           )}
           <button onClick={buscar} disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:opacity-50">
+            className={FILTRO_BOTAO}>
             <IconRefresh /> Atualizar
           </button>
         </div>
@@ -108,7 +138,7 @@ export default function MonitorPage() {
 
       {/* Resumo por severidade */}
       {data && !loading && (
-        <div className="grid grid-cols-3 gap-3">
+        <div data-tour="severidades" className="grid grid-cols-3 gap-3">
           {(['critico', 'aviso', 'info'] as Severidade[]).map(sev => (
             <div key={sev} className="rounded-2xl bg-white p-4 shadow-sm">
               <div className="flex items-center gap-2">
@@ -119,6 +149,12 @@ export default function MonitorPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Conciliação Visão Geral × DRE — deixa explícito por que a receita difere */}
+      {data?.conciliacao && !loading && (
+        <ConciliacaoDre c={data.conciliacao}
+          rotuloMes={filtro.rotulo} />
       )}
 
       {/* Resumo executivo por IA (sob demanda) */}
@@ -144,7 +180,7 @@ export default function MonitorPage() {
         <div className="rounded-2xl border border-green-200 bg-green-50 p-8 text-center">
           <p className="text-3xl">🎉</p>
           <p className="mt-2 text-sm font-medium text-green-700">Nenhum ponto de atenção encontrado</p>
-          <p className="mt-1 text-xs text-green-600">Os apontamentos do período estão sem duplicatas, pendências antigas ou valores atípicos.</p>
+          <p className="mt-1 text-xs text-green-600">Os apontamentos deste período estão sem duplicatas, pendências antigas ou valores atípicos.</p>
         </div>
       ) : data ? (
         <div className="space-y-3">

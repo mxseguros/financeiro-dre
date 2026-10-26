@@ -20,6 +20,7 @@ from supabase import Client
 
 from app.auth import UsuarioAtual
 from app.logging_config import get_logger
+from app.services.financeiro_service import aprovacao_por_pagamento, campos_aprovacao
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from etl.extrato_parser import parsear  # noqa: E402
@@ -148,11 +149,11 @@ async def confirmar(payload: ConfirmarExtratoRequest, usuario: UsuarioAtual, db_
                     "tipo_lancamento_id": it.tipo_lancamento_id,
                     "criado_por":         usuario.user_id,
                     "tenant_id":          tenant_id,
-                    # Importar não aprova. Antes nascia "aprovada", então o mesmo
-                    # contador que criava despesa manual como "pendente" gerava
-                    # lançamento já aprovado ao importar extrato — o extrato virava
-                    # caminho para pular a aprovação sem que ninguém decidisse isso.
-                    "status":             "pendente",
+                    # Linha de extrato é pagamento consumado: tem paga_em, então
+                    # nasce aprovada (regra de 19/10/2026 — Data de Pagamento
+                    # aprova, qualquer perfil). Antes nascia "pendente" de
+                    # propósito; a decisão foi revista pelo Gabriel.
+                    **aprovacao_por_pagamento(usuario.user_id),
                 })
             else:
                 receitas.append({
@@ -164,7 +165,8 @@ async def confirmar(payload: ConfirmarExtratoRequest, usuario: UsuarioAtual, db_
                     "recebido_em":        data,
                     "tipo_lancamento_id": it.tipo_lancamento_id,
                     "tenant_id":          tenant_id,
-                    "status":             "pendente",
+                    # Receita não passa por aprovação (22/10/2026).
+                    **campos_aprovacao(usuario.user_id),
                 })
         except Exception as e:  # noqa: BLE001
             erros.append(f"{it.descricao[:40]}: {e}")

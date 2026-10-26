@@ -104,10 +104,10 @@ async def buscar_previsto_realizado(ano: int, mes: int, visao: str, db: Client, 
 
     (contas, despesas, receitas, comissoes, estornos, repasses, impostos, orcamento) = await asyncio.gather(
         _contas(db),
-        _todos(lambda: db.table("despesas").select("tipo_lancamento_id, valor, competencia, status")
+        _todos(lambda: db.table("despesas").select("tipo_lancamento_id, valor, competencia, status, custo_tipo")
                .gte("competencia", ini).lte("competencia", fim).in_("status", _STATUS_REALIZADO)),
         # receitas antigas (pré-0032) podem ter status nulo: contam como realizadas
-        _todos(lambda: db.table("receitas_outras").select("tipo_lancamento_id, valor, competencia, status")
+        _todos(lambda: db.table("receitas_outras").select("tipo_lancamento_id, valor, competencia, status, custo_tipo")
                .gte("competencia", ini).lte("competencia", fim)
                .or_("status.in.(pendente,aprovada),status.is.null")),
         _todos(lambda: db.table("comissoes").select("valor, competencia")
@@ -121,6 +121,14 @@ async def buscar_previsto_realizado(ano: int, mes: int, visao: str, db: Client, 
         _todos(lambda: db.table("dre_orcamento").select("subitem_id, mes, valor").eq("ano", ano),
                opcional="dre_orcamento"),
     )
+
+    # Classificação com "Usada na DRE" desmarcada (migration 0041): o lançamento
+    # fica fora da DRE — segue em Lançamentos e na Visão Geral.
+    from app.services.classificacao_service import codigos_fora_dre
+    fora = codigos_fora_dre(db)
+    if fora:
+        despesas = [d for d in despesas if d.get("custo_tipo") not in fora]
+        receitas = [r for r in receitas if r.get("custo_tipo") not in fora]
 
     no_grupo = {c["id"] for c in contas if c["grupo"] in dre_calculo.GRUPOS}
     por_papel = {c["papel"]: c["id"] for c in contas if c.get("papel")}

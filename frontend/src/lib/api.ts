@@ -4,6 +4,41 @@ const BASE = stripBom(process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 /** URL base da API — única fonte para todo o frontend. */
 export const API_BASE = BASE
 
+const ROTULOS_CAMPO: Record<string, string> = {
+  descricao: 'Descrição',
+  subcategoria: 'Descrição',
+  valor: 'Valor',
+  competencia: 'Competência',
+  data_vencimento: 'Data de vencimento',
+  paga_em: 'Data de pagamento',
+  num_parcelas: 'Nº de parcelas',
+  repetir_ate: 'Repetir até',
+  centro_custo: 'Centro de custo',
+  categoria: 'Categoria',
+}
+
+/**
+ * Erros de schema do FastAPI/Pydantic chegam com `detail` em lista
+ * ([{loc, msg}]), não em texto — antes viravam só "HTTP 422" na tela.
+ */
+function formatarErrosValidacao(detail: unknown): string {
+  if (!Array.isArray(detail)) return ''
+  const linhas = detail.map((d: { loc?: unknown[]; msg?: string }) => {
+    const loc = d?.loc ?? []
+    const campo = String(loc[loc.length - 1] ?? '')
+    const msg = String(d?.msg ?? '')
+      .replace(/^Value error, /, '')
+      .replace(/String should have at least (\d+) characters?/, 'deve ter no mínimo $1 caracteres')
+      .replace(/String should have at most (\d+) characters?/, 'deve ter no máximo $1 caracteres')
+      .replace(/Input should be less than or equal to (\S+)/, 'deve ser no máximo $1')
+      .replace(/Input should be greater than or equal to (\S+)/, 'deve ser no mínimo $1')
+      .replace(/^Field required$/, 'é obrigatório')
+    const rotulo = ROTULOS_CAMPO[campo]
+    return rotulo ? `${rotulo}: ${msg}` : msg
+  })
+  return [...new Set(linhas.filter(Boolean))].join(' · ')
+}
+
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
@@ -33,7 +68,7 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     const detail = body?.detail ?? body?.erro
-    throw new Error(typeof detail === 'string' && detail ? detail : `HTTP ${res.status}`)
+    throw new Error(typeof detail === 'string' && detail ? detail : formatarErrosValidacao(detail) || `HTTP ${res.status}`)
   }
   if (res.status === 204 || res.headers.get('content-length') === '0') {
     return undefined as unknown as T

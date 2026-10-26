@@ -22,12 +22,13 @@ from supabase import Client
 
 from app.auth import UsuarioAtual
 from app.config import cfg
+from app.services import conciliacao_service
 
 logger = logging.getLogger(__name__)
 
 DIAS_PENDENTE = 3      # pendente há mais de N dias vira alerta
 FATOR_OUTLIER = 3.0    # valor > FATOR × média do subitem = atípico
-MESES_JANELA = 6       # histórico considerado para baseline/duplicatas
+MESES_JANELA = 6       # meses ANTES do período usados só como base dos outliers
 MIN_HIST_OUTLIER = 3   # nº mínimo de amostras p/ calcular média confiável
 MAX_INSIGHTS = 60
 MODELO_RESUMO = "claude-opus-4-8"   # trocável por "claude-haiku-4-5" p/ reduzir custo
@@ -54,35 +55,83 @@ def _parse_dt(s: str | None) -> datetime | None:
         return None
 
 
-def _cutoff_competencia() -> str:
-    h = date.today()
-    y, m = h.year, h.month - MESES_JANELA
+def _primeiro_dia_meses_antes(d: date, meses: int) -> date:
+    y, m = d.year, d.month - meses
     while m <= 0:
         m += 12
         y -= 1
-    return f"{y}-{m:02d}-01"
+    return date(y, m, 1)
 
 
-async def gerar_insights(usuario: UsuarioAtual, db: Client) -> dict:
+def _todas_as_linhas(q, pagina: int = 1000) -> list[dict]:
+    """Pagina a consulta: o PostgREST corta em max_rows sem avisar."""
+    linhas: list[dict] = []
+    while True:
+        lote = q.range(len(linhas), len(linhas) + pagina - 1).execute().data or []
+        linhas += lote
+        if len(lote) < pagina:
+            return linhas
+
+
+async def gerar_insights(usuario: UsuarioAtual, db: Client, inicio: date, fim: date, base: str = "competencia") -> dict:
+    """Pontos de atenção do PERÍODO escolhido (o mesmo das demais telas).
+
+    Antes a janela era "6 meses atrás em diante", sem limite à frente: as
+    parcelas e recorrências futuras (até 2030+) entravam nas contas, e o
+    Monitor mostrava pendências e totais que nenhuma outra tela batia.
+    O histórico anterior ao período serve só de base para outliers e
+    para o gap de recorrência — não entra em nenhum total.
+    """
     so_proprios = usuario.role in ("comercial", "contador")
+    hist_inicio = _primeiro_dia_meses_antes(inicio, MESES_JANELA)
 
     q = (
         db.table("despesas")
-        .select("id, descricao, valor, competencia, status, criado_em, recorrente, banco_id, tipo_lancamento_id, subitens_lancamento(nome)")
+        .select("id, descricao, valor, competencia, data_vencimento, status, criado_em, recorrente, banco_id, "
+                + ("data_ref, " if base == "pagamento" else "") + "tipo_lancamento_id, subitens_lancamento(nome)")
         .neq("status", "excluida")
-        .gte("competencia", _cutoff_competencia())
+    )
+    if base == "pagamento":
+        # Histórico por competência + o que tem pagamento (ou vencimento) no período,
+        # mesmo com competência fora da janela (ex.: pago adiantado).
+        q = q.or_(f"and(competencia.gte.{hist_inicio.isoformat()},competencia.lte.{fim.isoformat()}),"
+                  f"and(data_ref.gte.{inicio.isoformat()},data_ref.lte.{fim.isoformat()})")
+    else:
+        q = q.gte("competencia", hist_inicio.isoformat()).lte("competencia", fim.isoformat())
+    q = (
+        q.order("competencia")
+        .order("id")
     )
     if so_proprios:
         q = q.eq("criado_por", usuario.user_id)
-    despesas = q.limit(5000).execute().data or []
+    todas = _todas_as_linhas(q)
+
+    ini_s, fim_s = inicio.isoformat(), fim.isoformat()
+    # Dia (base "data"): o período é pelo vencimento; o histórico continua
+    # sendo os meses de competência ANTERIORES ao mês do início.
+    corte_hist = date(inicio.year, inicio.month, 1).isoformat()
+    if base == "pagamento":
+        do_periodo = [d for d in todas if ini_s <= (d.get("data_ref") or "")[:10] <= fim_s]
+    elif base == "data":
+        do_periodo = [d for d in todas if ini_s <= (d.get("data_vencimento") or "")[:10] <= fim_s]
+    else:
+        do_periodo = [d for d in todas if (d.get("competencia") or "") >= ini_s]
+    ids_periodo = {d["id"] for d in do_periodo}
+    historico = [d for d in todas if (d.get("competencia") or "") < corte_hist and d["id"] not in ids_periodo]
+    # Rejeitada não é gasto: fora de duplicata, sem banco e outlier.
+    validas = [d for d in do_periodo if d.get("status") != "rejeitada"]
+    mes_ref = fim.strftime("%Y-%m")
 
     insights: list[dict] = []
-    insights += _duplicatas(despesas)
-    insights += _pendentes_despesas(despesas)
-    insights += _sem_banco(despesas)
-    insights += _outliers(despesas)
-    insights += _gap_recorrencia(despesas)
-    insights += _ordens_pendentes(db, usuario, so_proprios)
+    insights += _duplicatas(validas)
+    insights += _pendentes_despesas(do_periodo)
+    insights += _sem_banco(validas)
+    insights += _outliers(validas, [d for d in historico if d.get("status") != "rejeitada"])
+    insights += _gap_recorrencia(todas, mes_ref)
+    insights += _ordens_pendentes(db, usuario, so_proprios, inicio, fim)
+    # Por que a receita da Visão Geral difere da linha Receita da DRE.
+    conciliacao = await conciliacao_service.conciliar(usuario, db, inicio, fim, base)
+    insights += conciliacao_service.insights_da_conciliacao(conciliacao)
 
     ordem = {"critico": 0, "aviso": 1, "info": 2}
     insights.sort(key=lambda i: (ordem.get(i["severidade"], 3), -(i.get("valor") or 0)))
@@ -90,6 +139,8 @@ async def gerar_insights(usuario: UsuarioAtual, db: Client) -> dict:
     resumo = {sev: sum(1 for i in insights if i["severidade"] == sev) for sev in ("critico", "aviso", "info")}
     return {
         "gerado_em": datetime.now(timezone.utc).isoformat(),
+        "periodo": {"inicio": ini_s, "fim": fim.isoformat()},
+        "conciliacao": conciliacao,
         "resumo": resumo,
         "total": len(insights),
         "insights": insights[:MAX_INSIGHTS],
@@ -151,17 +202,15 @@ def _sem_banco(despesas: list[dict]) -> list[dict]:
     }]
 
 
-def _outliers(despesas: list[dict]) -> list[dict]:
-    mes_atual = date.today().strftime("%Y-%m")
+def _outliers(do_periodo: list[dict], historico: list[dict]) -> list[dict]:
+    """Despesa do período muito acima da média do subitem nos meses anteriores."""
     hist: dict[str, list[float]] = defaultdict(list)
-    for d in despesas:
+    for d in historico:
         tid = d.get("tipo_lancamento_id")
-        if tid and (d.get("competencia") or "")[:7] < mes_atual:
+        if tid:
             hist[tid].append(_num(d.get("valor")))
     out = []
-    for d in despesas:
-        if (d.get("competencia") or "")[:7] != mes_atual:
-            continue
+    for d in do_periodo:
         vals = hist.get(d.get("tipo_lancamento_id") or "") or []
         if len(vals) < MIN_HIST_OUTLIER:
             continue
@@ -179,16 +228,9 @@ def _outliers(despesas: list[dict]) -> list[dict]:
     return out
 
 
-def _mes_anterior() -> str:
-    h = date.today()
-    y, m = (h.year - 1, 12) if h.month == 1 else (h.year, h.month - 1)
-    return f"{y}-{m:02d}"
-
-
-def _gap_recorrencia(despesas: list[dict]) -> list[dict]:
-    """Despesa recorrente que vinha lançando mas NÃO tem registro no mês atual."""
-    mes_atual = date.today().strftime("%Y-%m")
-    mes_ant = _mes_anterior()
+def _gap_recorrencia(despesas: list[dict], mes_atual: str) -> list[dict]:
+    """Despesa recorrente que vinha lançando mas NÃO tem registro no mês de referência."""
+    mes_ant = _primeiro_dia_meses_antes(date.fromisoformat(f"{mes_atual}-01"), 1).strftime("%Y-%m")
     grupos: dict[tuple, set[str]] = defaultdict(set)
     rotulo: dict[tuple, str] = {}
     for d in despesas:
@@ -213,9 +255,14 @@ def _gap_recorrencia(despesas: list[dict]) -> list[dict]:
     return out
 
 
-def _ordens_pendentes(db: Client, usuario: UsuarioAtual, so_proprios: bool) -> list[dict]:
+def _ordens_pendentes(db: Client, usuario: UsuarioAtual, so_proprios: bool, inicio: date, fim: date) -> list[dict]:
     try:
-        q = db.table("ordens_compra").select("id, valor, status, criado_em").eq("status", "pendente")
+        # Mesmo recorte da tela de Ordens de Compra (data_solicitacao no período).
+        q = (
+            db.table("ordens_compra").select("id, valor, status, criado_em").eq("status", "pendente")
+            .gte("data_solicitacao", inicio.isoformat())
+            .lte("data_solicitacao", fim.isoformat())
+        )
         if so_proprios:
             q = q.eq("criado_por", usuario.user_id)
         rows = q.limit(1000).execute().data or []

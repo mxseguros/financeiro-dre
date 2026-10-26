@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react'
 import { api, API_BASE } from '@/lib/api'
 import { fmtBRL, fmtData } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
-import { Campo, selectCls, type Banco, type CentroCusto, type TipoLancamento } from './shared'
+import { Campo, selectCls, type Banco, type Categoria, type CentroCusto, type TipoLancamento } from './shared'
 
 interface PreviewItem {
   id: number
@@ -23,36 +23,19 @@ interface PreviewResp {
   resumo: { total: number; despesas: number; receitas: number; duplicatas: number; ignorados: number }
   itens: PreviewItem[]
 }
-interface Sugestao {
-  subitem_id: string
-  subitem_nome: string
-  categoria_nome: string | null
-  fonte: 'historico' | 'ia'
-  confianca: 'alta' | 'media' | 'baixa' | null
-}
-interface SugestaoResp {
-  sugestoes: Record<string, Sugestao>
-  total_historico: number
-  total_ia: number
-  sem_sugestao: number
-}
-type ItemLocal = PreviewItem & {
-  incluir: boolean
-  tipo_lancamento_id: string | null
-  // Guarda a origem da sugestão para o badge; some quando o usuário troca à mão.
-  sugestao: Sugestao | null
-}
+type ItemLocal = PreviewItem & { incluir: boolean }
 
 interface Props {
   token: string
   bancos: Banco[]
   centros: CentroCusto[]
   tipos: TipoLancamento[]
+  categorias: Categoria[]
   onClose: () => void
   onImported: () => void
 }
 
-export function ModalImportarExtrato({ token, bancos, centros, tipos, onClose, onImported }: Props) {
+export function ModalImportarExtrato({ token, bancos, centros, tipos, categorias, onClose, onImported }: Props) {
   const [etapa, setEtapa] = useState<'upload' | 'revisao' | 'resultado'>('upload')
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -62,9 +45,14 @@ export function ModalImportarExtrato({ token, bancos, centros, tipos, onClose, o
   const [centro, setCentro] = useState('matriz')
   const [confirmandoDup, setConfirmandoDup] = useState(false)
   const [resultado, setResultado] = useState<{ total_importado: number; despesas: number; receitas: number } | null>(null)
-  const [sugerindo, setSugerindo] = useState(false)
-  const [resumoSugestao, setResumoSugestao] = useState<SugestaoResp | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Categoria e Subitem das RECEITAS, no topo (pedido de 22/10/2026). Opcionais;
+  // o Subitem escolhido vai em todas as receitas importadas. A categoria de uma
+  // receita é a do subitem — não há coluna própria em receitas_outras.
+  const [categoriaId, setCategoriaId] = useState('')
+  const [subitemId, setSubitemId] = useState('')
+  const categoriasReceita = categorias.filter(c => c.natureza === 'receita' && c.ativo)
+  const subitensDaCategoria = tipos.filter(t => t.natureza === 'receita' && t.categoria_id === categoriaId)
 
   async function enviarArquivo(file: File) {
     setCarregando(true); setErro(null)
@@ -81,15 +69,11 @@ export function ModalImportarExtrato({ token, bancos, centros, tipos, onClose, o
       const p: PreviewResp = await res.json()
       setPreview(p)
       // Duplicatas começam DESMARCADAS (exigem confirmação); demais marcadas
-      setItens(p.itens.map(i => ({ ...i, incluir: !i.duplicata, tipo_lancamento_id: null, sugestao: null })))
+      setItens(p.itens.map(i => ({ ...i, incluir: !i.duplicata })))
       // Pré-seleciona o banco pelo nome, se casar
       const match = bancos.find(b => b.nome.toLowerCase().includes(p.banco.toLowerCase().slice(0, 5)))
       setBancoId(match?.id ?? '')
       setEtapa('revisao')
-      // Sugestões chegam em segundo plano — a revisão abre na hora e os
-      // subitens vão sendo preenchidos quando a resposta (histórico + IA
-      // em lote, 1 chamada) voltar. Falha aqui não bloqueia a importação.
-      buscarSugestoes(p.itens)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao enviar o arquivo.')
     } finally {
@@ -97,40 +81,11 @@ export function ModalImportarExtrato({ token, bancos, centros, tipos, onClose, o
     }
   }
 
-  async function buscarSugestoes(base: PreviewItem[]) {
-    setSugerindo(true)
-    try {
-      const r = await api.post<SugestaoResp>('/importacao/extrato/sugerir', token, {
-        itens: base.map(i => ({ id: i.id, descricao: i.descricao, tipo: i.tipo })),
-      })
-      setResumoSugestao(r)
-      setItens(prev => prev.map(i => {
-        const s = r.sugestoes[String(i.id)]
-        // Só preenche o que o usuário ainda não escolheu à mão.
-        if (!s || i.tipo_lancamento_id) return i
-        return { ...i, tipo_lancamento_id: s.subitem_id, sugestao: s }
-      }))
-    } catch {
-      // Sugestão é acessória: sem ela a tela continua funcionando como antes.
-    } finally {
-      setSugerindo(false)
-    }
-  }
-
   function alternarIncluir(id: number) {
     setItens(prev => prev.map(i => i.id === id ? { ...i, incluir: !i.incluir } : i))
   }
   function alternarTipo(id: number, tipo: 'despesa' | 'receita') {
-    // Trocar a natureza invalida o subitem: o seletor só lista a natureza atual.
-    setItens(prev => prev.map(i => i.id === id
-      ? { ...i, tipo, ...(i.tipo !== tipo ? { tipo_lancamento_id: null, sugestao: null } : {}) }
-      : i))
-  }
-  function escolherSubitem(id: number, subitemId: string) {
-    // Escolha manual apaga o badge de sugestão — o valor agora é do usuário.
-    setItens(prev => prev.map(i => i.id === id
-      ? { ...i, tipo_lancamento_id: subitemId || null, sugestao: null }
-      : i))
+    setItens(prev => prev.map(i => i.id === id ? { ...i, tipo } : i))
   }
   function editarDescricao(id: number, descricao: string) {
     setItens(prev => prev.map(i => i.id === id ? { ...i, descricao } : i))
@@ -159,8 +114,9 @@ export function ModalImportarExtrato({ token, bancos, centros, tipos, onClose, o
           centro_custo: centro,
           itens: selecionados.map(i => ({
             data: i.data, descricao: i.descricao, valor: i.valor, tipo: i.tipo,
-            // O contrato sempre aceitou este campo; o frontend é que nunca enviava.
-            tipo_lancamento_id: i.tipo_lancamento_id,
+            // Receitas levam o Subitem escolhido no topo; despesas entram sem
+            // subitem e são classificadas depois, em Lançamentos.
+            tipo_lancamento_id: i.tipo === 'receita' ? (subitemId || null) : null,
           })),
         },
       )
@@ -213,6 +169,25 @@ export function ModalImportarExtrato({ token, bancos, centros, tipos, onClose, o
             {preview.avisos.map((a, i) => (
               <p key={i} className="mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-700">{a}</p>
             ))}
+            {itens.some(i => i.tipo === 'receita') && (
+              <div className="mb-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <Campo label="Categoria">
+                  <select value={categoriaId} onChange={e => { setCategoriaId(e.target.value); setSubitemId('') }} className={selectCls}>
+                    <option value="">Selecionar categoria</option>
+                    {categoriasReceita.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                </Campo>
+                <Campo label="Subitem">
+                  <select value={subitemId} onChange={e => setSubitemId(e.target.value)} disabled={!categoriaId} className={selectCls}>
+                    <option value="">{categoriaId ? 'Selecionar subitem' : 'Escolha a categoria primeiro'}</option>
+                    {subitensDaCategoria.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                  </select>
+                </Campo>
+                <p className="-mt-1 text-[11px] text-gray-400 sm:col-span-2">
+                  Opcional. O Subitem escolhido é gravado em todas as receitas importadas.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <Campo label="Banco (destino no app) *">
                 <select value={bancoId} onChange={e => setBancoId(e.target.value)} className={selectCls}>
@@ -268,29 +243,6 @@ export function ModalImportarExtrato({ token, bancos, centros, tipos, onClose, o
                       </button>
                     </div>
                   </div>
-                  {/* Subitem: pré-preenchido pela sugestão (badge diz a origem),
-                      sempre editável. Lista só a natureza do item. */}
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    <select value={it.tipo_lancamento_id ?? ''} onChange={e => escolherSubitem(it.id, e.target.value)}
-                      className={`min-w-0 flex-1 rounded-md border px-1.5 py-1 text-xs focus:border-navy focus:outline-none ${it.tipo_lancamento_id ? 'border-gray-200 text-gray-700' : 'border-dashed border-gray-300 text-gray-400'}`}>
-                      <option value="">{sugerindo ? 'Classificando…' : 'Sem subitem (classificar depois)'}</option>
-                      {tipos.filter(t => t.natureza === it.tipo).map(t => (
-                        <option key={t.id} value={t.id}>{t.nome}</option>
-                      ))}
-                    </select>
-                    {it.sugestao && (
-                      <span title={it.sugestao.fonte === 'historico'
-                          ? 'Reaproveitado de lançamento igual já classificado'
-                          : `Sugestão da IA — confiança ${it.sugestao.confianca ?? 'media'}`}
-                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                          it.sugestao.fonte === 'historico'
-                            ? 'bg-blue-50 text-blue-600'
-                            : it.sugestao.confianca === 'baixa' ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'
-                        }`}>
-                        {it.sugestao.fonte === 'historico' ? '↺ histórico' : '✨ IA'}
-                      </span>
-                    )}
-                  </div>
                 </div>
               </div>
             ))}
@@ -317,10 +269,6 @@ export function ModalImportarExtrato({ token, bancos, centros, tipos, onClose, o
                 <p className="text-xs text-gray-500">
                   <strong className="text-navy">{selecionados.length}</strong> selecionado(s) · {nDespesas} desp. · {nReceitas} rec.
                   {dupsSelecionadas > 0 && <span className="text-amber-600"> · {dupsSelecionadas} dup.</span>}
-                  {sugerindo && <span className="text-indigo-500"> · classificando com IA…</span>}
-                  {!sugerindo && resumoSugestao && (
-                    <span className="text-gray-400"> · {resumoSugestao.total_historico} via histórico · {resumoSugestao.total_ia} via IA</span>
-                  )}
                 </p>
                 <button onClick={importar} disabled={carregando || selecionados.length === 0 || !bancoId}
                   className="rounded-lg bg-navy px-5 py-2.5 text-sm font-medium text-white hover:bg-navy-light disabled:opacity-50">

@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_admin, get_supabase_usuario
-from app.middleware.periodo import validar_periodo
+from app.middleware.periodo import validar_base, validar_periodo
 from app.middleware.rate_limit import limiter
 from app.regras_lancamento import garantir_exclusao_propria, pode_excluir_qualquer
 from app.models.schemas import (
@@ -110,6 +110,9 @@ async def sugerir_classificacao(
 async def listar_despesas(
     request: Request,
     periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
+    categoria_id:       str | None = Query(None, description="Filtro Tipo: todos os subitens da categoria"),
+    tipo_lancamento_id: str | None = Query(None, description="Filtro Tipo: subitem exato"),
     centro_custo:   str | None = Query(None),
     banco_id:       str | None = Query(None),
     status_filter:  str | None = Query(None, alias="status", description="Filtrar por status: pendente | aprovada | rejeitada"),
@@ -128,6 +131,7 @@ async def listar_despesas(
         inicio, fim, usuario, db, centro_custo, banco_id, status_filter,
         limit=limit, offset=offset,
         busca=busca, ordenar_por=ordenar_por, ordem_desc=(ordem == "desc"),
+        base=base, categoria_id=categoria_id, tipo_lancamento_id=tipo_lancamento_id,
     )
     await auditar_leitura(
         usuario, "consulta_despesas",
@@ -188,6 +192,7 @@ async def editar_despesa(
     # Quem não aprova não refaz, reparcelando, uma série com parcela aprovada.
     item = await financeiro_service.atualizar_despesa(
         despesa_id, payload, db, preservar_aprovadas=not pode_excluir_qualquer(usuario),
+        usuario=usuario,
     )
     await registrar_auditoria(
         usuario, "editar_despesa",
@@ -344,8 +349,13 @@ async def rejeitar_receita(
 async def listar_receitas(
     request: Request,
     periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
+    categoria_id:       str | None = Query(None, description="Filtro Tipo: todos os subitens da categoria"),
+    tipo_lancamento_id: str | None = Query(None, description="Filtro Tipo: subitem exato"),
     centro_custo: str | None = Query(None),
     banco_id:     str | None = Query(None),
+    status_filter: str | None = Query(None, alias="status", pattern="^(pendente|aprovada|rejeitada)$",
+                                      description="Filtrar receitas manuais por status (comissões, sem status, saem da lista)"),
     busca:        str | None = Query(None, alias="q", max_length=100, description="Busca por descrição/observação"),
     ordenar_por:  str        = Query("competencia", description="competencia | vencimento | pagamento | valor | registro"),
     ordem:        str        = Query("desc", pattern="^(asc|desc)$"),
@@ -358,6 +368,8 @@ async def listar_receitas(
     resultado = await financeiro_service.buscar_receitas(
         inicio, fim, usuario, db, centro_custo, banco_id,
         busca=busca, ordenar_por=ordenar_por, ordem_desc=(ordem == "desc"),
+        status_filter=status_filter,
+        base=base, categoria_id=categoria_id, tipo_lancamento_id=tipo_lancamento_id,
     )
     await auditar_leitura(
         usuario, "consulta_receitas",
@@ -410,7 +422,7 @@ async def editar_receita(
     _exigir_leitura(usuario)
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    item = await financeiro_service.atualizar_receita_outra(receita_id, payload, db)
+    item = await financeiro_service.atualizar_receita_outra(receita_id, payload, db, usuario=usuario)
     await registrar_auditoria(
         usuario, "editar_receita",
         {"receita_id": str(receita_id)},

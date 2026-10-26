@@ -1,4 +1,5 @@
 'use client'
+import { FILTRO_CAMPO } from '@/components/ui/filtros'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
@@ -158,7 +159,7 @@ export default function MetasPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select aria-label="Ano" value={ano} onChange={e => { setAviso(null); setAno(Number(e.target.value)) }}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm focus-ring focus:outline-none">
+            className={FILTRO_CAMPO}>
             {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
           {podeEditar && (
@@ -174,7 +175,7 @@ export default function MetasPage() {
           <label className="inline-flex items-center gap-1.5">
             A partir de
             <select value={mesBase} onChange={e => setMesBase(Number(e.target.value))}
-              className="rounded-md border border-gray-200 bg-white px-2 py-1 focus-ring focus:outline-none">
+              className={FILTRO_CAMPO}>
               {MESES_LONGOS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
             </select>
           </label>

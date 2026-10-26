@@ -17,9 +17,10 @@ from app.models.schemas import (
     BancoCreate, BancoItem, BancoUpdate,
     CategoriaLancamentoCreate, CategoriaLancamentoItem, CategoriaLancamentoUpdate,
     CentroCustoCreate, CentroCustoItem, CentroCustoUpdate,
+    ClassificacaoCreate, ClassificacaoItem, ClassificacaoUpdate,
     TipoLancamentoCreate, TipoLancamentoItem, TipoLancamentoUpdate,
 )
-from app.services import financeiro_service
+from app.services import classificacao_service, financeiro_service
 from app.services.dre_service import registrar_auditoria
 
 router = APIRouter(prefix="/configuracoes", tags=["Configurações"])
@@ -239,6 +240,54 @@ async def excluir_categoria(
 ):
     _exigir_admin(usuario)
     await financeiro_service.excluir_categoria_lancamento(categoria_id, get_supabase_admin())
+
+
+# ── CLASSIFICAÇÕES (campo Classificação dos subitens) ─────────
+
+@router.get("/classificacoes", response_model=list[ClassificacaoItem], summary="Listar classificações")
+async def listar_classificacoes(
+    request: Request,
+    natureza: str | None = Query(None, description="'despesa' ou 'receita' (inclui as de 'ambas')"),
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    return classificacao_service.listar(get_supabase_usuario(token), natureza)
+
+
+@router.post("/classificacoes", response_model=ClassificacaoItem, status_code=status.HTTP_201_CREATED,
+             summary="Criar classificação (admin)")
+async def criar_classificacao(
+    request: Request,
+    payload: ClassificacaoCreate,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_admin(usuario)
+    item = classificacao_service.criar(payload.nome, payload.natureza, payload.ordem, usuario, get_supabase_admin(),
+                                        payload.usada_dre)
+    await registrar_auditoria(usuario, "criar_classificacao", {"nome": payload.nome},
+                              request.client.host if request.client else None, get_supabase_admin())
+    return item
+
+
+@router.put("/classificacoes/{codigo}", response_model=ClassificacaoItem, summary="Atualizar classificação (admin)")
+async def atualizar_classificacao(
+    request: Request,
+    codigo: str,
+    payload: ClassificacaoUpdate,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_admin(usuario)
+    return classificacao_service.atualizar(codigo, payload.model_dump(exclude_none=True), get_supabase_admin())
+
+
+@router.delete("/classificacoes/{codigo}", status_code=status.HTTP_204_NO_CONTENT, summary="Excluir classificação (admin)")
+async def excluir_classificacao(
+    request: Request,
+    codigo: str,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_admin(usuario)
+    classificacao_service.excluir(codigo, get_supabase_admin())
 
 
 # ── TIPOS DE LANÇAMENTO ───────────────────────────────────────

@@ -164,6 +164,50 @@ class CategoriaLancamentoUpdate(RespostaBase):
     ativo: bool | None = None
 
 
+# ── CONFIGURAÇÕES: CLASSIFICAÇÕES (migration 0039) ────────────
+
+_NATUREZAS_CLASSIF = ("despesa", "receita", "ambas")
+
+
+class ClassificacaoItem(RespostaBase):
+    codigo:   str
+    nome:     str
+    natureza: str          # 'despesa' | 'receita' | 'ambas'
+    ordem:    int = 0
+    ativo:    bool = True
+    sistema:  bool = False  # uma das 4 originais (informativo; sem trava desde a 0041)
+    usada_dre: bool = True  # desmarcada: lançamentos com ela ficam fora da DRE (0041)
+
+
+class ClassificacaoCreate(RespostaBase):
+    nome:     str = Field(min_length=1, max_length=60)
+    natureza: str = "ambas"
+    ordem:    int = 0
+    usada_dre: bool = True
+
+    @field_validator("natureza")
+    @classmethod
+    def natureza_ok(cls, v: str) -> str:
+        if v not in _NATUREZAS_CLASSIF:
+            raise ValueError("natureza deve ser despesa, receita ou ambas")
+        return v
+
+
+class ClassificacaoUpdate(RespostaBase):
+    nome:     str | None = Field(default=None, max_length=60)
+    natureza: str | None = None
+    ordem:    int | None = None
+    ativo:    bool | None = None
+    usada_dre: bool | None = None
+
+    @field_validator("natureza")
+    @classmethod
+    def natureza_ok(cls, v: str | None) -> str | None:
+        if v is not None and v not in _NATUREZAS_CLASSIF:
+            raise ValueError("natureza deve ser despesa, receita ou ambas")
+        return v
+
+
 # ── CONFIGURAÇÕES: SUBITENS DE LANÇAMENTO (ex-"Tipos de Lançamento") ──
 
 class TipoLancamentoItem(RespostaBase):
@@ -175,6 +219,8 @@ class TipoLancamentoItem(RespostaBase):
     categoria_nome: str | None = None
     custo_tipo:    str | None
     ativo:         bool
+    # Receitas deste subitem constam só na DRE (migration 0037).
+    somente_dre:   bool = False
 
 
 def _validar_categoria_enum(v: str | None) -> str | None:
@@ -199,6 +245,7 @@ class TipoLancamentoCreate(RespostaBase):
     categoria:    str | None = None
     categoria_id: UUID   # subitens_lancamento.categoria_id é NOT NULL desde a 0026
     custo_tipo:   str | None = None
+    somente_dre:  bool = False
 
     _categoria_ok = field_validator("categoria")(_validar_categoria_enum)
 
@@ -209,6 +256,7 @@ class TipoLancamentoUpdate(RespostaBase):
     categoria_id: UUID | None = None
     custo_tipo:   str | None = None
     ativo:        bool | None = None
+    somente_dre:  bool | None = None
 
     _categoria_ok = field_validator("categoria")(_validar_categoria_enum)
 
@@ -275,6 +323,9 @@ CATEGORIAS_DESPESA_VALIDAS = {
 class DespesaCreate(RespostaBase):
     tipo_lancamento_id: UUID | None = None
     banco_id:           UUID | None = None
+    # Classificação do lançamento (migration 0040). Sem ela, o banco aplica a
+    # do subitem como padrão (gatilho lancamento_classificacao_padrao).
+    custo_tipo:         str | None = None
     categoria:          str | None = None   # ENUM legado — obrigatório se tipo_lancamento_id for None
     subcategoria:       str = Field(min_length=1, max_length=100)
     descricao:          str = Field(min_length=3, max_length=500)
@@ -289,7 +340,7 @@ class DespesaCreate(RespostaBase):
     # Parcelamento atômico: quando > 1, o backend cria as N parcelas
     # (uma por mês a partir de `competencia`) em um único INSERT.
     # `valor` é o valor MENSAL de cada parcela.
-    num_parcelas:       int | None = Field(default=None, ge=2, le=60)
+    num_parcelas:       int | None = Field(default=None, ge=2, le=999)
     # Recorrência atômica (espelha ReceitaOutraCreate.repetir_ate): quando
     # informado (>= competencia), o backend cria um registro por mês até
     # este mês em um único INSERT. Mutuamente exclusivo com num_parcelas.
@@ -341,6 +392,7 @@ class DespesaItem(RespostaBase):
     id:                 UUID
     tipo_lancamento_id: UUID | None
     tipo_nome:          str | None          # nome do tipo (join)
+    custo_tipo:         str | None = None   # classificação do lançamento (migration 0040)
     banco_id:           UUID | None
     banco_nome:         str | None          # nome do banco (join)
     categoria:          str | None
@@ -376,6 +428,7 @@ class DespesasResponse(RespostaBase):
 class DespesaUpdate(RespostaBase):
     tipo_lancamento_id: UUID | None = None
     banco_id:           UUID | None = None
+    custo_tipo:         str | None = None   # classificação (migration 0040); null limpa
     descricao:          str | None = Field(default=None, min_length=3, max_length=500)
     subcategoria:       str | None = Field(default=None, min_length=1, max_length=100)
     valor:              Decimal | None = Field(default=None, ge=0, le=99_999_999.99)
@@ -388,7 +441,7 @@ class DespesaUpdate(RespostaBase):
     # total. `1` desfaz o parcelamento e devolve um lançamento avulso.
     # Existe para o caso de uma despesa importada do extrato que, na verdade,
     # era a primeira cobrança de um financiamento.
-    num_parcelas:       int | None = Field(default=None, ge=1, le=60)
+    num_parcelas:       int | None = Field(default=None, ge=1, le=999)
 
     @field_validator("centro_custo")
     @classmethod
@@ -447,6 +500,7 @@ class OrdemCompraUpdate(RespostaBase):
 class ReceitaOutraUpdate(RespostaBase):
     tipo_lancamento_id: UUID | None = None
     banco_id:           UUID | None = None
+    custo_tipo:         str | None = None   # classificação (migration 0040); null limpa
     centro_custo:       str | None = None
     descricao:          str | None = Field(default=None, min_length=3, max_length=500)
     valor:              Decimal | None = Field(default=None, ge=0, le=99_999_999.99)
@@ -466,6 +520,9 @@ class ReceitaOutraUpdate(RespostaBase):
 class ReceitaOutraCreate(RespostaBase):
     tipo_lancamento_id: UUID | None = None
     banco_id:           UUID | None = None
+    # Classificação do lançamento (migration 0040). Sem ela, o banco aplica a
+    # do subitem como padrão (gatilho lancamento_classificacao_padrao).
+    custo_tipo:         str | None = None
     centro_custo:       str = "matriz"
     descricao:          str = Field(min_length=3, max_length=500)
     valor:              Decimal = Field(ge=0, le=99_999_999.99)
@@ -492,6 +549,7 @@ class ReceitaItem(RespostaBase):
     origem:             str             # 'comissao' | 'manual'
     tipo_lancamento_id: UUID | None = None
     tipo_nome:          str | None = None
+    custo_tipo:         str | None = None   # classificação do lançamento (migration 0040)
     banco_id:           UUID | None = None
     banco_nome:         str | None = None
     descricao:          str
@@ -506,6 +564,8 @@ class ReceitaItem(RespostaBase):
     # Só receita manual tem status (migration 0032). Comissão vem de apólice e
     # não passa por aprovação — por isso o default None em vez de "pendente".
     status:             str | None = None
+    # Subitem marcado "Constar apenas na DRE": listada, mas fora dos totais.
+    somente_dre:        bool = False
 
 
 class ReceitasResponse(RespostaBase):
@@ -630,10 +690,28 @@ class AlertaDashboard(RespostaBase):
     severidade: str  # 'info' | 'aviso' | 'critico'
 
 
+class ReceitaDespesaSaldo(RespostaBase):
+    receitas: Decimal = Decimal(0)
+    despesas: Decimal = Decimal(0)
+    saldo:    Decimal = Decimal(0)
+
+
+class TotalGeral(ReceitaDespesaSaldo):
+    ate: date   # último dia considerado (12 meses à frente do mês atual)
+
+
+class ResumoVisaoGeral(RespostaBase):
+    """Boxes da Visão Geral (escopo de 19/10/2026). Ver dashboard_service.resumo_visao_geral."""
+    previsto:       ReceitaDespesaSaldo          # competência no período, pago ou não
+    despesas_pagas: Decimal = Decimal(0)         # competência no período e com Data de Pagamento
+    total_geral:    TotalGeral                   # todos os meses até 12 à frente; não segue o período
+
+
 class DashboardResponse(RespostaBase):
     periodo:     dict[str, date]
     dre:         LinhasDRE
     perfil:      str
+    resumo:      ResumoVisaoGeral | None = None
     metas:       Any = None
     alertas:     list[AlertaDashboard]
     latencia_ms: int
@@ -647,6 +725,9 @@ class BancoResumoItem(RespostaBase):
     receitas:   Decimal
     despesas:   Decimal
     saldo:      Decimal
+    # Lançamento único do subitem "Saldo Inicial" do banco, sem filtro de
+    # período (box "Saldo do período Itaú", 23/10/2026). Não entra no saldo.
+    saldo_inicial: Decimal = Decimal(0)
 
 
 class DashboardPorBancoResponse(RespostaBase):
@@ -654,7 +735,47 @@ class DashboardPorBancoResponse(RespostaBase):
     bancos:  list[BancoResumoItem]
 
 
+# ── DASHBOARD: EMPRÉSTIMOS (23/10/2026) ───────────────────────
+
+class EmprestimoSubitem(RespostaBase):
+    subitem: str
+    qtd:     int
+    valor:   Decimal
+
+
+class EmprestimoLado(RespostaBase):
+    itens: list[EmprestimoSubitem]
+    total: Decimal
+
+
+class EmprestimoBanco(RespostaBase):
+    banco:    str              # nome do banco, ou "Sem banco"
+    receitas: EmprestimoLado
+    despesas: EmprestimoLado
+    saldo:    Decimal          # receitas − despesas
+
+
+class DashboardEmprestimosResponse(RespostaBase):
+    periodo:  dict[str, date]
+    # Um card por banco (pedido de 23/10/2026); os totais abaixo somam todos.
+    bancos:   list[EmprestimoBanco] = []
+    receitas: EmprestimoLado
+    despesas: EmprestimoLado
+    saldo:    Decimal          # receitas − despesas
+
+
+class DashboardAplicacoesResponse(DashboardEmprestimosResponse):
+    """Quadro Aplicações: mesmo formato de Empréstimos (um card por banco,
+    receitas e despesas por subitem da categoria Aplicações)."""
+
+
 # ── DASHBOARD: DESPESAS POR CLASSIFICAÇÃO (FIXA/VARIÁVEL) ─────
+
+class ClassificacaoValor(RespostaBase):
+    codigo: str
+    nome:   str
+    valor:  Decimal
+
 
 class DespesasPorClassificacaoResponse(RespostaBase):
     periodo:            dict[str, date]
@@ -663,6 +784,9 @@ class DespesasPorClassificacaoResponse(RespostaBase):
     nao_operacionais:   Decimal
     impostos:           Decimal = Decimal(0)
     nao_classificadas:  Decimal
+    # Classificações cadastradas além das 4 do sistema (ex.: Aplicações,
+    # Empréstimos) — um card cada na Visão Geral (22/10/2026).
+    outras:             list[ClassificacaoValor] = []
     total:              Decimal
 
 

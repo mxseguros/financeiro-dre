@@ -167,8 +167,16 @@ def montar(
             d.update(extra)
         return d
 
-    def anual_extra(fn_r, fn_p):
-        """Série mensal + média/acumulado para a visão 12 meses."""
+    def media_planilha(fn_r) -> float | None:
+        """Média da planilha (coluna D, AVERAGE): só os meses em que a linha
+        teve valor — mês zerado fica em branco lá e não entra na conta."""
+        vals = [fn_r(m) for m in meses_r if abs(fn_r(m)) > 1e-9]
+        return sum(vals) / len(vals) if vals else None
+
+    def anual_extra(fn_r, fn_p, media=None):
+        """Série mensal + média/acumulado para a visão 12 meses.
+        `media`: valor já calculado (linhas de resultado, que na planilha
+        derivam das médias dos grupos); sem ele, média por linha."""
         if visao != "anual":
             return None
         serie = [{"mes": m, "previsto": _r2(fn_p(m)), "realizado": _r2(fn_r(m)) if m in meses_com_real else None}
@@ -177,8 +185,34 @@ def montar(
         return {
             "por_mes": serie,
             "acumulado": _r2(acumulado),
-            # Média sobre os meses COM realizado, não sobre 12 (plano §4).
-            "media_mensal": _r2(acumulado / len(meses_r)) if tem_real else None,
+            "media_mensal": _r2(media if media is not None else media_planilha(fn_r)) if tem_real else None,
+        }
+
+    # Médias das linhas de resultado como a planilha calcula (col. D):
+    # Margem = média 1.1 − média 2.1; Fixas = soma das médias 4.x; RO e RL =
+    # média dos meses com realizado.
+    # Média do GRUPO = soma das médias das contas que somam (planilha:
+    # D14 = SUM(D15:D21)) — não a média do total do grupo mês a mês.
+    mg: dict[str, float] = {}
+    if visao == "anual" and tem_real:
+        for g in GRUPOS:
+            mg[g] = sum(media_planilha(lambda m, cid=c["id"]: R.conta(cid, [m])) or 0.0
+                        for c in contas if c["grupo"] == g)
+
+    medias_res: dict[str, float | None] = {}
+    if visao == "anual" and tem_real:
+        # A planilha esvazia o RO/RL do mês em que o 2.1 está vazio (defeito:
+        # um mês sem despesa variável perderia o resultado inteiro). Aqui
+        # entram todos os meses com realizado, coerente com o acumulado.
+        meses_res = list(meses_r)
+        def media_meses(k):
+            vals = [por_mes_r[m][k] for m in meses_res if por_mes_r[m][k] is not None]
+            return sum(vals) / len(vals) if vals else None
+        mc_m = mg["1.1"] - mg["2.1"]
+        fixas_m = sum(mg[c] for c in FIXAS)
+        medias_res = {
+            "mc": mc_m, "fixas": fixas_m,
+            "ro": media_meses("ro"), "rl": media_meses("rl"),
         }
 
     linhas: list[dict] = []
@@ -201,14 +235,16 @@ def montar(
                 "grupo", g, nome, natureza, _sentido(natureza),
                 gr[g] if gr else None, gp[g],
                 {"contas": filhas,
-                 **(anual_extra(lambda m, g=g: R.grupos([m])[g], lambda m, g=g: P.grupos([m])[g]) or {})},
+                 **(anual_extra(lambda m, g=g: R.grupos([m])[g], lambda m, g=g: P.grupos([m])[g],
+                                media=mg.get(g)) or {})},
             ))
         else:
             _, cod, nome, chave, sentido = item
             linhas.append(linha(
                 "resultado", cod, nome, "resultado", sentido,
                 dr[chave] if dr else None, dp[chave],
-                anual_extra(lambda m, k=chave: por_mes_r[m][k], lambda m, k=chave: por_mes_p[m][k]),
+                anual_extra(lambda m, k=chave: por_mes_r[m][k], lambda m, k=chave: por_mes_p[m][k],
+                            media=medias_res.get(chave)),
             ))
 
     def kpi(chave, sentido):

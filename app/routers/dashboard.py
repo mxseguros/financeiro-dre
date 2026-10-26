@@ -8,10 +8,11 @@ from fastapi import APIRouter, Depends, Request
 
 from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_usuario
-from app.middleware.periodo import validar_periodo
+from app.middleware.periodo import validar_base, validar_periodo
 from app.middleware.rate_limit import limiter
 from app.models.schemas import (
-    DashboardPorBancoResponse, DashboardResponse, DespesasPorClassificacaoResponse,
+    DashboardAplicacoesResponse, DashboardEmprestimosResponse, DashboardPorBancoResponse, DashboardResponse,
+    DespesasPorClassificacaoResponse,
     LancamentosDiaMesResponse,
 )
 from app.services import dashboard_service, dre_service
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 async def get_dashboard(
     request: Request,
     periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     """
@@ -34,7 +36,7 @@ async def get_dashboard(
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
 
-    resultado = await dashboard_service.buscar_dashboard(inicio, fim, usuario, db)
+    resultado = await dashboard_service.buscar_dashboard(inicio, fim, usuario, db, base=base)
 
     await dre_service.auditar_leitura(
         usuario, "consulta_dashboard",
@@ -57,12 +59,51 @@ async def get_dashboard(
 async def get_por_banco(
     request: Request,
     periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     inicio, fim = periodo
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    return await dashboard_service.buscar_por_banco(inicio, fim, db)
+    return await dashboard_service.buscar_por_banco(inicio, fim, db, base=base)
+
+
+# ── Box Empréstimos (23/10/2026) ──────────────────────────────
+
+@router.get(
+    "/emprestimos",
+    response_model=DashboardEmprestimosResponse,
+    summary="Receitas e despesas das categorias Empréstimo, por subitem",
+)
+@limiter.limit("30/minute")
+async def get_emprestimos(
+    request: Request,
+    periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    inicio, fim = periodo
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    db = get_supabase_usuario(token)
+    return await dashboard_service.buscar_emprestimos(inicio, fim, db, base=base)
+
+
+@router.get(
+    "/aplicacoes",
+    response_model=DashboardAplicacoesResponse,
+    summary="Receitas e despesas da categoria Aplicações, por banco",
+)
+@limiter.limit("30/minute")
+async def get_aplicacoes(
+    request: Request,
+    periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    inicio, fim = periodo
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    db = get_supabase_usuario(token)
+    return await dashboard_service.buscar_aplicacoes(inicio, fim, db, base=base)
 
 
 # ── Épico 4 — Despesas por classificação (fixa/variável) ──────
@@ -76,12 +117,13 @@ async def get_por_banco(
 async def get_despesas_por_classificacao(
     request: Request,
     periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     inicio, fim = periodo
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    return await dashboard_service.buscar_despesas_por_classificacao(inicio, fim, db)
+    return await dashboard_service.buscar_despesas_por_classificacao(inicio, fim, db, base=base)
 
 
 # ── Épico 4 — Listas diária/mensal ─────────────────────────────
@@ -95,12 +137,13 @@ async def get_despesas_por_classificacao(
 async def get_despesas_dia_mes(
     request: Request,
     periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     inicio, fim = periodo
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    return await dashboard_service.buscar_despesas_dia_mes(inicio, fim, db)
+    return await dashboard_service.buscar_despesas_dia_mes(inicio, fim, db, base=base)
 
 
 @router.get(
@@ -112,12 +155,13 @@ async def get_despesas_dia_mes(
 async def get_receitas_dia_mes(
     request: Request,
     periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     inicio, fim = periodo
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    return await dashboard_service.buscar_receitas_dia_mes(inicio, fim, db)
+    return await dashboard_service.buscar_receitas_dia_mes(inicio, fim, db, base=base)
 
 
 @router.get(

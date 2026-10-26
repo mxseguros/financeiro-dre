@@ -1,4 +1,5 @@
 'use client'
+import { FILTRO_BOTAO, FILTRO_GRUPO, SeletorMes, filtroSegmento } from '@/components/ui/filtros'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
@@ -32,7 +33,6 @@ export default function DrePage() {
   const [erro, setErro] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [abertos, setAbertos] = useState<Set<string>>(new Set())
-  const [ocultarZeradas, setOcultarZeradas] = useState(true)
   // Troca de visão instantânea ao voltar para um recorte já visto (meta < 300 ms).
   const cache = useRef(new Map<string, DreResposta>())
 
@@ -58,6 +58,12 @@ export default function DrePage() {
   })
   const todosGrupos = dados?.linhas.filter(l => l.tipo === 'grupo').map(l => l.codigo) ?? []
   const tudoAberto = todosGrupos.length > 0 && todosGrupos.every(c => abertos.has(c))
+  // "Expandir todas" sempre ativo (pedido de 22/10/2026): a cada recorte
+  // carregado os grupos abrem; o checkbox continua para recolher se quiser.
+  const chaveGrupos = todosGrupos.join('|')
+  useEffect(() => {
+    if (chaveGrupos) setAbertos(new Set(chaveGrupos.split('|')))
+  }, [chaveGrupos, dados])
 
   const comReal = new Set(dados?.meses_com_realizado ?? [])
   const ultimo = dados?.ultimo_mes_realizado
@@ -76,27 +82,19 @@ export default function DrePage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select aria-label="Ano" value={ano} onChange={e => escolher(Number(e.target.value), mes)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm focus-ring focus:outline-none">
-            {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <select aria-label="Mês de referência" value={mes} onChange={e => escolher(ano, Number(e.target.value))}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm focus-ring focus:outline-none">
-            {MESES_LONGOS.map((m, i) => (
-              <option key={m} value={i + 1}>{m}{dados && !comReal.has(i + 1) ? ' (sem realizado)' : ''}</option>
-            ))}
-          </select>
-          <div role="group" aria-label="Visão" className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
+          {/* Mês de referência (ano incluso) no padrão dos filtros: "Out 2026". */}
+          <SeletorMes dataTour="periodo" rotulo="Mês de referência" valor={`${ano}-${String(mes).padStart(2, '0')}`}
+            onChange={m => escolher(Number(m.slice(0, 4)), Number(m.slice(5, 7)))}
+            semDados={m => !!dados && Number(m.slice(0, 4)) === ano && !comReal.has(Number(m.slice(5, 7)))} />
+          <div data-tour="visao" role="group" aria-label="Visão" className={FILTRO_GRUPO}>
             {VISOES.map(([v, rotulo]) => (
               <button key={v} type="button" onClick={() => setVisao(v)} aria-pressed={visao === v}
-                className={cn('rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-ring',
-                  visao === v ? 'bg-navy text-white' : 'text-gray-600 hover:bg-gray-50')}>
+                className={filtroSegmento(visao === v)}>
                 {rotulo}
               </button>
             ))}
           </div>
-          <Link href="/dashboard/dre/metas"
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus-ring">
+          <Link data-tour="metas" href="/dashboard/dre/metas" className={FILTRO_BOTAO}>
             Metas (Previsto)
           </Link>
         </div>
@@ -127,9 +125,9 @@ export default function DrePage() {
         </div>
       ) : dados && !erro ? (
         <div className={cn('flex flex-col gap-4 transition-opacity', carregando && 'opacity-60')}>
-          <DreKpis kpis={dados.kpis} />
+          <div data-tour="kpis"><DreKpis kpis={dados.kpis} /></div>
 
-          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+          <section data-tour="demonstrativo" className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-navy">
                 Demonstração de Resultados{' '}
@@ -139,10 +137,6 @@ export default function DrePage() {
               </h2>
               <div className="flex flex-wrap gap-4 text-xs text-gray-600">
                 <label className="inline-flex items-center gap-1.5">
-                  <input type="checkbox" checked={ocultarZeradas} onChange={e => setOcultarZeradas(e.target.checked)} />
-                  Ocultar contas zeradas
-                </label>
-                <label className="inline-flex items-center gap-1.5">
                   <input type="checkbox" checked={tudoAberto}
                     onChange={e => setAbertos(e.target.checked ? new Set(todosGrupos) : new Set())} />
                   Expandir todas
@@ -150,8 +144,8 @@ export default function DrePage() {
               </div>
             </div>
             {visao === 'anual'
-              ? <DreMatrix linhas={dados.linhas} mesRef={mes} abertos={abertos} alternar={alternar} ocultarZeradas={ocultarZeradas} />
-              : <DreTable linhas={dados.linhas} abertos={abertos} alternar={alternar} ocultarZeradas={ocultarZeradas} />}
+              ? <DreMatrix linhas={dados.linhas} mesRef={mes} abertos={abertos} alternar={alternar} ocultarZeradas={false} />
+              : <DreTable linhas={dados.linhas} abertos={abertos} alternar={alternar} ocultarZeradas={false} />}
           </section>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_1fr]">

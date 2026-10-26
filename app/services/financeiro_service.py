@@ -16,6 +16,7 @@ from supabase import Client
 
 from app.auth import UsuarioAtual
 from app.database import executar_sem_bloquear as _exec, get_supabase_admin
+from app.services import classificacao_service
 from app.models.schemas import (
     BancoCreate, BancoItem, BancoUpdate,
     CategoriaLancamentoCreate, CategoriaLancamentoItem, CategoriaLancamentoUpdate,
@@ -152,13 +153,18 @@ async def excluir_categoria_lancamento(categoria_id: UUID, db: Client) -> None:
 async def listar_tipos_lancamento(
     db: Client, natureza: str | None = None
 ) -> list[TipoLancamentoItem]:
-    query = db.table("subitens_lancamento").select(
-        "id, nome, natureza, categoria, categoria_id, custo_tipo, ativo, "
-        "categorias_lancamento(nome)"
-    ).order("natureza").order("nome")
-    if natureza:
-        query = query.eq("natureza", natureza)
-    resp = query.execute()
+    def _consulta(colunas: str):
+        q = db.table("subitens_lancamento").select(colunas).order("natureza").order("nome")
+        return q.eq("natureza", natureza) if natureza else q
+
+    base = "id, nome, natureza, categoria, categoria_id, custo_tipo, ativo, categorias_lancamento(nome)"
+    # Coluna da migration 0037: sem ela, lista sem o campo.
+    for extras in (", somente_dre", ""):
+        try:
+            resp = _consulta(base + extras).execute()
+            break
+        except Exception:  # noqa: BLE001 — coluna ainda não criada
+            continue
     items = []
     for r in (resp.data or []):
         categoria_nome = (r.get("categorias_lancamento") or {}).get("nome")
@@ -177,6 +183,8 @@ async def criar_tipo_lancamento(
         "categoria_id": str(payload.categoria_id),
         "custo_tipo":   payload.custo_tipo,
     }
+    if payload.somente_dre:
+        dados["somente_dre"] = True
     if getattr(usuario, "tenant_id", None):
         dados["tenant_id"] = usuario.tenant_id
     resp = db.table("subitens_lancamento").insert(dados).execute()
@@ -300,15 +308,23 @@ async def buscar_despesas(
     busca: str | None = None,
     ordenar_por: str = "competencia",
     ordem_desc: bool = True,
+    base: str = "competencia",
+    categoria_id: str | None = None,
+    tipo_lancamento_id: str | None = None,
 ) -> DespesasResponse:
+    from app.services.periodo_base import coluna_data, ids_do_tipo
     termo = _termo_busca(busca)
+    col = coluna_data("despesas", base)
+    ids_tipo = ids_do_tipo(db, categoria_id, tipo_lancamento_id)
 
     def _aplicar_filtros(q):
         q = (
             q.neq("status", "excluida")
-            .gte("competencia", inicio.isoformat())
-            .lte("competencia", fim.isoformat())
+            .gte(col, inicio.isoformat())
+            .lte(col, fim.isoformat())
         )
+        if ids_tipo is not None:
+            q = q.in_("tipo_lancamento_id", ids_tipo)
         # Comercial e Contador só veem o que lançaram; Admin e Gestor veem tudo
         if usuario.role in ("comercial", "contador"):
             q = q.eq("criado_por", usuario.user_id)
@@ -335,7 +351,7 @@ async def buscar_despesas(
             "data_vencimento, paga_em, centro_custo, recorrente, parcela_atual, parcela_total, "
             "criado_em, atualizado_em, tipo_lancamento_id, banco_id, "
             "status, criado_por, aprovado_por, aprovado_em, rejeitado_motivo, "
-            "subitens_lancamento(nome), bancos(nome)"
+            "custo_tipo, subitens_lancamento(nome), bancos(nome)"
         )
     # `nullsfirst=False` mantém a regra que a tela já aplicava: data vazia por
     # último. O desempate por id é o que torna a paginação por offset estável —
@@ -365,6 +381,7 @@ async def buscar_despesas(
         items.append(DespesaItem(
             id=row["id"],
             tipo_lancamento_id=row.get("tipo_lancamento_id"),
+            custo_tipo=row.get("custo_tipo"),
             tipo_nome=tipo_nome,
             banco_id=row.get("banco_id"),
             banco_nome=banco_nome,
@@ -406,6 +423,33 @@ async def buscar_despesas(
         pendentes = resp_pend.count or 0
         soma = sum(_dec(r.get("valor", 0)) for r in (resp_soma.data or []))
     return DespesasResponse(total=total, items=items, soma_total=soma, total_pendentes=pendentes)
+
+
+def campos_aprovacao(usuario_id: str | None) -> dict:
+    """Campos de um lançamento aprovado automaticamente (sem passar pelo Kanban)."""
+    from datetime import datetime, timezone
+    return {
+        "status":       "aprovada",
+        "aprovado_por": usuario_id,
+        "aprovado_em":  datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def aprovacao_por_pagamento(usuario_id: str | None) -> dict:
+    """Campos de uma despesa aprovada pela Data de Pagamento.
+
+    Regra de 19/10/2026 (Gabriel): despesa com Data de Pagamento é considerada
+    aprovada — o dinheiro já saiu —, qualquer que seja o perfil de quem lançou
+    a data. Vale para criação, edição e importação de extrato.
+    """
+    return campos_aprovacao(usuario_id)
+
+
+def _aprovar_pagas(linhas: list[dict], usuario_id: str | None) -> None:
+    """Aplica a regra acima às linhas de um INSERT (só as que têm paga_em)."""
+    for linha in linhas:
+        if linha.get("paga_em"):
+            linha.update(aprovacao_por_pagamento(usuario_id))
 
 
 def _verificar_periodo_aberto(competencia: date, db: Client) -> None:
@@ -504,6 +548,9 @@ async def criar_despesa(
         dados["categoria"] = categoria
     if payload.tipo_lancamento_id:
         dados["tipo_lancamento_id"] = str(payload.tipo_lancamento_id)
+    if payload.custo_tipo:
+        classificacao_service.validar(db, payload.custo_tipo)
+        dados["custo_tipo"] = payload.custo_tipo
     if payload.banco_id:
         dados["banco_id"] = str(payload.banco_id)
     if payload.paga_em:
@@ -535,6 +582,7 @@ async def criar_despesa(
             if i > 0:
                 p.pop("paga_em", None)
             parcelas.append(p)
+        _aprovar_pagas(parcelas, usuario.user_id)
         resp = db.table("despesas").insert(parcelas).execute()
     elif payload.repetir_ate and payload.repetir_ate >= payload.competencia:
         # Recorrência atômica (espelha receitas_outras.repetir_ate): cria um
@@ -560,8 +608,10 @@ async def criar_despesa(
             if i > 0:
                 o.pop("paga_em", None)
             ocorrencias.append(o)
+        _aprovar_pagas(ocorrencias, usuario.user_id)
         resp = db.table("despesas").insert(ocorrencias).execute()
     else:
+        _aprovar_pagas([dados], usuario.user_id)
         resp = db.table("despesas").insert(dados).execute()
     row = resp.data[0]
 
@@ -581,6 +631,7 @@ async def criar_despesa(
     return DespesaItem(
         id=row["id"],
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
+        custo_tipo=row.get("custo_tipo"),
         tipo_nome=tipo_nome,
         banco_id=row.get("banco_id"),
         banco_nome=banco_nome,
@@ -654,6 +705,7 @@ def _row_para_despesa_item(row: dict) -> DespesaItem:
     return DespesaItem(
         id=row["id"],
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
+        custo_tipo=row.get("custo_tipo"),
         tipo_nome=None,
         banco_id=row.get("banco_id"),
         banco_nome=None,
@@ -788,6 +840,7 @@ async def _plano_reparcelamento(
         "valor_parcela":  valor_parcela,
         "ancora_id":      ancora["id"],
         "ancora_paga":    bool(ancora.get("paga_em")),
+        "ancora_status":  ancora.get("status"),
         "remover":        [r["id"] for r in demais],
     }
 
@@ -816,6 +869,7 @@ def _executar_reparcelamento(plano: dict, ancora: dict, db: Client) -> None:
         "valor":              str(plano["valor_parcela"]),
         "centro_custo":       ancora.get("centro_custo"),
         "tipo_lancamento_id": ancora.get("tipo_lancamento_id"),
+        "custo_tipo":         ancora.get("custo_tipo"),
         "banco_id":           ancora.get("banco_id"),
         "criado_por":         ancora.get("criado_por"),
         "tenant_id":          ancora.get("tenant_id"),
@@ -846,6 +900,7 @@ def _executar_reparcelamento(plano: dict, ancora: dict, db: Client) -> None:
 
 async def atualizar_despesa(
     despesa_id: UUID, payload: DespesaUpdate, db: Client, preservar_aprovadas: bool = False,
+    usuario: UsuarioAtual | None = None,
 ) -> DespesaItem:
     campos: dict = {}
     set_fields = payload.model_fields_set
@@ -865,6 +920,10 @@ async def atualizar_despesa(
         campos["centro_custo"] = payload.centro_custo
     if "tipo_lancamento_id" in set_fields:
         campos["tipo_lancamento_id"] = str(payload.tipo_lancamento_id) if payload.tipo_lancamento_id else None
+    if "custo_tipo" in set_fields:
+        if payload.custo_tipo:
+            classificacao_service.validar(db, payload.custo_tipo)
+        campos["custo_tipo"] = payload.custo_tipo or None
     if "banco_id" in set_fields:
         campos["banco_id"] = str(payload.banco_id) if payload.banco_id else None
 
@@ -883,13 +942,7 @@ async def atualizar_despesa(
         raise HTTPException(status_code=404, detail="Despesa não encontrada.")
 
     ja_paga = bool(atual.data[0].get("paga_em"))
-
-    # Editou, volta para aprovação — MENOS se já foi paga. Uma despesa paga que
-    # retorna a "pendente" fica inconsistente: o dinheiro saiu, mas o lançamento
-    # consta como não aprovado e some dos totais aprovados do DRE. Nesse caso o
-    # ajuste vale, o status é preservado, e o rastro fica no audit_log.
-    if not ja_paga:
-        campos["status"] = "pendente"
+    status_atual = atual.data[0].get("status")
 
     # Reparcelamento: planeja antes de gravar. O plano só é EXECUTADO depois
     # que a âncora é atualizada, para que as parcelas novas herdem as edições
@@ -910,18 +963,27 @@ async def atualizar_despesa(
                 # o grupo inteiro para a data da parcela do meio.
                 for k in ("competencia", "data_vencimento", "paga_em"):
                     campos.pop(k, None)
-                # A regra "editou volta para aprovação, salvo se paga" vale
-                # para a âncora, que é quem de fato é gravada.
-                if plano["ancora_paga"]:
-                    campos.pop("status", None)
-                else:
-                    campos["status"] = "pendente"
             n = plano["novo_n"]
             campos["parcela_atual"]      = 1 if n > 1 else None
             campos["parcela_total"]      = n if n > 1 else None
             campos["grupo_parcelamento"] = plano["grupo"]
             campos["valor"]              = str(plano["valor_parcela"])
             campos["recorrente"]         = False
+
+    # Status de quem é de fato gravado (a âncora, se o grupo foi refeito):
+    # com Data de Pagamento fica aprovada, qualquer que seja o perfil (regra de
+    # 19/10/2026); sem ela, editou volta para aprovação. Já aprovada e paga
+    # mantém o aprovador original.
+    if alvo_id != despesa_id:
+        paga_final, status_alvo = plano["ancora_paga"], plano.get("ancora_status")
+    else:
+        paga_final = campos["paga_em"] if "paga_em" in campos else ja_paga
+        status_alvo = status_atual
+    if paga_final:
+        if status_alvo != "aprovada":
+            campos.update(aprovacao_por_pagamento(usuario.user_id if usuario else None))
+    else:
+        campos["status"] = "pendente"
 
     resp = (
         db.table("despesas")
@@ -948,7 +1010,7 @@ async def atualizar_despesa(
             "criado_em, atualizado_em, tipo_lancamento_id, banco_id, "
             "status, criado_por, aprovado_por, aprovado_em, rejeitado_motivo, "
             "tenant_id, grupo_parcelamento, "
-            "subitens_lancamento(nome), bancos(nome)"
+            "custo_tipo, subitens_lancamento(nome), bancos(nome)"
         )
         .eq("id", str(alvo_id))
         .single()
@@ -961,6 +1023,7 @@ async def atualizar_despesa(
     return DespesaItem(
         id=row["id"],
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
+        custo_tipo=row.get("custo_tipo"),
         tipo_nome=(row.get("subitens_lancamento") or {}).get("nome"),
         banco_id=row.get("banco_id"),
         banco_nome=(row.get("bancos") or {}).get("nome"),
@@ -1063,7 +1126,13 @@ async def buscar_receitas(
     busca: str | None = None,
     ordenar_por: str = "competencia",
     ordem_desc: bool = True,
+    status_filter: str | None = None,
+    base: str = "competencia",
+    categoria_id: str | None = None,
+    tipo_lancamento_id: str | None = None,
 ) -> ReceitasResponse:
+    from app.services.periodo_base import coluna_data, ids_do_tipo
+    ids_tipo = ids_do_tipo(db, categoria_id, tipo_lancamento_id)
     items: list[ReceitaItem] = []
     soma_comissoes = Decimal(0)
     soma_manuais   = Decimal(0)
@@ -1079,11 +1148,13 @@ async def buscar_receitas(
     q_com = (
         db.table("comissoes")
         .select("id, valor, competencia, recebida_em, tipo, apolice_id")
-        .gte("competencia", inicio.isoformat())
-        .lte("competencia", fim.isoformat())
+        .gte(coluna_data("comissoes", base), inicio.isoformat())
+        .lte(coluna_data("comissoes", base), fim.isoformat())
         .order("competencia", desc=True)
     )
-    incluir_comissoes = ver_tudo and not banco_id and not centro_custo
+    # Comissões não têm status (nem banco/centro): com qualquer desses filtros
+    # ativos, saem da lista em vez de aparecer como se atendessem ao filtro.
+    incluir_comissoes = ver_tudo and not banco_id and not centro_custo and not status_filter and ids_tipo is None
 
     # 2. Receitas manuais — a query é construída ANTES de executar as duas
     # fontes, para que comissões e manuais rodem em paralelo (gather abaixo)
@@ -1092,12 +1163,14 @@ async def buscar_receitas(
         .select(
             "id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
             "observacao, tipo_lancamento_id, banco_id, criado_por, criado_em, "
-            "subitens_lancamento(nome), bancos(nome)"
+            "custo_tipo, subitens_lancamento(nome), bancos(nome)"
         )
-        .gte("competencia", inicio.isoformat())
-        .lte("competencia", fim.isoformat())
+        .gte(coluna_data("receitas_outras", base), inicio.isoformat())
+        .lte(coluna_data("receitas_outras", base), fim.isoformat())
         .order("competencia", desc=True)
     )
+    if ids_tipo is not None:
+        q_rec = q_rec.in_("tipo_lancamento_id", ids_tipo)
     # Contador e Comercial veem apenas as próprias receitas manuais
     if not ver_tudo:
         q_rec = q_rec.eq("criado_por", usuario.user_id)
@@ -1105,6 +1178,8 @@ async def buscar_receitas(
         q_rec = q_rec.eq("centro_custo", centro_custo.strip())
     if banco_id:
         q_rec = q_rec.eq("banco_id", banco_id)
+    if status_filter:
+        q_rec = q_rec.eq("status", status_filter)
     if termo:
         q_rec = q_rec.ilike("descricao_busca", f"%{termo}%")
 
@@ -1134,9 +1209,16 @@ async def buscar_receitas(
                 centro_custo="matriz",
             ))
 
+    # Subitens "Constar apenas na DRE": a receita aparece na lista, com
+    # etiqueta, mas fica fora dos totais (regra de 22/10/2026).
+    from app.services.somente_dre import ids_somente_dre
+    so_dre = await ids_somente_dre(db)
+
     for row in (resp_rec.data or []):
         v = _dec(row["valor"])
-        soma_manuais += v
+        apenas_dre = row.get("tipo_lancamento_id") in so_dre
+        if not apenas_dre:
+            soma_manuais += v
         tipo_nome  = (row.get("subitens_lancamento") or {}).get("nome")
         banco_nome = (row.get("bancos") or {}).get("nome")
         items.append(ReceitaItem(
@@ -1144,6 +1226,7 @@ async def buscar_receitas(
             origem="manual",
             status=row.get("status"),
             tipo_lancamento_id=row.get("tipo_lancamento_id"),
+            custo_tipo=row.get("custo_tipo"),
             tipo_nome=tipo_nome,
             banco_id=row.get("banco_id"),
             banco_nome=banco_nome,
@@ -1156,6 +1239,7 @@ async def buscar_receitas(
             observacao=row.get("observacao"),
             criado_em=row.get("criado_em"),
             atualizado_em=row.get("atualizado_em"),
+            somente_dre=apenas_dre,
         ))
 
     # A lista é a união de duas fontes (comissões + manuais), então a ordenação
@@ -1178,9 +1262,6 @@ async def buscar_receitas(
         soma_manuais=soma_manuais,
         soma_total=soma_comissoes + soma_manuais,
     )
-
-
-_TIPOS_VALOR_UNICO = {"comissões de vendas", "comissões - adicionais / premiações", "receitas de vendas"}
 
 
 async def criar_receita_outra(
@@ -1207,28 +1288,6 @@ async def criar_receita_outra(
             )
         meses_recorrencia = [_somar_meses(payload.competencia, i) for i in range(n_meses)]
 
-    # Bloqueia duplicata mensal para tipos de valor único (verifica todos os meses)
-    if payload.tipo_lancamento_id:
-        r_tipo = db_admin.table("subitens_lancamento").select("nome").eq(
-            "id", str(payload.tipo_lancamento_id)
-        ).single().execute()
-        nome_tipo = (r_tipo.data or {}).get("nome", "").strip().lower()
-        if nome_tipo in _TIPOS_VALOR_UNICO:
-            existente = (
-                db_admin.table("receitas_outras")
-                .select("id, competencia")
-                .eq("tipo_lancamento_id", str(payload.tipo_lancamento_id))
-                .in_("competencia", [m.isoformat() for m in meses_recorrencia])
-                .eq("criado_por", usuario.user_id)
-                .execute()
-            )
-            if existente and getattr(existente, "data", None):
-                from fastapi import HTTPException, status as http_status
-                raise HTTPException(
-                    status_code=http_status.HTTP_409_CONFLICT,
-                    detail=f"Já existe um lançamento de '{(r_tipo.data or {}).get('nome')}' para este mês. Edite o registro existente.",
-                )
-
     dados: dict = {
         "descricao":    payload.descricao,
         "valor":        str(payload.valor),
@@ -1240,6 +1299,9 @@ async def criar_receita_outra(
         dados["tenant_id"] = usuario.tenant_id
     if payload.tipo_lancamento_id:
         dados["tipo_lancamento_id"] = str(payload.tipo_lancamento_id)
+    if payload.custo_tipo:
+        classificacao_service.validar(db, payload.custo_tipo)
+        dados["custo_tipo"] = payload.custo_tipo
     if payload.banco_id:
         dados["banco_id"] = str(payload.banco_id)
     if payload.data_vencimento:
@@ -1248,6 +1310,9 @@ async def criar_receita_outra(
         dados["recebido_em"] = payload.recebido_em.isoformat()
     if payload.observacao:
         dados["observacao"] = payload.observacao
+    # Receita não passa por aprovação (decisão de 22/10/2026): toda receita
+    # lançada já nasce aprovada, em qualquer perfil e em toda ocorrência.
+    dados.update(campos_aprovacao(usuario.user_id))
 
     # Recorrência atômica: um registro por mês em um único INSERT.
     # Todos gravam ou nenhum grava — sem risco de criação parcial.
@@ -1286,6 +1351,7 @@ async def criar_receita_outra(
         origem="manual",
         status=row.get("status"),
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
+        custo_tipo=row.get("custo_tipo"),
         tipo_nome=tipo_nome,
         banco_id=row.get("banco_id"),
         banco_nome=banco_nome,
@@ -1308,7 +1374,7 @@ async def _obter_receita_item(receita_id: UUID, db_admin) -> ReceitaItem:
     full = (
         db_admin.table("receitas_outras")
         .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
-                "observacao, tipo_lancamento_id, banco_id, subitens_lancamento(nome), bancos(nome)")
+                "observacao, tipo_lancamento_id, banco_id, custo_tipo, subitens_lancamento(nome), bancos(nome)")
         .eq("id", str(receita_id))
         .single()
         .execute()
@@ -1319,6 +1385,7 @@ async def _obter_receita_item(receita_id: UUID, db_admin) -> ReceitaItem:
         origem="manual",
         status=row.get("status"),
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
+        custo_tipo=row.get("custo_tipo"),
         tipo_nome=(row.get("subitens_lancamento") or {}).get("nome"),
         banco_id=row.get("banco_id"),
         banco_nome=(row.get("bancos") or {}).get("nome"),
@@ -1381,7 +1448,9 @@ async def rejeitar_receita_outra(
     return await _obter_receita_item(receita_id, db_admin)
 
 
-async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate, db: Client) -> ReceitaItem:
+async def atualizar_receita_outra(
+    receita_id: UUID, payload: ReceitaOutraUpdate, db: Client, usuario: UsuarioAtual | None = None,
+) -> ReceitaItem:
     db_admin = get_supabase_admin()
     campos: dict = {}
     set_fields = payload.model_fields_set
@@ -1401,6 +1470,10 @@ async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate,
         campos["observacao"] = payload.observacao
     if "tipo_lancamento_id" in set_fields:
         campos["tipo_lancamento_id"] = str(payload.tipo_lancamento_id) if payload.tipo_lancamento_id else None
+    if "custo_tipo" in set_fields:
+        if payload.custo_tipo:
+            classificacao_service.validar(db, payload.custo_tipo)
+        campos["custo_tipo"] = payload.custo_tipo or None
     if "banco_id" in set_fields:
         campos["banco_id"] = str(payload.banco_id) if payload.banco_id else None
 
@@ -1416,11 +1489,11 @@ async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate,
     if not atual.data:
         raise HTTPException(status_code=404, detail="Receita não encontrada.")
 
-    # Mesma regra da despesa: editou volta para aprovação, exceto se já foi
-    # recebida — o valor entrou no caixa e não faz sentido tirá-lo dos totais
-    # aprovados por causa de um ajuste de cadastro.
-    if not atual.data[0].get("recebido_em"):
-        campos["status"] = "pendente"
+    # Receita não passa por aprovação (22/10/2026): editar não a devolve para
+    # pendente. Resíduo pendente/rejeitada vira aprovada; já aprovada mantém o
+    # aprovador original.
+    if atual.data[0].get("status") != "aprovada":
+        campos.update(campos_aprovacao(usuario.user_id if usuario else None))
 
     resp = db_admin.table("receitas_outras").update(campos).eq("id", str(receita_id)).execute()
     if not resp.data:
@@ -1429,7 +1502,7 @@ async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate,
     full = (
         db_admin.table("receitas_outras")
         .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
-                "observacao, tipo_lancamento_id, banco_id, subitens_lancamento(nome), bancos(nome)")
+                "observacao, tipo_lancamento_id, banco_id, custo_tipo, subitens_lancamento(nome), bancos(nome)")
         .eq("id", str(receita_id))
         .single()
         .execute()
@@ -1440,6 +1513,7 @@ async def atualizar_receita_outra(receita_id: UUID, payload: ReceitaOutraUpdate,
         origem="manual",
         status=row.get("status"),
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
+        custo_tipo=row.get("custo_tipo"),
         tipo_nome=(row.get("subitens_lancamento") or {}).get("nome"),
         banco_id=row.get("banco_id"),
         banco_nome=(row.get("bancos") or {}).get("nome"),

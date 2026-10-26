@@ -2,17 +2,14 @@ import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
-import { inputCls, selectCls, BtnExcluir } from './shared'
+import { inputCls, BtnExcluir } from './shared'
 
 interface CategoriaItem { id: string; nome: string; natureza: string; ordem: number; ativo: boolean }
 interface SubitemItem {
   id: string; nome: string; natureza: string
   categoria_id: string | null; categoria_nome: string | null
   custo_tipo: string | null; ativo: boolean
-}
-
-const CUSTO_TIPO_LABEL: Record<string, string> = {
-  fixo: 'Fixo', variavel: 'Variável', nao_operacional: 'Não Operacional', imposto: 'Imposto',
+  somente_dre?: boolean
 }
 
 export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcluir }: {
@@ -34,11 +31,11 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
   const [confirmExcluirCategoria, setConfirmExcluirCategoria] = useState<CategoriaItem | null>(null)
   const [erroExclusaoCategoria, setErroExclusaoCategoria] = useState<string | null>(null)
 
-  const [formSubitem, setFormSubitem] = useState({ nome: '', custo_tipo: '' })
+  const [formSubitem, setFormSubitem] = useState({ nome: '' })
   const [criandoSubitem, setCriandoSubitem] = useState(false)
   const [erroSubitem, setErroSubitem] = useState<string | null>(null)
   const [editSubitemId, setEditSubitemId] = useState<string | null>(null)
-  const [editSubitemForm, setEditSubitemForm] = useState({ nome: '', categoria_id: '', custo_tipo: '' })
+  const [editSubitemForm, setEditSubitemForm] = useState({ nome: '', categoria_id: '' })
   const [confirmExcluirSubitem, setConfirmExcluirSubitem] = useState<SubitemItem | null>(null)
   const [erroExclusaoSubitem, setErroExclusaoSubitem] = useState<string | null>(null)
 
@@ -120,9 +117,8 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
     try {
       await api.post('/configuracoes/tipos', token, {
         nome: formSubitem.nome, natureza, categoria_id: categoriaSelecionada,
-        custo_tipo: formSubitem.custo_tipo || null,
       })
-      setFormSubitem({ nome: '', custo_tipo: '' })
+      setFormSubitem({ nome: '' })
       carregar()
     } catch (err) { setErroSubitem(err instanceof Error ? err.message : 'Erro ao criar subitem') }
     finally { setCriandoSubitem(false) }
@@ -130,7 +126,7 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
 
   function iniciarEdicaoSubitem(s: SubitemItem) {
     setEditSubitemId(s.id)
-    setEditSubitemForm({ nome: s.nome, categoria_id: s.categoria_id ?? '', custo_tipo: s.custo_tipo ?? '' })
+    setEditSubitemForm({ nome: s.nome, categoria_id: s.categoria_id ?? '' })
   }
 
   async function salvarEdicaoSubitem(id: string) {
@@ -138,11 +134,23 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
       await api.put(`/configuracoes/tipos/${id}`, token, {
         nome: editSubitemForm.nome,
         categoria_id: editSubitemForm.categoria_id,
-        custo_tipo: editSubitemForm.custo_tipo || null,
       })
       setEditSubitemId(null); carregar()
       toast.sucesso('Subitem atualizado.')
     } catch (err) {
+      toast.erro(err instanceof Error ? err.message : 'Erro ao atualizar subitem.')
+    }
+  }
+
+  // "Constar apenas na DRE" (22/10/2026): grava na hora, sem entrar em edição.
+  async function alternarSomenteDre(s: SubitemItem) {
+    const novo = !s.somente_dre
+    setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, somente_dre: novo } : x))
+    try {
+      await api.put(`/configuracoes/tipos/${s.id}`, token, { somente_dre: novo })
+      toast.sucesso(novo ? `"${s.nome}" passa a constar apenas na DRE.` : `"${s.nome}" volta a constar em todo o sistema.`)
+    } catch (err) {
+      setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, somente_dre: !novo } : x))
       toast.erro(err instanceof Error ? err.message : 'Erro ao atualizar subitem.')
     }
   }
@@ -279,18 +287,7 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
               <form onSubmit={criarSubitem} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <input required value={formSubitem.nome}
                   onChange={e => setFormSubitem(f => ({ ...f, nome: e.target.value }))}
-                  placeholder="Nome do subitem" className={`${inputCls} sm:col-span-2`} />
-                {natureza === 'despesa' ? (
-                  <select value={formSubitem.custo_tipo}
-                    onChange={e => setFormSubitem(f => ({ ...f, custo_tipo: e.target.value }))}
-                    className={selectCls}>
-                    <option value="">Classificação (opcional)</option>
-                    <option value="fixo">Fixo</option>
-                    <option value="variavel">Variável</option>
-                    <option value="nao_operacional">Não Operacional</option>
-                    <option value="imposto">Imposto</option>
-                  </select>
-                ) : <div />}
+                  placeholder="Nome do subitem" className={`${inputCls} sm:col-span-3`} />
                 <div className="col-span-1 flex items-center gap-3 sm:col-span-3">
                   {erroSubitem && <p className="text-xs text-red-600">{erroSubitem}</p>}
                   <button type="submit" disabled={criandoSubitem || !categoriaSelecionada}
@@ -316,7 +313,11 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
                   <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">
                     <th className="px-4 py-3">Nome</th>
                     <th className="px-4 py-3">Categoria</th>
-                    {natureza === 'despesa' && <th className="px-4 py-3">Classificação</th>}
+                    {natureza === 'receita' && (
+                      <th className="px-4 py-3" title="Receitas deste subitem aparecem só na DRE: fora da Visão Geral e dos totais de Lançamentos.">
+                        Constar apenas na DRE
+                      </th>
+                    )}
                     {(podeEditar || podeExcluir) && <th className="px-4 py-3 text-right">Ações</th>}
                   </tr>
                 </thead>
@@ -337,19 +338,7 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
                               {categoriasDaNatureza.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                             </select>
                           </td>
-                          {natureza === 'despesa' && (
-                            <td className="px-4 py-1.5">
-                              <select value={editSubitemForm.custo_tipo}
-                                onChange={e => setEditSubitemForm(f => ({ ...f, custo_tipo: e.target.value }))}
-                                className="w-full rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none">
-                                <option value="">—</option>
-                                <option value="fixo">Fixo</option>
-                                <option value="variavel">Variável</option>
-                                <option value="nao_operacional">Não Operacional</option>
-                                <option value="imposto">Imposto</option>
-                              </select>
-                            </td>
-                          )}
+                          {natureza === 'receita' && <td className="px-4 py-1.5" />}
                           <td className="px-4 py-1.5 text-right">
                             <span className="inline-flex gap-2">
                               <button onClick={() => salvarEdicaoSubitem(s.id)} className="text-xs font-medium text-green-600 hover:underline">Salvar</button>
@@ -361,9 +350,12 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
                         <>
                           <td className="px-4 py-2.5 font-medium text-gray-800">{s.nome}</td>
                           <td className="px-4 py-2.5 text-gray-500">{s.categoria_nome ?? '—'}</td>
-                          {natureza === 'despesa' && (
-                            <td className="px-4 py-2.5 text-gray-500">
-                              {s.custo_tipo ? CUSTO_TIPO_LABEL[s.custo_tipo] ?? s.custo_tipo : '—'}
+                          {natureza === 'receita' && (
+                            <td className="px-4 py-2.5">
+                              <input type="checkbox" checked={!!s.somente_dre} disabled={!podeEditar}
+                                onChange={() => alternarSomenteDre(s)}
+                                aria-label={`Constar apenas na DRE: ${s.nome}`}
+                                className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy disabled:opacity-50" />
                             </td>
                           )}
                           {(podeEditar || podeExcluir) && (
