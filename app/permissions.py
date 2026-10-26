@@ -2,7 +2,9 @@
 MX Seguros — DRE-IA | Permissões granulares por tela e ação.
 
 Estrutura: {"tela": {"acao": bool}}
-Telas: visao_geral, dre, lancamentos, aprovacoes, assistente, configuracoes
+Telas: visao_geral, dre, lancamentos, aprovacoes, relatorios, configuracoes
+("assistente" é a chave do antigo Monitoramento IA; fica só para compatibilidade
+com permissões personalizadas gravadas antes da tela Relatórios.)
 """
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ DEFAULT_PERMISSIONS: dict[str, dict] = {
         "lancamentos":   {"visualizar": True, "criar": True, "editar": True, "deletar": True},
         "aprovacoes":    {"visualizar": True, "aprovar": True},
         "assistente":    {"visualizar": True},
+        "relatorios":    {"visualizar": True, "criar": True, "compartilhar": True},
         "configuracoes": {"visualizar": True, "criar": True, "editar": True, "deletar": True},
     },
     "gestor": {
@@ -21,6 +24,7 @@ DEFAULT_PERMISSIONS: dict[str, dict] = {
         "lancamentos":   {"visualizar": True, "criar": True, "editar": True, "deletar": False},
         "aprovacoes":    {"visualizar": True, "aprovar": True},
         "assistente":    {"visualizar": True},
+        "relatorios":    {"visualizar": True, "criar": True, "compartilhar": True},
         "configuracoes": {"visualizar": True, "criar": True, "editar": True, "deletar": True},
     },
     "comercial": {
@@ -29,6 +33,7 @@ DEFAULT_PERMISSIONS: dict[str, dict] = {
         "lancamentos":   {"visualizar": True, "criar": True, "editar": False, "deletar": False},
         "aprovacoes":    {"visualizar": False, "aprovar": False},
         "assistente":    {"visualizar": True},
+        "relatorios":    {"visualizar": True, "criar": True, "compartilhar": False},
         "configuracoes": {"visualizar": True, "criar": False, "editar": False, "deletar": False},
     },
     "contador": {
@@ -37,6 +42,7 @@ DEFAULT_PERMISSIONS: dict[str, dict] = {
         "lancamentos":   {"visualizar": True, "criar": True, "editar": False, "deletar": False},
         "aprovacoes":    {"visualizar": False, "aprovar": False},
         "assistente":    {"visualizar": True},
+        "relatorios":    {"visualizar": True, "criar": True, "compartilhar": False},
         "configuracoes": {"visualizar": True, "criar": False, "editar": False, "deletar": False},
     },
 }
@@ -55,3 +61,14 @@ def resolver_permissions(role: str, permissions_db: dict | None) -> dict:
 
 def tem_permissao(permissions: dict, tela: str, acao: str) -> bool:
     return bool(permissions.get(tela, {}).get(acao, False))
+
+
+def permissao_relatorios(role: str, permissions: dict, acao: str) -> bool:
+    """Permissão da tela Relatórios, com herança para permissões personalizadas
+    gravadas antes dela existir (sem a chave "relatorios"): ver e criar seguem o
+    "Ver" do antigo Monitoramento IA; compartilhar fica com Admin e Gestor."""
+    if "relatorios" in permissions:
+        return tem_permissao(permissions, "relatorios", acao)
+    if acao == "compartilhar":
+        return role in ("admin", "gestor")
+    return tem_permissao(permissions, "assistente", "visualizar")

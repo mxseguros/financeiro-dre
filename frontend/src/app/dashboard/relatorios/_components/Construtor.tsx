@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
-  AGGS, CAMPO, CAMPOS, NOME_AGG, ZONAS, ehMedida, rotulo, valoresDistintos,
-  type Agg, type CampoId, type Config, type Lancamento, type MedidaId, type Zona,
+  AGGS, CAMPO, CAMPOS, CAMPOS_DATA, GRANULARIDADES, NOME_AGG, ZONAS, ehMedida, granularidade, rotuloCampo, valoresDistintos,
+  type Agg, type CampoId, type Config, type Granularidade, type Lancamento, type MedidaId, type Zona,
 } from './pivot'
 
 // ── Operações sobre a configuração ──────────────────────────
@@ -151,9 +151,20 @@ export function Construtor({ cfg, dados, onChange, onAviso, children }: Props) {
       </select>
     )))
     if (zona === 'filtros') return (Object.entries(cfg.filtros) as [CampoId, string[] | null][]).map(([f, sel], i) => chipZona(f, zona, i, (
-      <span className="rounded bg-beige/20 px-1 text-[10px] text-gray-700">{sel ? sel.length : 'Todos'}</span>
+      <>
+        {CAMPOS_DATA.has(f) && <SeletorGranularidade valor={granularidade(cfg, f)} onChange={g => mudarGranularidade(f, g)} />}
+        <span className="rounded bg-beige/20 px-1 text-[10px] text-gray-700">{sel ? sel.length : 'Todos'}</span>
+      </>
     ), () => setFiltroAberto(filtroAberto === f ? null : f)))
-    return cfg[zona].map((f, i) => chipZona(f, zona, i))
+    return cfg[zona].map((f, i) => chipZona(f, zona, i, CAMPOS_DATA.has(f) ? (
+      <SeletorGranularidade valor={granularidade(cfg, f)} onChange={g => mudarGranularidade(f, g)} />
+    ) : undefined))
+  }
+
+  // Trocar o agrupamento muda as chaves do campo: um filtro nele volta a "Todos".
+  const mudarGranularidade = (campo: CampoId, g: Granularidade) => {
+    const filtros = campo in cfg.filtros ? { ...cfg.filtros, [campo]: null } : cfg.filtros
+    onChange({ ...cfg, filtros, datas: { ...(cfg.datas ?? {}), [campo]: g } })
   }
 
   return (
@@ -230,6 +241,7 @@ export function Construtor({ cfg, dados, onChange, onAviso, children }: Props) {
 
         {filtroAberto && filtroAberto in cfg.filtros && (
           <FiltroItens
+            cfg={cfg}
             campo={filtroAberto}
             dados={dados}
             selecionados={cfg.filtros[filtroAberto] ?? null}
@@ -241,6 +253,20 @@ export function Construtor({ cfg, dados, onChange, onAviso, children }: Props) {
         {children}
       </div>
     </div>
+  )
+}
+
+function SeletorGranularidade({ valor, onChange }: { valor: Granularidade; onChange: (g: Granularidade) => void }) {
+  return (
+    <select
+      value={valor}
+      onClick={e => e.stopPropagation()}
+      onChange={e => onChange(e.target.value as Granularidade)}
+      className="max-w-[86px] rounded bg-navy/5 px-1 py-0.5 text-[11px] text-navy focus:outline-none"
+      aria-label="Agrupar data por"
+    >
+      {GRANULARIDADES.map(([g, n]) => <option key={g} value={g}>{n}</option>)}
+    </select>
   )
 }
 
@@ -265,6 +291,7 @@ function MenuZona({ onEscolher, onFechar }: { onEscolher: (z: Zona) => void; onF
 }
 
 interface FiltroProps {
+  cfg: Config
   campo: CampoId
   dados: Lancamento[]
   selecionados: string[] | null
@@ -272,13 +299,15 @@ interface FiltroProps {
   onFechar: () => void
 }
 
-function FiltroItens({ campo, dados, selecionados, onChange, onFechar }: FiltroProps) {
+function FiltroItens({ cfg, campo, dados, selecionados, onChange, onFechar }: FiltroProps) {
   const [busca, setBusca] = useState('')
-  const todos = useMemo(() => valoresDistintos(dados, campo), [dados, campo])
+  const g = granularidade(cfg, campo)
+  const rotulo = (v: string) => rotuloCampo(cfg, campo, v)
+  const todos = useMemo(() => valoresDistintos(dados, campo, g), [dados, campo, g])
   const visiveis = useMemo(() => {
     const t = busca.trim().toLowerCase()
-    return t ? todos.filter(v => rotulo(campo, v).toLowerCase().includes(t)) : todos
-  }, [todos, busca, campo])
+    return t ? todos.filter(v => rotuloCampo({ datas: { [campo]: g } }, campo, v).toLowerCase().includes(t)) : todos
+  }, [todos, busca, campo, g])
   // Valores salvos que não existem no período (ex.: modelo pede "Empréstimos" e
   // ninguém usou) continuam marcados, para o filtro não "sumir" sozinho.
   const sel = selecionados == null ? null : new Set(selecionados)
@@ -288,7 +317,7 @@ function FiltroItens({ campo, dados, selecionados, onChange, onFechar }: FiltroP
     const atual = new Set(sel ?? todos)
     if (atual.has(v)) atual.delete(v)
     else atual.add(v)
-    onChange(todos.every(x => atual.has(x)) && atual.size === todos.length ? null : [...atual])
+    onChange(atual.size === todos.length && todos.every(x => atual.has(x)) ? null : [...atual])
   }
 
   return (
@@ -312,7 +341,7 @@ function FiltroItens({ campo, dados, selecionados, onChange, onFechar }: FiltroP
         {visiveis.map(v => (
           <label key={v} className="inline-flex items-center gap-1.5 whitespace-nowrap text-gray-700">
             <input type="checkbox" checked={marcado(v)} onChange={() => alternar(v)} className="accent-navy" />
-            {rotulo(campo, v)}
+            {rotulo(v)}
           </label>
         ))}
       </div>

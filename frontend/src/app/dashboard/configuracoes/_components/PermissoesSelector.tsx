@@ -1,5 +1,9 @@
 import type { Permissions } from '@/types'
 
+/** Permissões antigas sem "relatorios" mostram o que valia antes (o "Ver" do Monitor). */
+const relatoriosDe = (p: Permissions) =>
+  p.relatorios ?? { visualizar: !!p.assistente?.visualizar, criar: !!p.assistente?.visualizar, compartilhar: false }
+
 // ── Configuração de telas e ações para os checkboxes ──────────
 const TELAS_CONFIG: Array<{
   id: keyof Permissions
@@ -18,7 +22,11 @@ const TELAS_CONFIG: Array<{
     { key: 'visualizar', label: 'Ver' },
     { key: 'aprovar',    label: 'Aprovar' },
   ]},
-  { id: 'assistente',    label: 'Relatórios',     acoes: [{ key: 'visualizar', label: 'Ver' }] },
+  { id: 'relatorios',    label: 'Relatórios',     acoes: [
+    { key: 'visualizar',   label: 'Ver' },
+    { key: 'criar',        label: 'Salvar' },
+    { key: 'compartilhar', label: 'Compartilhar' },
+  ]},
   { id: 'configuracoes', label: 'Configurações',  acoes: [
     { key: 'visualizar', label: 'Ver' },
     { key: 'criar',      label: 'Criar' },
@@ -35,10 +43,11 @@ export function PermissoesSelector({
   onChange: (p: Permissions) => void
 }) {
   function toggle(tela: keyof Permissions, acao: string) {
-    const current = (permissions[tela] as Record<string, boolean>)[acao] ?? false
+    const atual = tela === 'relatorios' ? relatoriosDe(permissions) : permissions[tela]
+    const current = (atual as Record<string, boolean>)[acao] ?? false
     onChange({
       ...permissions,
-      [tela]: { ...permissions[tela], [acao]: !current },
+      [tela]: { ...atual, [acao]: !current },
     })
   }
 
@@ -53,7 +62,8 @@ export function PermissoesSelector({
             <span className="w-28 shrink-0 text-xs font-medium text-gray-700">{tela.label}</span>
             <div className="flex flex-wrap gap-3">
               {tela.acoes.map(acao => {
-                const checked = (permissions[tela.id] as Record<string, boolean>)?.[acao.key] ?? false
+                const valores = tela.id === 'relatorios' ? relatoriosDe(permissions) : permissions[tela.id]
+                const checked = (valores as Record<string, boolean>)?.[acao.key] ?? false
                 return (
                   <label key={acao.key} className="flex cursor-pointer items-center gap-1.5">
                     <input

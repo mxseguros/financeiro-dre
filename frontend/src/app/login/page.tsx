@@ -40,8 +40,8 @@ export default function LoginPage() {
             <br />em tempo real
           </h1>
           <p className="mt-5 text-base leading-relaxed text-gray-500">
-            DRE atualizado, lançamentos organizados por banco e centro de custo, e um
-            assistente com IA pronto para responder suas dúvidas.
+            DRE atualizado, lançamentos organizados por banco e centro de custo, e
+            relatórios que você monta do seu jeito.
           </p>
         </div>
         <p className="absolute bottom-10 left-12 text-sm text-gray-400">

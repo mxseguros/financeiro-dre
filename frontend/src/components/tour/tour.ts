@@ -65,18 +65,12 @@ const TELAS: Record<string, Passo[]> = {
     { el: 'kpis',          titulo: 'Indicadores',               texto: 'Os principais números do período escolhido.' },
     { el: 'demonstrativo', titulo: 'Demonstração de Resultados', texto: 'A DRE linha a linha, previsto x realizado.', lado: 'top' },
   ],
-  '/dashboard/assistente': [
-    PERIODO('O Monitor analisa os lançamentos deste mês.'),
-    { el: 'severidades', titulo: 'Pontos de atenção', texto: 'Quantos alertas há em cada nível: Crítico, Atenção e Info. A lista detalhada fica logo abaixo.' },
-    { el: 'conciliacao', titulo: 'Visão Geral × DRE', texto: 'Por que a receita da Visão Geral é diferente da linha Receita da DRE, motivo a motivo, com o que corrigir.', lado: 'top' },
-    { el: 'resumo-ia',   titulo: 'Resumo com IA',     texto: 'Gera um resumo priorizado dos alertas do mês.' },
-  ],
   '/dashboard/relatorios': [
     PERIODO('O relatório usa os lançamentos deste período.'),
-    { el: 'rel-modelos', titulo: 'Modelos prontos', texto: 'Comece por um modelo (despesas por categoria × mês, fluxo por banco…) e ajuste a partir dele.' },
+    { el: 'rel-modelos', titulo: 'Abrir relatório', texto: 'Seus relatórios salvos, os compartilhados pela equipe e os modelos prontos. Comece por um e ajuste a partir dele; Salvar guarda do seu jeito.' },
     { el: 'rel-campos',  titulo: 'Campos',          texto: 'Arraste um campo para uma das áreas ao lado, ou clique no + do campo. Para tirar, arraste de volta ou clique no ×.', lado: 'right' },
     { el: 'rel-areas',   titulo: 'Linhas, colunas, valores e filtros', texto: 'Linhas e Colunas agrupam; Valores escolhe o que somar (Soma, Média, % do total…); Filtros abre uma lista com caixas de marcar.' },
-    { el: 'rel-tabela',  titulo: 'Resultado',       texto: 'Recalcula a cada mudança. Clique num número para ver os lançamentos que o formam; ▾ recolhe um grupo.', lado: 'top' },
+    { el: 'rel-tabela',  titulo: 'Resultado',       texto: 'Recalcula a cada mudança. Clique num número para ver e editar os lançamentos que o formam; ▾ recolhe um grupo. Tabela, Gráfico ou Ambos ficam no canto.', lado: 'top' },
   ],
 }
 

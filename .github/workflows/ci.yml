@@ -54,8 +54,8 @@ jobs:
       - name: Lint (ruff)
         run: ruff check app/
 
-      - name: Testes adversariais (sem credenciais externas)
-        run: pytest tests/test_adversarial.py -v --tb=short
+      - name: Testes adversariais e de Relatórios (sem credenciais externas)
+        run: pytest tests/test_adversarial.py tests/test_relatorios.py -v --tb=short
 
   frontend:
     name: Frontend — build

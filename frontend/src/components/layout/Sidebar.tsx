@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import type { Role, Permissions } from '@/types'
+import { permissaoRelatorios, type Role, type Permissions } from '@/types'
 import Image from 'next/image'
 import { iniciarTour } from '@/components/tour/tour'
 
@@ -33,8 +33,8 @@ const NAV: NavItem[] = [
   { href: '/dashboard/lancamentos',            label: 'Lançamentos',   icon: Icon.book,     permissaoTela: 'lancamentos'  },
   { href: '/dashboard/lancamentos/aprovacoes', label: 'Aprovações',    icon: Icon.kanban,   permissaoTela: 'aprovacoes'   },
   { href: '/dashboard/exports',                label: 'Exportações',   icon: Icon.download                                },
-  // Relatórios substituiu o Monitoramento IA (26/10/2026) e herdou a permissão dele.
-  { href: '/dashboard/relatorios',             label: 'Relatórios',    icon: Icon.table,    permissaoTela: 'assistente'   },
+  // Relatórios substituiu o Monitoramento IA (26/10/2026).
+  { href: '/dashboard/relatorios',             label: 'Relatórios',    icon: Icon.table,    permissaoTela: 'relatorios'   },
 ]
 
 const NAV_BOTTOM: NavItem[] = [
@@ -67,6 +67,7 @@ export function Sidebar({ role, permissions, email, nome, onSignOut, aberta = fa
 
   const visible = (item: NavItem) => {
     if (!item.permissaoTela) return true
+    if (item.permissaoTela === 'relatorios') return permissaoRelatorios(permissions, role, 'visualizar')
     return permissions[item.permissaoTela]?.visualizar === true
   }
 

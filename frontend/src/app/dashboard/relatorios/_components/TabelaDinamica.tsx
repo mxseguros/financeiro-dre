@@ -43,17 +43,25 @@ export function TabelaDinamica({ tabela, onAlternar, onCelula }: Props) {
                     {l.rotulo}
                   </span>
                 </th>
-                {l.celulas.map((c, ci) => (
-                  <td
-                    key={ci}
-                    onClick={() => onCelula(l.caminho, c.col)}
-                    className={cn('cursor-pointer whitespace-nowrap border-b border-gray-100 px-3 py-1.5 text-right tabular-nums hover:bg-navy/5', fundo,
-                      c.col === -1 && 'font-semibold', c.valor != null && c.valor < 0 && 'text-red-700',
-                      l.tipo === 'tot' && 'border-t-2 border-t-navy')}
-                  >
-                    {fmt(c.valor, c.formato)}
-                  </td>
-                ))}
+                {l.celulas.map((c, ci) => {
+                  // Período anterior e variação não abrem detalhe (são de outro período).
+                  const clicavel = c.col !== -2
+                  return (
+                    <td
+                      key={ci}
+                      onClick={clicavel ? () => onCelula(l.caminho, c.col) : undefined}
+                      className={cn('whitespace-nowrap border-b border-gray-100 px-3 py-1.5 text-right tabular-nums', fundo,
+                        clicavel ? 'cursor-pointer hover:bg-navy/5' : 'text-gray-500',
+                        c.col === -1 && 'font-semibold', c.formato !== 'var' && c.valor != null && c.valor < 0 && 'text-red-700',
+                        l.tipo === 'tot' && 'border-t-2 border-t-navy')}
+                    >
+                      {c.formato === 'var' && c.valor != null && c.valor !== 0 && (
+                        <span aria-hidden className="mr-1 text-[9px]">{c.valor > 0 ? '▲' : '▼'}</span>
+                      )}
+                      {fmt(c.valor, c.formato)}
+                    </td>
+                  )
+                })}
               </tr>
             )
           })}
@@ -65,7 +73,16 @@ export function TabelaDinamica({ tabela, onAlternar, onCelula }: Props) {
 
 const MAX_DETALHE = 100
 
-export function Detalhe({ titulo, lancamentos, onFechar }: { titulo: string; lancamentos: Lancamento[]; onFechar: () => void }) {
+interface DetalheProps {
+  titulo: string
+  lancamentos: Lancamento[]
+  onFechar: () => void
+  /** Abre o lançamento no modal de edição de Lançamentos; ausente = sem edição. */
+  onEditar?: (l: Lancamento) => void
+  editando?: string | null
+}
+
+export function Detalhe({ titulo, lancamentos, onFechar, onEditar, editando }: DetalheProps) {
   const ordenados = [...lancamentos].sort((a, b) => b.valor - a.valor)
   const soma = lancamentos.reduce((s, r) => s + (r.tipo === 'Receita' ? r.valor : -r.valor), 0)
   return (
@@ -83,6 +100,7 @@ export function Detalhe({ titulo, lancamentos, onFechar }: { titulo: string; lan
             <tr className="text-left text-[11px] text-gray-500">
               {['Data', 'Tipo', 'Descrição', 'Subitem', 'Banco', 'Status'].map(h => <th key={h} className="px-2 py-1 font-semibold">{h}</th>)}
               <th className="px-2 py-1 text-right font-semibold">Valor</th>
+              {onEditar && <th className="px-2 py-1"><span className="sr-only">Ações</span></th>}
             </tr>
           </thead>
           <tbody>
@@ -95,6 +113,14 @@ export function Detalhe({ titulo, lancamentos, onFechar }: { titulo: string; lan
                 <td className="px-2 py-1">{r.banco ?? '—'}</td>
                 <td className="px-2 py-1">{r.status}</td>
                 <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">{fmt(r.valor, 'brl')}</td>
+                {onEditar && (
+                  <td className="px-2 py-1 text-right">
+                    <button type="button" onClick={() => onEditar(r)} disabled={editando === r.id}
+                      className="font-medium text-navy hover:underline disabled:opacity-50">
+                      {editando === r.id ? 'Abrindo…' : 'Editar'}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -5,7 +5,10 @@ export interface Permissions {
   dre:           { visualizar: boolean }
   lancamentos:   { visualizar: boolean; criar: boolean; editar: boolean; deletar: boolean }
   aprovacoes:    { visualizar: boolean; aprovar: boolean }
+  /** Antigo Monitoramento IA. Fica só para ler permissões gravadas antes de Relatórios. */
   assistente:    { visualizar: boolean }
+  /** Opcional: permissões personalizadas antigas não têm (ver permissaoRelatorios). */
+  relatorios?:   { visualizar: boolean; criar: boolean; compartilhar: boolean }
   configuracoes: { visualizar: boolean; criar: boolean; editar: boolean; deletar: boolean }
 }
 
@@ -16,6 +19,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {
     lancamentos:   { visualizar: true, criar: true, editar: true, deletar: true },
     aprovacoes:    { visualizar: true, aprovar: true },
     assistente:    { visualizar: true },
+    relatorios:    { visualizar: true, criar: true, compartilhar: true },
     configuracoes: { visualizar: true, criar: true, editar: true, deletar: true },
   },
   gestor: {
@@ -24,6 +28,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {
     lancamentos:   { visualizar: true, criar: true, editar: true, deletar: false },
     aprovacoes:    { visualizar: true, aprovar: true },
     assistente:    { visualizar: true },
+    relatorios:    { visualizar: true, criar: true, compartilhar: true },
     configuracoes: { visualizar: true, criar: true, editar: true, deletar: true },
   },
   comercial: {
@@ -32,6 +37,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {
     lancamentos:   { visualizar: true, criar: true, editar: false, deletar: false },
     aprovacoes:    { visualizar: false, aprovar: false },
     assistente:    { visualizar: true },
+    relatorios:    { visualizar: true, criar: true, compartilhar: false },
     configuracoes: { visualizar: true, criar: false, editar: false, deletar: false },
   },
   contador: {
@@ -40,8 +46,23 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {
     lancamentos:   { visualizar: true, criar: true, editar: false, deletar: false },
     aprovacoes:    { visualizar: false, aprovar: false },
     assistente:    { visualizar: true },
+    relatorios:    { visualizar: true, criar: true, compartilhar: false },
     configuracoes: { visualizar: true, criar: false, editar: false, deletar: false },
   },
+}
+
+/**
+ * Permissão da tela Relatórios (espelha app/permissions.py). Permissões
+ * personalizadas gravadas antes dela não têm a chave: ver e criar seguem o "Ver"
+ * do antigo Monitoramento IA; compartilhar fica com Admin e Gestor.
+ */
+export function permissaoRelatorios(
+  p: Permissions | null | undefined, role: Role | null | undefined, acao: 'visualizar' | 'criar' | 'compartilhar',
+): boolean {
+  if (!p) return false
+  if (p.relatorios) return p.relatorios[acao] === true
+  if (acao === 'compartilhar') return role === 'admin' || role === 'gestor'
+  return p.assistente?.visualizar === true
 }
 
 export function getDefaultPermissions(role: Role): Permissions {

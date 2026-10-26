@@ -190,24 +190,30 @@ const FAQ: FaqItem[] = [
     resposta: 'Excel (.xlsx) e PDF. Ambos exportam o DRE do período selecionado, com os dados visíveis para o seu perfil.',
   },
 
-  // ── Assistente IA ─────────────────────────────────────────────
+  // ── Relatórios ────────────────────────────────────────────────
   {
-    id: 'i1',
-    categoria: 'Assistente IA',
-    pergunta: 'O que o Assistente IA pode responder?',
-    resposta: 'Perguntas sobre o DRE, interpretação de números, análise de tendências, receita por ramo e qualquer dúvida sobre os dados financeiros da corretora.',
+    id: 'r1',
+    categoria: 'Relatórios',
+    pergunta: 'Como monto um relatório?',
+    resposta: 'Em Relatórios, arraste os campos para Linhas, Colunas, Valores e Filtros, como na tabela dinâmica do Excel (no celular, use o + do campo). Para começar pronto, use Abrir relatório → Modelos prontos.',
   },
   {
-    id: 'i2',
-    categoria: 'Assistente IA',
-    pergunta: 'O Assistente tem acesso aos meus dados?',
-    resposta: 'Sim. Ele acessa os dados financeiros em tempo real, respeitando o seu perfil de acesso — vê apenas o que você tem permissão de ver.',
+    id: 'r2',
+    categoria: 'Relatórios',
+    pergunta: 'Como vejo os lançamentos que formam um valor?',
+    resposta: 'Clique no número na tabela. A lista aparece logo abaixo, e o botão Editar abre o lançamento na mesma tela de edição de Lançamentos.',
   },
   {
-    id: 'i3',
-    categoria: 'Assistente IA',
-    pergunta: 'Posso pedir análises e comparativos ao Assistente?',
-    resposta: 'Sim. Exemplos: "Compare o EBITDA dos últimos 3 meses", "Qual ramo gerou mais receita?", "Como estão minhas comissões neste período?".',
+    id: 'r3',
+    categoria: 'Relatórios',
+    pergunta: 'Posso salvar e compartilhar um relatório?',
+    resposta: 'Sim. Salvar guarda o relatório em Meus relatórios. Admin e Gestor podem compartilhar com a equipe: todos passam a ver, mas só quem criou altera. Um período relativo (ex.: últimos 3 meses) faz o relatório se atualizar sozinho.',
+  },
+  {
+    id: 'r4',
+    categoria: 'Relatórios',
+    pergunta: 'O que aconteceu com o Monitoramento IA?',
+    resposta: 'Foi substituído por Relatórios em outubro de 2026. O alerta de duplicidades virou o modelo pronto "Possíveis duplicidades".',
   },
 ]
 
@@ -258,15 +264,6 @@ function ItemFaq({ item, busca, aberto, onToggle }: {
           <p className="text-sm leading-relaxed text-gray-600">
             {highlight(item.resposta, busca)}
           </p>
-          <Link
-            href={`/dashboard/assistente`}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-navy hover:underline"
-          >
-            Perguntar ao Assistente sobre isso
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3">
-              <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-            </svg>
-          </Link>
         </div>
       )}
     </div>
@@ -303,7 +300,7 @@ export default function AjudaPage() {
       {/* Cabeçalho */}
       <div>
         <h1 className="text-xl font-bold text-navy md:text-2xl">Central de Ajuda</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Respostas rápidas sobre o sistema. Para dúvidas mais detalhadas, use o Assistente IA.</p>
+        <p className="mt-0.5 text-sm text-gray-500">Respostas rápidas sobre o sistema.</p>
       </div>
 
       {/* Busca */}
@@ -333,7 +330,7 @@ export default function AjudaPage() {
       {buscando && (
         <p className="text-xs text-gray-400">
           {resultados.length === 0
-            ? 'Nenhum resultado. Tente outra palavra ou pergunte ao Assistente IA.'
+            ? 'Nenhum resultado. Tente outra palavra.'
             : `${resultados.length} resultado${resultados.length > 1 ? 's' : ''} para "${busca}"`}
         </p>
       )}
@@ -344,13 +341,6 @@ export default function AjudaPage() {
           {resultados.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center">
               <p className="text-sm text-gray-400">Nenhuma resposta encontrada.</p>
-              <Link href="/dashboard/assistente"
-                className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-navy hover:underline">
-                Perguntar ao Assistente IA
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
-                  <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-                </svg>
-              </Link>
             </div>
           ) : (
             resultados.map(item => (
@@ -392,13 +382,13 @@ export default function AjudaPage() {
       {/* Rodapé */}
       <div className="rounded-xl bg-navy px-6 py-5 text-center">
         <p className="text-sm font-medium text-white">Não encontrou o que precisava?</p>
-        <p className="mt-1 text-xs text-white/60">O Assistente IA responde com exemplos, números reais e análises personalizadas.</p>
-        <Link href="/dashboard/assistente"
+        <p className="mt-1 text-xs text-white/60">Para números específicos, monte um relatório com os campos que precisar.</p>
+        <Link href="/dashboard/relatorios"
           className="mt-3 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-navy hover:bg-gray-100 transition-colors">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>
           </svg>
-          Abrir Assistente IA
+          Abrir Relatórios
         </Link>
       </div>
     </div>
