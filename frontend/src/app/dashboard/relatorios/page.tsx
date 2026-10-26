@@ -152,6 +152,12 @@ export default function RelatoriosPage() {
 
   useEffect(() => { buscarSalvos() }, [buscarSalvos])
 
+  // Reflete na lista do menu na hora (sem esperar o recarregamento em segundo plano).
+  const aplicarNaLista = (mudar: (itens: RelatorioSalvo[]) => RelatorioSalvo[]) => {
+    setSalvos(s => (s ? { ...s, itens: mudar(s.itens).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')) } : s))
+    buscarSalvos()
+  }
+
   const buscar = useCallback(() => {
     if (!token) return
     setLoading(true); setErro(null); setDetalhe(null)
@@ -211,11 +217,12 @@ export default function RelatoriosPage() {
     setSalvando(true)
     try {
       const r = await api.patch<RelatorioSalvo>(`/relatorios/${atual.id}`, token, { config: configParaSalvar(cfg) })
-      setAtual({ ...atual, ...r })
+      const novo = { ...atual, ...r, meu: true }
+      setAtual(novo)
       setAlterado(false)
       guardar(cfg, atual.id, false)
       toast.sucesso(`"${atual.nome}" salvo.`)
-      buscarSalvos()
+      aplicarNaLista(itens => itens.map(i => (i.id === novo.id ? novo : i)))
     } catch (e) {
       toast.erro(e instanceof Error ? e.message : 'Erro ao salvar.')
     } finally {
@@ -233,13 +240,14 @@ export default function RelatoriosPage() {
         : await api.post<RelatorioSalvo>('/relatorios', token, { nome, compartilhado, config: configParaSalvar(cfg) })
       const novo = { ...cfg, nome: r.nome }
       const continuaAlterado = renomeando ? alterado : false
+      const salvo = { ...r, meu: true }
       setCfgBruto(novo)
-      setAtual({ ...r, meu: true })
+      setAtual(salvo)
       setAlterado(continuaAlterado)
       guardar(novo, r.id, continuaAlterado)
       setDialogo(null)
       toast.sucesso(renomeando ? 'Relatório atualizado.' : `"${r.nome}" salvo em Meus relatórios.`)
-      buscarSalvos()
+      aplicarNaLista(itens => [...itens.filter(i => i.id !== salvo.id), salvo])
     } catch (e) {
       setErroDialogo(e instanceof Error ? e.message : 'Erro ao salvar.')
     } finally {
@@ -257,7 +265,7 @@ export default function RelatoriosPage() {
       setAlterado(true)
       guardar(cfg, null, true)
       setExcluir(false)
-      buscarSalvos()
+      aplicarNaLista(itens => itens.filter(i => i.id !== atual.id))
     } catch (e) {
       toast.erro(e instanceof Error ? e.message : 'Erro ao excluir.')
     } finally {
