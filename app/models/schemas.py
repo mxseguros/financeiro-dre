@@ -756,6 +756,8 @@ class EmprestimoBanco(RespostaBase):
     receitas: EmprestimoLado
     despesas: EmprestimoLado
     saldo:    Decimal          # receitas − despesas
+    # Receitas − despesas de out/2026 até o fim do período: linha do box "Saldo do período".
+    saldo_acumulado: Decimal = Decimal(0)
 
 
 class DashboardEmprestimosResponse(RespostaBase):

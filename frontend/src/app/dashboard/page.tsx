@@ -111,8 +111,8 @@ function QuadroPorBanco({ titulo, legenda, tour, dados }: {
   )
 }
 
-/** Box "Saldo do período <banco>" (Itaú e Santander, 23/10/2026). Empréstimo e Aplicação são o Saldo dos
- *  quadros de mesmo nome (receitas − despesas). Resultado = Saldo inicial + Empréstimo + Aplicação + Saldo Itaú,
+/** Box "Saldo do período <banco>" (Itaú e Santander, 23/10/2026). Empréstimo e Aplicação são o
+ *  `saldo_acumulado` dos quadros de mesmo nome (receitas − despesas). Resultado = Saldo inicial + Empréstimo + Aplicação + Saldo Itaú,
  *  cada um com o próprio sinal: negativo reduz. Desde 05/11/2026, Empréstimo, Aplicação e Saldo são
  *  acumulados desde out/2026 e só contam lançamentos com data de pagamento/recebimento.
  *  `null` = dado ainda carregando. */
@@ -146,7 +146,7 @@ function CardSaldoPeriodoBanco({ banco, saldoInicial, emprestimo, aplicacao, sal
         </div>
       </div>
       <p className="mt-2 text-xs text-gray-400">
-        Resultado = saldo inicial + empréstimo + aplicação + saldo {banco}, cada um com o próprio sinal. Empréstimo e aplicação são o Saldo dos quadros abaixo. Cada mês soma o movimento ao acumulado do mês anterior, desde outubro/2026. Só entram lançamentos com data de pagamento ou recebimento.
+        Resultado = saldo inicial + empréstimo + aplicação + saldo {banco}, cada um com o próprio sinal. Cada mês soma o movimento ao acumulado do mês anterior, desde outubro/2026. Só entram lançamentos com data de pagamento ou recebimento.
       </p>
     </div>
   )
@@ -160,7 +160,7 @@ interface EmprestimoLado { itens: { subitem: string; qtd: number; valor: number 
 interface QuadroReceitaDespesaResponse { receitas: EmprestimoLado; despesas: EmprestimoLado; saldo: number | string }
 /** Empréstimos e Aplicações: um card por banco (23/10/2026), cada um com receitas e despesas por subitem. */
 interface EmprestimosResponse extends QuadroReceitaDespesaResponse {
-  bancos: (QuadroReceitaDespesaResponse & { banco: string })[]
+  bancos: (QuadroReceitaDespesaResponse & { banco: string; saldo_acumulado?: number | string })[]
 }
 interface DespesasPorClassificacaoResponse {
   periodo: { inicio: string; fim: string }
@@ -431,8 +431,8 @@ export default function DashboardPage() {
     return [{
       banco: nome,
       saldoInicial: Number(card.saldo_inicial ?? 0),
-      emprestimo: emprestimos ? (emp ? Number(emp.saldo) : 0) : null,
-      aplicacao: aplicacoes ? (apl ? Number(apl.saldo) : 0) : null,
+      emprestimo: emprestimos ? (emp ? Number(emp.saldo_acumulado ?? emp.saldo) : 0) : null,
+      aplicacao: aplicacoes ? (apl ? Number(apl.saldo_acumulado ?? apl.saldo) : 0) : null,
       // Front e backend publicam separados: até o backend novo responder, usa o saldo do período.
       saldoBanco: Number(card.saldo_acumulado ?? card.saldo),
     }]
@@ -602,7 +602,7 @@ export default function DashboardPage() {
           {/* Empréstimos (um card por banco) e Aplicações (linhas por banco) */}
           {emprestimos && emprestimos.bancos.length > 0 && (
             <QuadroPorBanco titulo="Empréstimos" tour="emprestimos" dados={emprestimos}
-              legenda="Acumulado de outubro/2026 até o fim do período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
+              legenda="Lançamentos das categorias Empréstimo no período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
           )}
           {aplicacoes && aplicacoes.bancos.length > 0 && (
             <QuadroPorBanco titulo="Aplicações" tour="aplicacoes" dados={aplicacoes}

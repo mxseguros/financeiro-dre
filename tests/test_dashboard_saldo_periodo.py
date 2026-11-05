@@ -115,14 +115,22 @@ def rec(sub, valor, dia, banco=ITAU, recebido=True, status="aprovada", custo=Non
 
 
 def emprestimo(db, periodo, banco="Itaú"):
-    """Linha do box: o Saldo do quadro (receitas − despesas), como o front usa."""
-    resp = asyncio.run(buscar_emprestimos(*periodo, db, base="pagamento"))
-    return next(b for b in resp.bancos if b.banco == banco).saldo
+    """Linha do box: receitas − despesas acumuladas, como o front usa."""
+    return quadro_emprestimo(db, periodo, banco).saldo_acumulado
 
 
 def aplicacao(db, periodo, banco="Itaú"):
+    return quadro_aplicacao(db, periodo, banco).saldo_acumulado
+
+
+def quadro_emprestimo(db, periodo, banco="Itaú"):
+    resp = asyncio.run(buscar_emprestimos(*periodo, db, base="pagamento"))
+    return next(b for b in resp.bancos if b.banco == banco)
+
+
+def quadro_aplicacao(db, periodo, banco="Itaú"):
     resp = asyncio.run(buscar_aplicacoes(*periodo, db, base="pagamento"))
-    return next(b for b in resp.bancos if b.banco == banco).saldo
+    return next(b for b in resp.bancos if b.banco == banco)
 
 
 def card_banco(db, periodo, banco="Itaú"):
@@ -162,6 +170,40 @@ def test_bancos_nao_se_misturam():
     db = Banco(despesas=[desp("s-emp-d", 100, "2026-10-10", banco=ITAU), desp("s-emp-d", 700, "2026-11-10", banco=SANTANDER)])
     assert emprestimo(db, NOV, "Itaú") == Decimal(-100)
     assert emprestimo(db, NOV, "Santander") == Decimal(-700)
+
+
+# ── Quadro Empréstimos × box ─────────────────────────────────
+
+def test_quadro_emprestimos_nao_traz_o_mes_anterior():
+    db = Banco(despesas=[desp("s-emp-d", 19697.58, "2026-10-10"), desp("s-emp-d", 2500, "2026-11-10")],
+               receitas=[rec("s-emp-r", 100, "2026-10-11")])
+    quadro = quadro_emprestimo(db, NOV)
+    assert [(i.subitem, i.qtd, i.valor) for i in quadro.despesas.itens] == [("Familiar", 1, Decimal(2500))]
+    assert quadro.receitas.total == 0
+    assert quadro.saldo == Decimal(-2500)
+    # O box continua acumulado.
+    assert quadro.saldo_acumulado == Decimal("-22097.58")
+
+
+def test_quadro_emprestimos_sem_data_fica_fora():
+    db = Banco(despesas=[desp("s-emp-d", 2500, "2026-11-10"), desp("s-emp-d", 1311.55, "2026-11-30", pago=False)])
+    quadro = quadro_emprestimo(db, NOV)
+    assert quadro.saldo == Decimal(-2500)
+    assert quadro.saldo_acumulado == Decimal(-2500)
+
+
+def test_quadro_emprestimos_antes_de_outubro_mostra_o_periodo_e_box_zera():
+    db = Banco(despesas=[desp("s-emp-d", 500, "2026-09-10")])
+    quadro = quadro_emprestimo(db, (date(2026, 9, 1), date(2026, 9, 30)))
+    assert quadro.saldo == Decimal(-500)
+    assert quadro.saldo_acumulado == 0
+
+
+def test_quadro_aplicacoes_continua_acumulado():
+    db = Banco(despesas=[desp("s-apl-d", 300, "2026-10-05"), desp("s-apl-d", 200, "2026-11-05")])
+    quadro = quadro_aplicacao(db, NOV)
+    assert quadro.saldo == Decimal(-500)
+    assert quadro.saldo_acumulado == Decimal(-500)
 
 
 # ── O que fica fora ──────────────────────────────────────────

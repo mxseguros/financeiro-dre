@@ -336,6 +336,7 @@ async def _quadro_por_banco(
     db: Client,
     base: str,
     alvos: set[str],
+    quadro_acumulado: bool,
 ) -> DashboardEmprestimosResponse:
     """Receitas e despesas das categorias com um dos nomes `alvos`, por banco e
     subitem (quadros Empréstimos e Aplicações da Visão Geral).
@@ -343,11 +344,13 @@ async def _quadro_por_banco(
     Um card por banco ativo (23/10/2026), mais "Sem banco" só quando houver
     lançamento sem banco (ou de banco inativo).
 
-    Regra de 05/11/2026: os valores são acumulados de INICIO_ACUMULADO até `fim`
-    (cada mês herda o anterior, com sinal) e só contam lançamentos com data de
-    pagamento/recebimento; `inicio` não recorta. Consultas sequenciais: o client
-    HTTP/2 do supabase-py não suporta várias páginas em paralelo.
-    Excluídas e rejeitadas ficam fora. Subitens ativos sem lançamento aparecem
+    Regras de 05/11/2026: só contam lançamentos com data de pagamento/recebimento.
+    `saldo_acumulado` vai de INICIO_ACUMULADO até `fim`, com sinal, e alimenta o
+    box "Saldo do período". As linhas do quadro seguem `quadro_acumulado`: True
+    (Aplicações) usa essa mesma janela; False (Empréstimos) mostra só o período,
+    sem o saldo do mês anterior. Uma consulta por tabela cobre os dois, recortados
+    em memória. Sequencial: o client HTTP/2 do supabase-py não suporta várias
+    páginas em paralelo. Excluídas e rejeitadas ficam fora. Subitens ativos sem lançamento aparecem
     com zero, para o card manter as mesmas linhas de um mês para outro."""
     cat_ids, subs = await _subitens_das_categorias(db, alvos)
     bancos_resp = await _exec(db.table("bancos").select("id, nome").eq("ativo", True).order("nome"))
@@ -355,41 +358,54 @@ async def _quadro_por_banco(
     ids_bancos = {bid for bid, _ in bancos}
     SEM = "sem_banco"
 
-    async def linhas(natureza: str, tabela: str, col_liquidacao: str) -> tuple[list[str], dict]:
-        """(subitens ativos, {banco_id|SEM: {subitem: [qtd, valor]}})."""
+    fim_s, acu_s = fim.isoformat(), INICIO_ACUMULADO.isoformat()
+    ini_quadro = acu_s if quadro_acumulado else inicio.isoformat()
+
+    async def linhas(natureza: str, tabela: str, col_liquidacao: str) -> tuple[list[str], dict, dict]:
+        """(subitens ativos, {banco_id|SEM: {subitem: [qtd, valor]}}, {banco_id|SEM: acumulado})."""
         meus = [s for s in subs if cat_ids.get(s["categoria_id"]) == natureza]
         nomes = {s["id"]: s["nome"].strip() for s in meus}
         ativos = sorted(s["nome"].strip() for s in meus if s.get("ativo", True))
         por_banco: dict[str, dict[str, list]] = defaultdict(dict)
+        acumulado: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
         if nomes:
+            coluna = coluna_data(tabela, base)
             rows = await _todas(
-                db.table(tabela).select("id, valor, tipo_lancamento_id, banco_id")
+                db.table(tabela).select(f"id, valor, tipo_lancamento_id, banco_id, {coluna}")
                 .in_("tipo_lancamento_id", list(nomes))
-                .gte(coluna_data(tabela, base), INICIO_ACUMULADO.isoformat())
-                .lte(coluna_data(tabela, base), fim.isoformat())
+                .gte(coluna, min(ini_quadro, acu_s))
+                .lte(coluna, fim_s)
                 .not_.is_(col_liquidacao, "null")
                 .not_.in_("status", _FORA)
                 .order("id")
             )
             for row in rows:
                 chave = row.get("banco_id") if row.get("banco_id") in ids_bancos else SEM
-                item = por_banco[chave].setdefault(nomes[row["tipo_lancamento_id"]], [0, Decimal(0)])
-                item[0] += 1
-                item[1] += Decimal(str(row["valor"]))
-        return ativos, por_banco
+                dia = (row.get(coluna) or "")[:10]
+                valor = Decimal(str(row["valor"]))
+                if acu_s <= dia <= fim_s:
+                    acumulado[chave] += valor
+                if ini_quadro <= dia <= fim_s:
+                    item = por_banco[chave].setdefault(nomes[row["tipo_lancamento_id"]], [0, Decimal(0)])
+                    item[0] += 1
+                    item[1] += valor
+        return ativos, por_banco, acumulado
 
     def lado(ativos: list[str], soma: dict[str, list]) -> EmprestimoLado:
         tudo = {n: soma.get(n, [0, Decimal(0)]) for n in ativos} | soma
         itens = [EmprestimoSubitem(subitem=n, qtd=q, valor=v) for n, (q, v) in sorted(tudo.items())]
         return EmprestimoLado(itens=itens, total=sum((i.valor for i in itens), Decimal(0)))
 
-    sub_rec, rec = await linhas("receita", "receitas_outras", "recebido_em")
-    sub_des, des = await linhas("despesa", "despesas", "paga_em")
+    sub_rec, rec, acu_rec = await linhas("receita", "receitas_outras", "recebido_em")
+    sub_des, des, acu_des = await linhas("despesa", "despesas", "paga_em")
     cards = bancos + ([(SEM, "Sem banco")] if rec.get(SEM) or des.get(SEM) else [])
     por_banco = []
     for bid, nome in cards:
         r, d = lado(sub_rec, rec.get(bid, {})), lado(sub_des, des.get(bid, {}))
-        por_banco.append(EmprestimoBanco(banco=nome, receitas=r, despesas=d, saldo=r.total - d.total))
+        por_banco.append(EmprestimoBanco(
+            banco=nome, receitas=r, despesas=d, saldo=r.total - d.total,
+            saldo_acumulado=acu_rec.get(bid, Decimal(0)) - acu_des.get(bid, Decimal(0)),
+        ))
 
     def somar(chave: str) -> EmprestimoLado:
         tot: dict[str, list] = {}
@@ -411,8 +427,9 @@ async def _quadro_por_banco(
 async def buscar_emprestimos(
     inicio: date, fim: date, db: Client, base: str = "competencia",
 ) -> DashboardEmprestimosResponse:
-    """Quadro Empréstimos: categorias "Empréstimo(s)", um card por banco."""
-    return await _quadro_por_banco(inicio, fim, db, base, {"emprestimo", "emprestimos"})
+    """Quadro Empréstimos: categorias "Empréstimo(s)", um card por banco. O quadro
+    mostra só o período; o acumulado vai em `saldo_acumulado`, para o box."""
+    return await _quadro_por_banco(inicio, fim, db, base, {"emprestimo", "emprestimos"}, quadro_acumulado=False)
 
 
 async def buscar_aplicacoes(
@@ -420,7 +437,7 @@ async def buscar_aplicacoes(
 ) -> DashboardAplicacoesResponse:
     """Quadro Aplicações: categoria "Aplicações", no mesmo layout de Empréstimos
     (um card por banco, receitas e despesas por subitem) — pedido de 23/10/2026."""
-    q = await _quadro_por_banco(inicio, fim, db, base, {"aplicacao", "aplicacoes"})
+    q = await _quadro_por_banco(inicio, fim, db, base, {"aplicacao", "aplicacoes"}, quadro_acumulado=True)
     return DashboardAplicacoesResponse(**q.model_dump())
 
 
