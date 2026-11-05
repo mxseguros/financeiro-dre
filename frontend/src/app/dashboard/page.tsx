@@ -111,20 +111,21 @@ function QuadroPorBanco({ titulo, legenda, tour, dados }: {
   )
 }
 
-/** Box "Saldo do período <banco>" (Itaú e Santander, 23/10/2026). Resultado = Saldo inicial − Empréstimo
- *  − Aplicação + Saldo Itaú (que entra com o próprio sinal: negativo reduz). Desde 05/11/2026, Empréstimo,
- *  Aplicação e Saldo são acumulados desde out/2026 e só contam lançamentos com data de pagamento/recebimento.
+/** Box "Saldo do período <banco>" (Itaú e Santander, 23/10/2026). Empréstimo e Aplicação são o Saldo dos
+ *  quadros de mesmo nome (receitas − despesas). Resultado = Saldo inicial + Empréstimo + Aplicação + Saldo Itaú,
+ *  cada um com o próprio sinal: negativo reduz. Desde 05/11/2026, Empréstimo, Aplicação e Saldo são
+ *  acumulados desde out/2026 e só contam lançamentos com data de pagamento/recebimento.
  *  `null` = dado ainda carregando. */
 function CardSaldoPeriodoBanco({ banco, saldoInicial, emprestimo, aplicacao, saldoBanco }: {
   banco: string; saldoInicial: number; emprestimo: number | null; aplicacao: number | null; saldoBanco: number
 }) {
   const linhas: [string, number | null, string][] = [
     ['Saldo inicial', saldoInicial, 'text-navy'],
-    [`Empréstimo ${banco}`, emprestimo, 'text-gray-700'],
-    [`Saldo aplicação ${banco}`, aplicacao, 'text-gray-700'],
+    [`Empréstimo ${banco}`, emprestimo, (emprestimo ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'],
+    [`Saldo aplicação ${banco}`, aplicacao, (aplicacao ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'],
     [`Saldo ${banco}`, saldoBanco, saldoBanco >= 0 ? 'text-green-600' : 'text-red-500'],
   ]
-  const resultado = emprestimo == null || aplicacao == null ? null : saldoInicial - emprestimo - aplicacao + saldoBanco
+  const resultado = emprestimo == null || aplicacao == null ? null : saldoInicial + emprestimo + aplicacao + saldoBanco
   return (
     <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
       <p className="text-sm font-medium text-gray-500">Saldo do período {banco}</p>
@@ -145,7 +146,7 @@ function CardSaldoPeriodoBanco({ banco, saldoInicial, emprestimo, aplicacao, sal
         </div>
       </div>
       <p className="mt-2 text-xs text-gray-400">
-        Resultado = saldo inicial − empréstimo − aplicação + saldo {banco}. Cada mês soma o movimento ao acumulado do mês anterior, desde outubro/2026. Só entram lançamentos com data de pagamento ou recebimento.
+        Resultado = saldo inicial + empréstimo + aplicação + saldo {banco}, cada um com o próprio sinal. Empréstimo e aplicação são o Saldo dos quadros abaixo. Cada mês soma o movimento ao acumulado do mês anterior, desde outubro/2026. Só entram lançamentos com data de pagamento ou recebimento.
       </p>
     </div>
   )
@@ -430,8 +431,8 @@ export default function DashboardPage() {
     return [{
       banco: nome,
       saldoInicial: Number(card.saldo_inicial ?? 0),
-      emprestimo: emprestimos ? (emp ? Number(emp.despesas.total) - Number(emp.receitas.total) : 0) : null,
-      aplicacao: aplicacoes ? (apl ? Number(apl.despesas.total) - Number(apl.receitas.total) : 0) : null,
+      emprestimo: emprestimos ? (emp ? Number(emp.saldo) : 0) : null,
+      aplicacao: aplicacoes ? (apl ? Number(apl.saldo) : 0) : null,
       // Front e backend publicam separados: até o backend novo responder, usa o saldo do período.
       saldoBanco: Number(card.saldo_acumulado ?? card.saldo),
     }]

@@ -115,16 +115,14 @@ def rec(sub, valor, dia, banco=ITAU, recebido=True, status="aprovada", custo=Non
 
 
 def emprestimo(db, periodo, banco="Itaú"):
-    """Linha do box: despesas − receitas, como o front calcula."""
+    """Linha do box: o Saldo do quadro (receitas − despesas), como o front usa."""
     resp = asyncio.run(buscar_emprestimos(*periodo, db, base="pagamento"))
-    card = next(b for b in resp.bancos if b.banco == banco)
-    return card.despesas.total - card.receitas.total
+    return next(b for b in resp.bancos if b.banco == banco).saldo
 
 
 def aplicacao(db, periodo, banco="Itaú"):
     resp = asyncio.run(buscar_aplicacoes(*periodo, db, base="pagamento"))
-    card = next(b for b in resp.bancos if b.banco == banco)
-    return card.despesas.total - card.receitas.total
+    return next(b for b in resp.bancos if b.banco == banco).saldo
 
 
 def card_banco(db, periodo, banco="Itaú"):
@@ -134,19 +132,19 @@ def card_banco(db, periodo, banco="Itaú"):
 
 def resultado(db, periodo, banco="Itaú"):
     card = card_banco(db, periodo, banco)
-    return card.saldo_inicial - emprestimo(db, periodo, banco) - aplicacao(db, periodo, banco) + card.saldo_acumulado
+    return card.saldo_inicial + emprestimo(db, periodo, banco) + aplicacao(db, periodo, banco) + card.saldo_acumulado
 
 
 # ── Acúmulo com sinal ────────────────────────────────────────
 
 def test_outubro_soma_com_novembro():
-    db = Banco(despesas=[desp("s-emp-d", 10000, "2026-10-10"), desp("s-emp-d", 10000, "2026-11-10")])
+    db = Banco(receitas=[rec("s-emp-r", 10000, "2026-10-10"), rec("s-emp-r", 10000, "2026-11-10")])
     assert emprestimo(db, OUT) == Decimal(10000)
     assert emprestimo(db, NOV) == Decimal(20000)
 
 
 def test_outubro_negativo_subtrai_em_novembro():
-    db = Banco(despesas=[desp("s-emp-d", 10000, "2026-11-10")], receitas=[rec("s-emp-r", 10000, "2026-10-10")])
+    db = Banco(despesas=[desp("s-emp-d", 10000, "2026-10-10")], receitas=[rec("s-emp-r", 10000, "2026-11-10")])
     assert emprestimo(db, OUT) == Decimal(-10000)
     assert emprestimo(db, NOV) == Decimal(0)
 
@@ -154,7 +152,7 @@ def test_outubro_negativo_subtrai_em_novembro():
 def test_aplicacao_acumula_e_quantidade_conta_o_acumulado():
     db = Banco(despesas=[desp("s-apl-d", 300, "2026-10-05"), desp("s-apl-d", 200, "2026-11-05")],
                receitas=[rec("s-apl-r", 50, "2026-11-06")])
-    assert aplicacao(db, NOV) == Decimal(450)
+    assert aplicacao(db, NOV) == Decimal(-450)
     resp = asyncio.run(buscar_aplicacoes(*NOV, db, base="pagamento"))
     itau = next(b for b in resp.bancos if b.banco == "Itaú")
     assert [(i.subitem, i.qtd) for i in itau.despesas.itens] == [("Reserva", 2)]
@@ -162,8 +160,8 @@ def test_aplicacao_acumula_e_quantidade_conta_o_acumulado():
 
 def test_bancos_nao_se_misturam():
     db = Banco(despesas=[desp("s-emp-d", 100, "2026-10-10", banco=ITAU), desp("s-emp-d", 700, "2026-11-10", banco=SANTANDER)])
-    assert emprestimo(db, NOV, "Itaú") == Decimal(100)
-    assert emprestimo(db, NOV, "Santander") == Decimal(700)
+    assert emprestimo(db, NOV, "Itaú") == Decimal(-100)
+    assert emprestimo(db, NOV, "Santander") == Decimal(-700)
 
 
 # ── O que fica fora ──────────────────────────────────────────
@@ -250,5 +248,5 @@ def test_acumulado_passa_de_mil_linhas():
     # O PostgREST corta em 1000 linhas sem avisar: o acumulado precisa paginar.
     db = Banco(despesas=[desp("s-emp-d", 1, "2026-10-10") for _ in range(1500)]
                         + [desp(None, 1, "2026-11-10") for _ in range(1500)])
-    assert emprestimo(db, NOV) == Decimal(1500)
+    assert emprestimo(db, NOV) == Decimal(-1500)
     assert card_banco(db, NOV).saldo_acumulado == Decimal(-1500)
