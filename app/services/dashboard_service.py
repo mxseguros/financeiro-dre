@@ -72,8 +72,9 @@ def _gerar_alertas(dre_data: DREResponse, metas_data: MetasResponse | None) -> l
 # duas é receita/despesa. Pendente e aprovada contam (mesma regra da DRE).
 _FORA = ["excluida", "rejeitada"]
 MESES_TOTAL_GERAL = 12
-# Linhas Empréstimo e Aplicação do box "Saldo do período" (05/11/2026): acumulam a
-# partir do mês do Saldo Inicial; o que veio antes dele já está nesse saldo.
+# Box "Saldo do período" (05/11/2026): Empréstimo, Aplicação e o saldo dos meses
+# anteriores acumulam a partir do mês do Saldo Inicial; o que veio antes dele já
+# está nesse saldo.
 INICIO_ACUMULADO = date(2026, 10, 1)
 
 
@@ -245,8 +246,10 @@ async def buscar_por_banco(
     a cliente. Só aqui — nas demais telas nada muda.
 
     `saldo` é só do período: alimenta o card Por Banco e a linha Saldo do box
-    "Saldo do período" (05/11/2026). Sequencial: o client HTTP/2 do supabase-py
-    não suporta várias páginas em paralelo."""
+    "Saldo do período" (05/11/2026). `saldo_anterior` usa os mesmos critérios, de
+    INICIO_ACUMULADO até a véspera de `inicio`, e entra no Saldo inicial do box.
+    Uma consulta por tabela cobre os dois, recortados em memória. Sequencial: o
+    client HTTP/2 do supabase-py não suporta várias páginas em paralelo."""
     so_dre = await ids_somente_dre(db)   # receitas desses subitens: só na DRE
     vendas = await _ids_subitens_receita_vendas(db)
     saldo_inicial = await _saldo_inicial_por_banco(db)
@@ -254,19 +257,20 @@ async def buscar_por_banco(
 
     col_rec = coluna_data("receitas_outras", base)
     col_des = coluna_data("despesas", base)
-    ini_s, fim_s = inicio.isoformat(), fim.isoformat()
+    ini_s, acu_s, fim_s = inicio.isoformat(), INICIO_ACUMULADO.isoformat(), fim.isoformat()
+    desde = min(ini_s, acu_s)
     receitas = await _todas(sem_somente_dre(
         db.table("receitas_outras")
-        .select("id, banco_id, valor, custo_tipo, tipo_lancamento_id")
-        .gte(col_rec, ini_s)
+        .select(f"id, banco_id, valor, custo_tipo, tipo_lancamento_id, {col_rec}")
+        .gte(col_rec, desde)
         .lte(col_rec, fim_s)
         .not_.is_("banco_id", "null")
         .not_.is_("recebido_em", "null")
         .not_.in_("status", _FORA), so_dre).order("id"))
     despesas = await _todas(
         db.table("despesas")
-        .select("id, banco_id, valor")
-        .gte(col_des, ini_s)
+        .select(f"id, banco_id, valor, {col_des}")
+        .gte(col_des, desde)
         .lte(col_des, fim_s)
         .not_.is_("banco_id", "null")
         .not_.is_("paga_em", "null")
@@ -276,13 +280,22 @@ async def buscar_por_banco(
 
     receitas_por_banco: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
     despesas_por_banco: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
+    anterior_por_banco: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
+
+    def somar(row: dict, coluna: str, no_periodo: dict[str, Decimal], sinal: int) -> None:
+        dia = (row.get(coluna) or "")[:10]
+        valor = Decimal(str(row["valor"]))
+        if ini_s <= dia <= fim_s:
+            no_periodo[row["banco_id"]] += valor
+        elif acu_s <= dia < ini_s:
+            anterior_por_banco[row["banco_id"]] += sinal * valor
 
     for row in receitas:
         # Filtro aqui, não no banco: NOT IN descartaria também as sem classificação.
         if row.get("tipo_lancamento_id") in vendas and row.get("custo_tipo") not in _RECEITAS_FORA_CARDS_BANCO:
-            receitas_por_banco[row["banco_id"]] += Decimal(str(row["valor"]))
+            somar(row, col_rec, receitas_por_banco, 1)
     for row in despesas:
-        despesas_por_banco[row["banco_id"]] += Decimal(str(row["valor"]))
+        somar(row, col_des, despesas_por_banco, -1)
 
     itens = []
     for b in bancos:
@@ -292,6 +305,7 @@ async def buscar_por_banco(
             banco_id=b["id"], banco_nome=b["nome"],
             receitas=r, despesas=d, saldo=r - d,
             saldo_inicial=saldo_inicial.get(b["id"], Decimal(0)),
+            saldo_anterior=anterior_por_banco.get(b["id"], Decimal(0)),
         ))
 
     return DashboardPorBancoResponse(periodo={"inicio": inicio, "fim": fim}, bancos=itens)

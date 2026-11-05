@@ -728,6 +728,9 @@ class BancoResumoItem(RespostaBase):
     # Lançamento único do subitem "Saldo Inicial" do banco, sem filtro de
     # período (box "Saldo do período Itaú", 23/10/2026). Não entra no saldo.
     saldo_inicial: Decimal = Decimal(0)
+    # Saldo com os critérios do card, de out/2026 até a véspera do período. Somado
+    # ao saldo_inicial na linha "Saldo inicial" do box (05/11/2026).
+    saldo_anterior: Decimal = Decimal(0)
 
 
 class DashboardPorBancoResponse(RespostaBase):

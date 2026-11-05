@@ -140,7 +140,8 @@ def card_banco(db, periodo, banco="Itaú"):
 
 def resultado(db, periodo, banco="Itaú"):
     card = card_banco(db, periodo, banco)
-    return card.saldo_inicial + emprestimo(db, periodo, banco) + aplicacao(db, periodo, banco) + card.saldo
+    inicial = card.saldo_inicial + card.saldo_anterior   # linha "Saldo inicial" do box
+    return inicial + emprestimo(db, periodo, banco) + aplicacao(db, periodo, banco) + card.saldo
 
 
 # ── Acúmulo com sinal ────────────────────────────────────────
@@ -267,7 +268,43 @@ def test_periodo_antes_do_inicio_mostra_saldo_do_banco_e_zera_acumulados():
     db = Banco(despesas=[desp("s-emp-d", 500, "2026-09-10")], receitas=[rec("s-vendas", 700, "2026-09-10")])
     set26 = (date(2026, 9, 1), date(2026, 9, 30))
     assert card_banco(db, set26).saldo == Decimal(700)
+    assert card_banco(db, set26).saldo_anterior == 0
     assert emprestimo(db, set26) == 0
+
+
+# ── Saldo inicial do box: leva o saldo do banco dos meses anteriores ─────
+
+def test_saldo_anterior_leva_outubro_para_novembro():
+    db = Banco(despesas=[desp(None, 100, "2026-10-10"), desp(None, 30, "2026-11-10")],
+               receitas=[rec("s-vendas", 500, "2026-10-10"), rec("s-vendas", 80, "2026-11-10")])
+    assert card_banco(db, OUT).saldo_anterior == 0
+    assert card_banco(db, NOV).saldo_anterior == Decimal(400)
+
+
+def test_saldo_anterior_soma_todos_os_meses_desde_outubro():
+    db = Banco(despesas=[desp(None, 900, "2026-11-10")], receitas=[rec("s-vendas", 500, "2026-10-10")])
+    dez = (date(2026, 12, 1), date(2026, 12, 31))
+    assert card_banco(db, dez).saldo_anterior == Decimal(-400)
+
+
+def test_saldo_anterior_com_filtro_de_um_dia_vai_ate_a_vespera():
+    db = Banco(receitas=[rec("s-vendas", 500, "2026-11-04"), rec("s-vendas", 80, "2026-11-05")])
+    dia = (date(2026, 11, 5), date(2026, 11, 5))
+    card = card_banco(db, dia)
+    assert card.saldo_anterior == Decimal(500)
+    assert card.saldo == Decimal(80)
+
+
+def test_saldo_anterior_segue_os_criterios_do_card():
+    db = Banco(
+        despesas=[desp(None, 100, "2026-10-10", pago=False), desp(None, 100, "2026-10-10", status="excluida"),
+                  desp(None, 100, "2026-10-10", custo="aplicacoes"), desp("s-emp-d", 100, "2026-10-10"),
+                  desp(None, 100, "2026-09-30")],
+        receitas=[rec("s-vendas", 100, "2026-10-10", recebido=False), rec("s-vendas", 100, "2026-10-10", status="rejeitada"),
+                  rec("s-vendas", 100, "2026-10-10", custo="aplicacoes"), rec("s-emp-r", 100, "2026-10-10"),
+                  rec("s-vendas", 100, "2026-09-30")],
+    )
+    assert card_banco(db, NOV).saldo_anterior == 0
 
 
 # ── Resultado ────────────────────────────────────────────────
@@ -279,14 +316,14 @@ def test_saldo_inicial_nao_exige_data_e_nao_conta_duas_vezes():
     assert card.saldo == 0
 
 
-def test_resultado_nao_leva_o_saldo_do_banco_do_mes_anterior():
+def test_resultado_de_novembro_parte_do_de_outubro():
     db = Banco(
         despesas=[desp("s-emp-d", 1000, "2026-10-10")],
         receitas=[rec("s-inicial", 100000, "2026-10-01", custo="aplicacoes"),
                   rec("s-vendas", 5000, "2026-10-10"), rec("s-vendas", 200, "2026-11-10")],
     )
     assert resultado(db, OUT) == Decimal(104000)   # 100.000 − 1.000 + 5.000
-    assert resultado(db, NOV) == Decimal(99200)    # 100.000 − 1.000 + 200
+    assert resultado(db, NOV) == Decimal(104200)   # (100.000 + 5.000) − 1.000 + 200
 
 
 def test_resultado_acumula_emprestimo_e_aplicacao():

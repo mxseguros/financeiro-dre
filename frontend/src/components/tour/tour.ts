@@ -43,7 +43,7 @@ const MENU: Passo[] = [
 const TELAS: Record<string, Passo[]> = {
   '/dashboard': [
     PERIODO('Escolha o mês que quer analisar.'),
-    { el: 'kpis',      titulo: 'Indicadores do mês', texto: 'Saldo do período do Itaú e do Santander: saldo inicial, empréstimo, saldo de aplicação, saldo do banco e o resultado. Empréstimo e aplicação acumulam desde outubro/2026; o saldo do banco é só do período. Só contam lançamentos com data de pagamento ou recebimento.' },
+    { el: 'kpis',      titulo: 'Indicadores do mês', texto: 'Saldo do período do Itaú e do Santander: saldo inicial, empréstimo, saldo de aplicação, saldo do banco e o resultado. O saldo inicial soma o saldo do banco dos meses anteriores, desde outubro/2026. Empréstimo e aplicação também acumulam; o saldo do banco é só do período. Só contam lançamentos com data de pagamento ou recebimento.' },
     { el: 'por-banco', titulo: 'Por Banco',          texto: 'Receitas e despesas por conta bancária — pela data de pagamento ou de recebimento no período. Despesas: só Fixo e Variável; receitas só de Receitas de vendas.' },
   ],
   '/dashboard/lancamentos': [
