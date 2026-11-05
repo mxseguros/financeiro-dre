@@ -83,7 +83,6 @@ interface DetalheProps {
 }
 
 export function Detalhe({ titulo, lancamentos, onFechar, onEditar, editando }: DetalheProps) {
-  const ordenados = [...lancamentos].sort((a, b) => b.valor - a.valor)
   const soma = lancamentos.reduce((s, r) => s + (r.tipo === 'Receita' ? r.valor : -r.valor), 0)
   return (
     <div className="grid gap-2 border-t border-gray-200 bg-gray-50 px-3 py-3">
@@ -94,6 +93,16 @@ export function Detalhe({ titulo, lancamentos, onFechar, onEditar, editando }: D
         </span>
         <button type="button" onClick={onFechar} className="font-medium text-navy hover:underline">Fechar</button>
       </div>
+      <TabelaLancamentos lancamentos={lancamentos} onEditar={onEditar} editando={editando} />
+    </div>
+  )
+}
+
+/** Tabela de lançamentos, também usada na modal dos valores da Visão Geral. */
+export function TabelaLancamentos({ lancamentos, onEditar, editando }: Pick<DetalheProps, 'lancamentos' | 'onEditar' | 'editando'>) {
+  const ordenados = [...lancamentos].sort((a, b) => b.valor - a.valor)
+  return (
+    <>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
@@ -104,8 +113,9 @@ export function Detalhe({ titulo, lancamentos, onFechar, onEditar, editando }: D
             </tr>
           </thead>
           <tbody>
-            {ordenados.slice(0, MAX_DETALHE).map(r => (
-              <tr key={r.id} className="border-t border-gray-200">
+            {ordenados.slice(0, MAX_DETALHE).map((r, i) => (
+              // O índice cobre um lançamento listado duas vezes no Resultado da Visão Geral.
+              <tr key={`${r.id}-${i}`} className="border-t border-gray-200">
                 <td className="whitespace-nowrap px-2 py-1">{fmtData(r.data)}</td>
                 <td className="px-2 py-1">{r.tipo}</td>
                 <td className="px-2 py-1">{r.descricao}{r.parcela && <span className="ml-1 text-gray-400">{r.parcela}</span>}</td>
@@ -129,6 +139,6 @@ export function Detalhe({ titulo, lancamentos, onFechar, onEditar, editando }: D
       {lancamentos.length > MAX_DETALHE && (
         <span className="text-[11px] text-gray-500">+ {lancamentos.length - MAX_DETALHE} lançamentos (mostrando os {MAX_DETALHE} maiores).</span>
       )}
-    </div>
+    </>
   )
 }

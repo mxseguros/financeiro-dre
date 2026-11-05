@@ -191,20 +191,28 @@ async def buscar_dashboard(
 
 # ── Épico 4 — Receita/despesa por banco ───────────────────────
 
+ALVOS_EMPRESTIMOS = {"emprestimo", "emprestimos"}
+ALVOS_APLICACOES = {"aplicacao", "aplicacoes"}
+
 _CLASSIF_CARDS_BANCO = ("fixo", "variavel")
 # Receitas que não entram nos cards (regra de 22/10/2026): movimento de caixa,
 # não receita. Sem classificação ou com outras, a receita conta normalmente.
 _RECEITAS_FORA_CARDS_BANCO = {"aplicacoes", "adiantamento_cliente"}
 
 
+async def ids_subitens_saldo_inicial(db: Client) -> list[str]:
+    """Subitens de receita chamados "Saldo Inicial", sem acento nem espaço nas pontas."""
+    import unicodedata
+    subs = await _exec(db.table("subitens_lancamento").select("id, nome").eq("natureza", "receita"))
+    return [s["id"] for s in (subs.data or [])
+            if unicodedata.normalize("NFKD", s["nome"] or "").encode("ascii", "ignore").decode().strip().lower()
+            == "saldo inicial"]
+
+
 async def _saldo_inicial_por_banco(db: Client) -> dict[str, Decimal]:
     """Soma, por banco, dos lançamentos de receita do subitem "Saldo Inicial"
     (lançamento único de out/2026), em qualquer data — não segue o período."""
-    import unicodedata
-    subs = await _exec(db.table("subitens_lancamento").select("id, nome").eq("natureza", "receita"))
-    ids = [s["id"] for s in (subs.data or [])
-           if unicodedata.normalize("NFKD", s["nome"] or "").encode("ascii", "ignore").decode().strip().lower()
-           == "saldo inicial"]
+    ids = await ids_subitens_saldo_inicial(db)
     if not ids:
         return {}
     resp = await _exec(db.table("receitas_outras").select("banco_id, valor")
@@ -427,7 +435,7 @@ async def buscar_emprestimos(
     inicio: date, fim: date, db: Client, base: str = "competencia",
 ) -> DashboardEmprestimosResponse:
     """Quadro Empréstimos: categorias "Empréstimo(s)", um card por banco."""
-    return await _quadro_por_banco(inicio, fim, db, base, {"emprestimo", "emprestimos"})
+    return await _quadro_por_banco(inicio, fim, db, base, ALVOS_EMPRESTIMOS)
 
 
 async def buscar_aplicacoes(
@@ -435,7 +443,7 @@ async def buscar_aplicacoes(
 ) -> DashboardAplicacoesResponse:
     """Quadro Aplicações: categoria "Aplicações", no mesmo layout de Empréstimos
     (um card por banco, receitas e despesas por subitem) — pedido de 23/10/2026."""
-    q = await _quadro_por_banco(inicio, fim, db, base, {"aplicacao", "aplicacoes"})
+    q = await _quadro_por_banco(inicio, fim, db, base, ALVOS_APLICACOES)
     return DashboardAplicacoesResponse(**q.model_dump())
 
 

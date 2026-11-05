@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
 from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_usuario
@@ -15,9 +16,59 @@ from app.models.schemas import (
     DespesasPorClassificacaoResponse,
     LancamentosDiaMesResponse,
 )
-from app.services import dashboard_service, dre_service
+from app.permissions import tem_permissao
+from app.services import dashboard_detalhe_service, dashboard_service, dre_service, relatorio_service
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+
+
+def exigir_lancamentos(usuario: UsuarioAtual) -> None:
+    """A modal mostra lançamentos um a um, que os totais da tela não expõem: só
+    para quem tem acesso à tela de Lançamentos."""
+    if not tem_permissao(usuario.permissions or {}, "lancamentos", "visualizar"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Seu usuário não tem acesso a Lançamentos.")
+
+
+# ── Lançamentos por trás de cada valor da tela (05/11/2026) ───
+
+@router.get("/detalhe", summary="Lançamentos que formam um valor da Visão Geral")
+@limiter.limit("60/minute")
+async def get_detalhe(
+    request: Request,
+    bloco: Annotated[str, Query(pattern=(
+        "^(classificacao|saldo_inicial|box_emprestimo|box_aplicacao|box_banco|resultado"
+        "|por_banco|emprestimos|aplicacoes|centro)$"
+    ))],
+    periodo: tuple[date, date] = Depends(validar_periodo),
+    base: str = Depends(validar_base),
+    banco: Annotated[str | None, Query(max_length=100)] = None,
+    lado: Annotated[str | None, Query(pattern="^(receitas|despesas)$")] = None,
+    subitem: Annotated[str | None, Query(max_length=200)] = None,
+    classificacao: Annotated[str | None, Query(max_length=100)] = None,
+    centro: Annotated[str | None, Query(max_length=100)] = None,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    exigir_lancamentos(usuario)
+    inicio, fim = periodo
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    return await dashboard_detalhe_service.detalhe(
+        bloco, inicio, fim, base, usuario, get_supabase_usuario(token),
+        banco=banco, lado=lado, subitem=subitem, classificacao=classificacao, centro=centro,
+    )
+
+
+@router.get("/lancamento/{tipo}/{lancamento_id}", summary="Lançamento completo, para editar a partir da modal")
+@limiter.limit("60/minute")
+async def get_lancamento(
+    request: Request,
+    tipo: Annotated[str, Path(pattern="^(despesa|receita)$")],
+    lancamento_id: UUID,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    # A rota equivalente de Relatórios exige a permissão de Relatórios.
+    exigir_lancamentos(usuario)
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    return await relatorio_service.obter_lancamento(tipo, lancamento_id, usuario, get_supabase_usuario(token))
 
 
 @router.get("", response_model=DashboardResponse, summary="Dashboard agregado")

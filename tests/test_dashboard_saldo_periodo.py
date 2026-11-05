@@ -36,11 +36,25 @@ SUBITENS = [
 ]
 
 
+def _colunas_simples(texto):
+    """Colunas de um select, sem as tabelas relacionadas: "a, b(c, d), e" -> [a, e]."""
+    colunas, parte, nivel = [], "", 0
+    for ch in f"{texto},":
+        nivel += (ch == "(") - (ch == ")")
+        if ch == "," and nivel == 0:
+            if "(" not in parte:
+                colunas.append(parte.strip())
+            parte = ""
+        else:
+            parte += ch
+    return colunas
+
+
 class Consulta:
     """Só o que o serviço usa da cadeia do PostgREST."""
 
     def __init__(self, linhas):
-        self.linhas, self.filtros, self.negar, self.faixa = linhas, [], False, None
+        self.linhas, self.filtros, self.negar, self.faixa, self.colunas = linhas, [], False, None, None
 
     def _filtro(self, teste):
         negar, self.negar = self.negar, False
@@ -52,7 +66,9 @@ class Consulta:
         self.negar = True
         return self
 
-    def select(self, _colunas):
+    def select(self, colunas):
+        # Como o banco real, só devolve o que foi pedido. Filtros veem a linha toda.
+        self.colunas = _colunas_simples(colunas)
         return self
 
     def order(self, _coluna):
@@ -60,6 +76,9 @@ class Consulta:
 
     def eq(self, col, valor):
         return self._filtro(lambda r: r.get(col) == valor)
+
+    def neq(self, col, valor):
+        return self._filtro(lambda r: r.get(col) != valor)
 
     def in_(self, col, valores):
         return self._filtro(lambda r: r.get(col) in valores)
@@ -81,6 +100,8 @@ class Consulta:
         linhas = [r for r in self.linhas if all(f(r) for f in self.filtros)]
         if self.faixa:
             linhas = linhas[self.faixa[0]:self.faixa[1]]
+        if self.colunas is not None:
+            linhas = [{c: r[c] for c in self.colunas if c in r} for r in linhas]
         return SimpleNamespace(data=linhas)
 
 
@@ -92,10 +113,11 @@ class Banco:
             "subitens_lancamento": SUBITENS,
             "despesas": list(despesas),
             "receitas_outras": list(receitas),
+            "centros_custo": [{"codigo": "guincho", "nome": "Socorro"}, {"codigo": "matriz", "nome": "Matriz"}],
         }
 
     def table(self, nome):
-        return Consulta(self.tabelas[nome])
+        return Consulta(self.tabelas.get(nome, []))
 
 
 _ids = iter(range(1, 10_000_000))

@@ -10,8 +10,10 @@ import { fmtBRL, fmtData } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ShareButton } from '@/components/ui/ShareButton'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { useUser } from '@/contexts/UserContext'
 import type { DashboardResponse } from '@/types'
 import type { CentroCusto, DespesasResp, ReceitasResp } from './lancamentos/_components/shared'
+import { ModalDetalheValor, ValorClicavel, type AbrirDetalhe, type PedidoDetalhe } from './_components/DetalheValor'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
@@ -27,9 +29,12 @@ interface CardKPIProps {
   compacto?: boolean
   iconBg: string
   icon: React.ReactNode
+  /** Código da classificação, para o valor abrir os lançamentos dela. */
+  classificacao?: string
+  abrir?: AbrirDetalhe
 }
 
-function CardKPI({ label, valor, sub, iconBg, icon, compacto }: CardKPIProps) {
+function CardKPI({ label, valor, sub, iconBg, icon, compacto, classificacao, abrir }: CardKPIProps) {
   // `compacto`: box Fixas vs. Variáveis, onde todas as classificações dividem uma linha.
   if (compacto) {
     return (
@@ -37,7 +42,10 @@ function CardKPI({ label, valor, sub, iconBg, icon, compacto }: CardKPIProps) {
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-gray-500" title={label}>{label}</p>
           <p className="mt-1 whitespace-nowrap text-base font-semibold tabular-nums text-navy">
-            {valor != null ? fmtBRL(valor) : '—'}
+            {valor == null ? '—' : classificacao ? (
+              <ValorClicavel valor={valor} abrir={abrir}
+                pedido={{ titulo: `Despesas: ${label}`, params: { bloco: 'classificacao', classificacao } }} />
+            ) : fmtBRL(valor)}
           </p>
         </div>
         <div className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg sm:flex xl:hidden 2xl:flex [&_svg]:h-4 [&_svg]:w-4 ${iconBg}`}>
@@ -63,7 +71,10 @@ function CardKPI({ label, valor, sub, iconBg, icon, compacto }: CardKPIProps) {
 }
 
 /** Linhas de um lado (Receitas ou Despesas): item, quantidade, valor e total. */
-function LadoQuadro({ rotulo, lado, cor }: { rotulo: string; lado: EmprestimoLado; cor: string }) {
+function LadoQuadro({ rotulo, lado, cor, titulo, params, chaveLado, abrir }: {
+  rotulo: string; lado: EmprestimoLado; cor: string
+  titulo: string; params: Record<string, string>; chaveLado: 'receitas' | 'despesas'; abrir?: AbrirDetalhe
+}) {
   return (
     <div className="min-w-0">
       <p className="text-sm font-medium text-gray-500">{rotulo}</p>
@@ -74,12 +85,15 @@ function LadoQuadro({ rotulo, lado, cor }: { rotulo: string; lado: EmprestimoLad
             <span className="truncate text-gray-400" title={i.subitem}>
               {i.subitem}{i.qtd > 0 && <span className="ml-1 text-[11px] text-gray-300">({i.qtd})</span>}
             </span>
-            <span className={`font-medium tabular-nums ${Number(i.valor) > 0 ? cor : 'text-gray-300'}`}>{fmtBRL(i.valor)}</span>
+            <ValorClicavel valor={i.valor} abrir={abrir}
+              className={`font-medium tabular-nums ${Number(i.valor) > 0 ? cor : 'text-gray-300'}`}
+              pedido={{ titulo: `${titulo} · ${rotulo} · ${i.subitem}`, params: { ...params, lado: chaveLado, subitem: i.subitem } }} />
           </div>
         ))}
         <div className="flex justify-between border-t border-gray-100 pt-1">
           <span className="text-gray-500">Total</span>
-          <span className={`font-semibold tabular-nums ${cor}`}>{fmtBRL(lado.total)}</span>
+          <ValorClicavel valor={lado.total} abrir={abrir} className={`font-semibold tabular-nums ${cor}`}
+            pedido={{ titulo: `${titulo} · ${rotulo}`, params: { ...params, lado: chaveLado } }} />
         </div>
       </div>
     </div>
@@ -87,8 +101,9 @@ function LadoQuadro({ rotulo, lado, cor }: { rotulo: string; lado: EmprestimoLad
 }
 
 /** Empréstimos e Aplicações: um card por banco, com Receitas e Despesas por subitem e o saldo. */
-function QuadroPorBanco({ titulo, legenda, tour, dados }: {
+function QuadroPorBanco({ titulo, legenda, tour, dados, bloco, abrir }: {
   titulo: string; legenda: string; tour: string; dados: EmprestimosResponse
+  bloco: 'emprestimos' | 'aplicacoes'; abrir?: AbrirDetalhe
 }) {
   return (
     <div data-tour={tour}>
@@ -98,11 +113,15 @@ function QuadroPorBanco({ titulo, legenda, tour, dados }: {
         {dados.bancos.map(b => (
           <div key={b.banco} className="space-y-4 rounded-2xl bg-white p-4 shadow-sm sm:p-5">
             <p className="text-sm font-semibold text-gray-700">{b.banco}</p>
-            <LadoQuadro rotulo="Receitas" lado={b.receitas} cor="text-green-600" />
-            <LadoQuadro rotulo="Despesas" lado={b.despesas} cor="text-red-500" />
+            <LadoQuadro rotulo="Receitas" lado={b.receitas} cor="text-green-600" chaveLado="receitas"
+              titulo={`${titulo} ${b.banco}`} params={{ bloco, banco: b.banco }} abrir={abrir} />
+            <LadoQuadro rotulo="Despesas" lado={b.despesas} cor="text-red-500" chaveLado="despesas"
+              titulo={`${titulo} ${b.banco}`} params={{ bloco, banco: b.banco }} abrir={abrir} />
             <div className="flex justify-between border-t border-gray-100 pt-2 text-sm">
               <span className="text-gray-500">Saldo</span>
-              <span className={`font-semibold tabular-nums ${Number(b.saldo) >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtBRL(b.saldo)}</span>
+              <ValorClicavel valor={b.saldo} abrir={abrir}
+                className={`font-semibold tabular-nums ${Number(b.saldo) >= 0 ? 'text-green-600' : 'text-red-500'}`}
+                pedido={{ titulo: `${titulo} ${b.banco} · Saldo`, params: { bloco, banco: b.banco } }} />
             </div>
           </div>
         ))}
@@ -117,33 +136,37 @@ function QuadroPorBanco({ titulo, legenda, tour, dados }: {
  *  meses anteriores, Empréstimo e Aplicação acumulam desde out/2026, o Saldo é só do período, e todos só
  *  contam lançamentos com data de pagamento/recebimento (o lançamento de Saldo Inicial não exige data).
  *  `null` = dado ainda carregando. */
-function CardSaldoPeriodoBanco({ banco, saldoInicial, emprestimo, aplicacao, saldoBanco }: {
+function CardSaldoPeriodoBanco({ banco, saldoInicial, emprestimo, aplicacao, saldoBanco, abrir }: {
   banco: string; saldoInicial: number; emprestimo: number | null; aplicacao: number | null; saldoBanco: number
+  abrir?: AbrirDetalhe
 }) {
-  const linhas: [string, number | null, string][] = [
-    ['Saldo inicial', saldoInicial, 'text-navy'],
-    [`Empréstimo ${banco}`, emprestimo, (emprestimo ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'],
-    [`Saldo aplicação ${banco}`, aplicacao, (aplicacao ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'],
-    [`Saldo ${banco}`, saldoBanco, saldoBanco >= 0 ? 'text-green-600' : 'text-red-500'],
+  const linhas: [string, number | null, string, string][] = [
+    ['Saldo inicial', saldoInicial, 'text-navy', 'saldo_inicial'],
+    [`Empréstimo ${banco}`, emprestimo, (emprestimo ?? 0) >= 0 ? 'text-green-600' : 'text-red-500', 'box_emprestimo'],
+    [`Saldo aplicação ${banco}`, aplicacao, (aplicacao ?? 0) >= 0 ? 'text-green-600' : 'text-red-500', 'box_aplicacao'],
+    [`Saldo ${banco}`, saldoBanco, saldoBanco >= 0 ? 'text-green-600' : 'text-red-500', 'box_banco'],
   ]
   const resultado = emprestimo == null || aplicacao == null ? null : saldoInicial + emprestimo + aplicacao + saldoBanco
   return (
     <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
       <p className="text-sm font-medium text-gray-500">Saldo do período {banco}</p>
       <div className="mt-2 space-y-1 text-sm">
-        {linhas.map(([rotulo, valor, cor]) => (
+        {linhas.map(([rotulo, valor, cor, bloco]) => (
           <div key={rotulo} className="flex justify-between gap-3">
             <span className="text-gray-400">{rotulo}</span>
-            <span className={`font-medium tabular-nums ${valor == null ? 'text-gray-300' : cor}`}>
-              {valor == null ? '—' : fmtBRL(valor)}
-            </span>
+            {valor == null ? <span className="font-medium tabular-nums text-gray-300">—</span> : (
+              <ValorClicavel valor={valor} abrir={abrir} className={`font-medium tabular-nums ${cor}`}
+                pedido={{ titulo: bloco === 'saldo_inicial' ? `Saldo inicial ${banco}` : rotulo, params: { bloco, banco } }} />
+            )}
           </div>
         ))}
         <div className="flex justify-between gap-3 border-t border-gray-100 pt-1">
           <span className="text-gray-500">Resultado</span>
-          <span className={`font-semibold tabular-nums ${resultado == null ? 'text-gray-300' : resultado >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-            {resultado == null ? '—' : fmtBRL(resultado)}
-          </span>
+          {resultado == null ? <span className="font-semibold tabular-nums text-gray-300">—</span> : (
+            <ValorClicavel valor={resultado} abrir={abrir}
+              className={`font-semibold tabular-nums ${resultado >= 0 ? 'text-green-600' : 'text-red-500'}`}
+              pedido={{ titulo: `Resultado ${banco}`, params: { bloco: 'resultado', banco } }} />
+          )}
         </div>
       </div>
       <p className="mt-2 text-xs text-gray-400">
@@ -382,6 +405,10 @@ export default function DashboardPage() {
   // Periodo compartilhado entre telas (ver contexts/PeriodoContext.tsx).
   // Todos os modos filtram pela Data de Pagamento (em aberto, pelo vencimento).
   const filtro = filtroDoPeriodo(usePeriodo())
+  const { permissions } = useUser()
+  const [pedido, setPedido] = useState<PedidoDetalhe | null>(null)
+  // A modal lista lançamentos um a um: só para quem tem acesso à tela de Lançamentos.
+  const abrir: AbrirDetalhe | undefined = permissions?.lancamentos?.visualizar ? setPedido : undefined
 
   const buscar = useCallback(() => {
     if (!token) return
@@ -519,19 +546,19 @@ export default function DashboardPage() {
           {porClassificacao && (
             <div aria-label="Despesas por classificação">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:flex">
-                <CardKPI compacto label="Fixas" valor={porClassificacao.fixas} iconBg="bg-blue-50" icon={<IconTarget />} />
-                <CardKPI compacto label="Variáveis" valor={porClassificacao.variaveis} iconBg="bg-amber-50" icon={<IconTrendUp />} />
+                <CardKPI compacto label="Fixas" valor={porClassificacao.fixas} iconBg="bg-blue-50" icon={<IconTarget />} classificacao="fixo" abrir={abrir} />
+                <CardKPI compacto label="Variáveis" valor={porClassificacao.variaveis} iconBg="bg-amber-50" icon={<IconTrendUp />} classificacao="variavel" abrir={abrir} />
                 {porClassificacao.nao_operacionais > 0 && (
-                  <CardKPI compacto label="Não Operacionais" valor={porClassificacao.nao_operacionais} iconBg="bg-gray-100" icon={<IconDollar />} />
+                  <CardKPI compacto label="Não Operacionais" valor={porClassificacao.nao_operacionais} iconBg="bg-gray-100" icon={<IconDollar />} classificacao="nao_operacional" abrir={abrir} />
                 )}
                 {porClassificacao.impostos > 0 && (
-                  <CardKPI compacto label="Impostos" valor={porClassificacao.impostos} iconBg="bg-red-50" icon={<IconDollar />} />
+                  <CardKPI compacto label="Impostos" valor={porClassificacao.impostos} iconBg="bg-red-50" icon={<IconDollar />} classificacao="imposto" abrir={abrir} />
                 )}
                 {(porClassificacao.outras ?? []).filter(o => Number(o.valor) > 0).map(o => (
-                  <CardKPI compacto key={o.codigo} label={o.nome} valor={Number(o.valor)} iconBg="bg-teal-50" icon={<IconDollar />} />
+                  <CardKPI compacto key={o.codigo} label={o.nome} valor={Number(o.valor)} iconBg="bg-teal-50" icon={<IconDollar />} classificacao={o.codigo} abrir={abrir} />
                 ))}
                 {porClassificacao.nao_classificadas > 0 && (
-                  <CardKPI compacto label="Não Classificadas" valor={porClassificacao.nao_classificadas} iconBg="bg-gray-100" icon={<IconDollar />} />
+                  <CardKPI compacto label="Não Classificadas" valor={porClassificacao.nao_classificadas} iconBg="bg-gray-100" icon={<IconDollar />} classificacao="nao_classificada" abrir={abrir} />
                 )}
               </div>
             </div>
@@ -541,7 +568,7 @@ export default function DashboardPage() {
               (endpoint mais pesado) não segura mais os demais blocos. */}
           {saldosPeriodo.length > 0 ? (
             <div data-tour="kpis" className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {saldosPeriodo.map(sp => <CardSaldoPeriodoBanco key={sp.banco} {...sp} />)}
+              {saldosPeriodo.map(sp => <CardSaldoPeriodoBanco key={sp.banco} {...sp} abrir={abrir} />)}
             </div>
           ) : porBanco ? null : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -563,15 +590,19 @@ export default function DashboardPage() {
                     <div className="mt-2 space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-400">Receita</span>
-                        <span className="font-medium tabular-nums text-green-600">{fmtBRL(b.receitas)}</span>
+                        <ValorClicavel valor={b.receitas} abrir={abrir} className="font-medium tabular-nums text-green-600"
+                          pedido={{ titulo: `Por Banco ${b.banco_nome} · Receita`, params: { bloco: 'por_banco', banco: b.banco_nome, lado: 'receitas' } }} />
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Despesas</span>
-                        <span className="font-medium tabular-nums text-red-500">{fmtBRL(b.despesas)}</span>
+                        <ValorClicavel valor={b.despesas} abrir={abrir} className="font-medium tabular-nums text-red-500"
+                          pedido={{ titulo: `Por Banco ${b.banco_nome} · Despesas`, params: { bloco: 'por_banco', banco: b.banco_nome, lado: 'despesas' } }} />
                       </div>
                       <div className="flex justify-between border-t border-gray-100 pt-1">
                         <span className="text-gray-500">Saldo</span>
-                        <span className={`font-semibold tabular-nums ${Number(b.saldo) >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtBRL(b.saldo)}</span>
+                        <ValorClicavel valor={b.saldo} abrir={abrir}
+                          className={`font-semibold tabular-nums ${Number(b.saldo) >= 0 ? 'text-green-600' : 'text-red-500'}`}
+                          pedido={{ titulo: `Por Banco ${b.banco_nome} · Saldo`, params: { bloco: 'por_banco', banco: b.banco_nome } }} />
                       </div>
                     </div>
                   </div>
@@ -582,15 +613,18 @@ export default function DashboardPage() {
                     <div className="mt-2 space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-blue-200">Receita</span>
-                        <span className="font-medium tabular-nums text-white">{fmtBRL(totalReceitaBancos)}</span>
+                        <ValorClicavel valor={totalReceitaBancos} abrir={abrir} className="font-medium tabular-nums text-white"
+                          pedido={{ titulo: 'Por Banco Total · Receita', params: { bloco: 'por_banco', lado: 'receitas' } }} />
                       </div>
                       <div className="flex justify-between">
                         <span className="text-blue-200">Despesas</span>
-                        <span className="font-medium tabular-nums text-white">{fmtBRL(totalDespesaBancos)}</span>
+                        <ValorClicavel valor={totalDespesaBancos} abrir={abrir} className="font-medium tabular-nums text-white"
+                          pedido={{ titulo: 'Por Banco Total · Despesas', params: { bloco: 'por_banco', lado: 'despesas' } }} />
                       </div>
                       <div className="flex justify-between border-t border-white/20 pt-1">
                         <span className="text-blue-100">Saldo</span>
-                        <span className="font-semibold tabular-nums text-white">{fmtBRL(totalSaldoBancos)}</span>
+                        <ValorClicavel valor={totalSaldoBancos} abrir={abrir} className="font-semibold tabular-nums text-white"
+                          pedido={{ titulo: 'Por Banco Total · Saldo', params: { bloco: 'por_banco' } }} />
                       </div>
                     </div>
                   </div>
@@ -601,11 +635,11 @@ export default function DashboardPage() {
 
           {/* Empréstimos (um card por banco) e Aplicações (linhas por banco) */}
           {emprestimos && emprestimos.bancos.length > 0 && (
-            <QuadroPorBanco titulo="Empréstimos" tour="emprestimos" dados={emprestimos}
+            <QuadroPorBanco titulo="Empréstimos" tour="emprestimos" dados={emprestimos} bloco="emprestimos" abrir={abrir}
               legenda="Lançamentos das categorias Empréstimo no período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
           )}
           {aplicacoes && aplicacoes.bancos.length > 0 && (
-            <QuadroPorBanco titulo="Aplicações" tour="aplicacoes" dados={aplicacoes}
+            <QuadroPorBanco titulo="Aplicações" tour="aplicacoes" dados={aplicacoes} bloco="aplicacoes" abrir={abrir}
               legenda="Lançamentos da categoria Aplicações no período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
           )}
 
@@ -632,15 +666,24 @@ export default function DashboardPage() {
                 <div className="mb-3 grid grid-cols-3 gap-2 rounded-xl bg-gray-50 px-3 py-2 text-xs">
                   <div>
                     <p className="text-[10px] uppercase tracking-wide text-gray-400">Despesas</p>
-                    <p className="font-semibold tabular-nums text-red-500">{fmtBRL(centroDiaMes?.total_despesas ?? 0)}</p>
+                    <p className="font-semibold tabular-nums text-red-500">
+                      <ValorClicavel valor={centroDiaMes?.total_despesas ?? 0} abrir={abrir}
+                        pedido={{ titulo: `${centroNome} · Despesas`, params: { bloco: 'centro', centro: centroNome, lado: 'despesas' } }} />
+                    </p>
                   </div>
                   <div>
                     <p className="text-[10px] uppercase tracking-wide text-gray-400">Receitas</p>
-                    <p className="font-semibold tabular-nums text-green-600">{fmtBRL(centroDiaMes?.total_receitas ?? 0)}</p>
+                    <p className="font-semibold tabular-nums text-green-600">
+                      <ValorClicavel valor={centroDiaMes?.total_receitas ?? 0} abrir={abrir}
+                        pedido={{ titulo: `${centroNome} · Receitas`, params: { bloco: 'centro', centro: centroNome, lado: 'receitas' } }} />
+                    </p>
                   </div>
                   <div>
                     <p className="text-[10px] uppercase tracking-wide text-gray-400">Saldo</p>
-                    <p className={`font-semibold tabular-nums ${centroSaldo >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtBRL(centroSaldo)}</p>
+                    <p className={`font-semibold tabular-nums ${centroSaldo >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      <ValorClicavel valor={centroSaldo} abrir={abrir}
+                        pedido={{ titulo: `${centroNome} · Saldo`, params: { bloco: 'centro', centro: centroNome } }} />
+                    </p>
                   </div>
                 </div>
               )} />
@@ -661,6 +704,18 @@ export default function DashboardPage() {
             </div>
           )}
         </>
+      )}
+
+      {token && (
+        <ModalDetalheValor
+          token={token}
+          qs={filtro.qs}
+          periodo={filtro.rotulo}
+          pedido={pedido}
+          podeEditar={!!permissions?.lancamentos?.editar}
+          onFechar={() => setPedido(null)}
+          onAlterado={buscar}
+        />
       )}
     </div>
   )

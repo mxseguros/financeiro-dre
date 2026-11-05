@@ -23,9 +23,10 @@ type Aberto =
 /**
  * Abre um lançamento do relatório no MESMO modal de edição de Lançamentos,
  * com as mesmas regras (voltar para pendente, reparcelar…). Os cadastros só
- * são buscados na primeira edição.
+ * são buscados na primeira edição. `rota`: cada tela lê o lançamento por uma
+ * rota com a permissão dela.
  */
-export function useEdicaoLancamento(token: string | null, onErro: (msg: string) => void) {
+export function useEdicaoLancamento(token: string | null, onErro: (msg: string) => void, rota = '/relatorios/lancamento') {
   const [aberto, setAberto] = useState<Aberto | null>(null)
   const [carregando, setCarregando] = useState<string | null>(null)
   const cadastros = useRef<Cadastros | null>(null)
@@ -45,14 +46,14 @@ export function useEdicaoLancamento(token: string | null, onErro: (msg: string) 
         cadastros.current = { categorias, tipos, bancos, centros, classificacoes }
       }
       const tipo = l.tipo === 'Despesa' ? 'despesa' : 'receita'
-      const item = await api.get<Despesa | Receita>(`/relatorios/lancamento/${tipo}/${l.id}`, token)
+      const item = await api.get<Despesa | Receita>(`${rota}/${tipo}/${l.id}`, token)
       setAberto(tipo === 'despesa' ? { tipo, item: item as Despesa } : { tipo, item: item as Receita })
     } catch (e) {
       onErro(e instanceof Error ? e.message : 'Não foi possível abrir o lançamento.')
     } finally {
       setCarregando(null)
     }
-  }, [token, onErro])
+  }, [token, onErro, rota])
 
   return { aberto, carregando, editar, fechar: () => setAberto(null), cadastros: cadastros.current }
 }
