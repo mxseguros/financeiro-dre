@@ -100,6 +100,7 @@ export function ModalDetalheValor({ token, qs, periodo, pedido, podeEditar, onFe
           {dados && dados.total === 0 && <p className="text-xs text-gray-500">Nenhum lançamento neste valor.</p>}
           {dados && dados.total > 0 && (
             <TabelaLancamentos
+              zebrada
               lancamentos={dados.itens}
               onEditar={podeEditar ? edicao.editar : undefined}
               editando={edicao.carregando}

@@ -99,7 +99,10 @@ export function Detalhe({ titulo, lancamentos, onFechar, onEditar, editando }: D
 }
 
 /** Tabela de lançamentos, também usada na modal dos valores da Visão Geral. */
-export function TabelaLancamentos({ lancamentos, onEditar, editando }: Pick<DetalheProps, 'lancamentos' | 'onEditar' | 'editando'>) {
+export function TabelaLancamentos({ lancamentos, onEditar, editando, zebrada = false }: Pick<DetalheProps, 'lancamentos' | 'onEditar' | 'editando'> & {
+  /** Linhas intercaladas em cinza claro e branco. */
+  zebrada?: boolean
+}) {
   const ordenados = [...lancamentos].sort((a, b) => b.valor - a.valor)
   return (
     <>
@@ -115,7 +118,7 @@ export function TabelaLancamentos({ lancamentos, onEditar, editando }: Pick<Deta
           <tbody>
             {ordenados.slice(0, MAX_DETALHE).map((r, i) => (
               // O índice cobre um lançamento listado duas vezes no Resultado da Visão Geral.
-              <tr key={`${r.id}-${i}`} className="border-t border-gray-200">
+              <tr key={`${r.id}-${i}`} className={cn('border-t border-gray-200', zebrada && (i % 2 === 0 ? 'bg-white' : 'bg-gray-100'))}>
                 <td className="whitespace-nowrap px-2 py-1">{fmtData(r.data)}</td>
                 <td className="px-2 py-1">{r.tipo}</td>
                 <td className="px-2 py-1">{r.descricao}{r.parcela && <span className="ml-1 text-gray-400">{r.parcela}</span>}</td>
