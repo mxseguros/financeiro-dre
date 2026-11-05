@@ -157,13 +157,13 @@ def test_outubro_negativo_subtrai_em_novembro():
     assert emprestimo(db, NOV) == Decimal(0)
 
 
-def test_aplicacao_acumula_e_quantidade_conta_o_acumulado():
+def test_aplicacao_acumula_no_box_e_quadro_conta_so_o_periodo():
     db = Banco(despesas=[desp("s-apl-d", 300, "2026-10-05"), desp("s-apl-d", 200, "2026-11-05")],
                receitas=[rec("s-apl-r", 50, "2026-11-06")])
     assert aplicacao(db, NOV) == Decimal(-450)
-    resp = asyncio.run(buscar_aplicacoes(*NOV, db, base="pagamento"))
-    itau = next(b for b in resp.bancos if b.banco == "Itaú")
-    assert [(i.subitem, i.qtd) for i in itau.despesas.itens] == [("Reserva", 2)]
+    quadro = quadro_aplicacao(db, NOV)
+    assert quadro.saldo == Decimal(-150)
+    assert [(i.subitem, i.qtd) for i in quadro.despesas.itens] == [("Reserva", 1)]
 
 
 def test_bancos_nao_se_misturam():
@@ -172,7 +172,7 @@ def test_bancos_nao_se_misturam():
     assert emprestimo(db, NOV, "Santander") == Decimal(-700)
 
 
-# ── Quadro Empréstimos × box ─────────────────────────────────
+# ── Quadros (só o período) × box (acumulado) ─────────────────
 
 def test_quadro_emprestimos_nao_traz_o_mes_anterior():
     db = Banco(despesas=[desp("s-emp-d", 19697.58, "2026-10-10"), desp("s-emp-d", 2500, "2026-11-10")],
@@ -199,11 +199,18 @@ def test_quadro_emprestimos_antes_de_outubro_mostra_o_periodo_e_box_zera():
     assert quadro.saldo_acumulado == 0
 
 
-def test_quadro_aplicacoes_continua_acumulado():
+def test_quadro_aplicacoes_nao_traz_o_mes_anterior():
     db = Banco(despesas=[desp("s-apl-d", 300, "2026-10-05"), desp("s-apl-d", 200, "2026-11-05")])
     quadro = quadro_aplicacao(db, NOV)
-    assert quadro.saldo == Decimal(-500)
+    assert quadro.saldo == Decimal(-200)
     assert quadro.saldo_acumulado == Decimal(-500)
+
+
+def test_quadro_aplicacoes_sem_data_fica_fora():
+    db = Banco(despesas=[desp("s-apl-d", 200, "2026-11-05"), desp("s-apl-d", 999, "2026-11-06", pago=False)])
+    quadro = quadro_aplicacao(db, NOV)
+    assert quadro.saldo == Decimal(-200)
+    assert quadro.saldo_acumulado == Decimal(-200)
 
 
 # ── O que fica fora ──────────────────────────────────────────

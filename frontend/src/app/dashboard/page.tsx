@@ -606,7 +606,7 @@ export default function DashboardPage() {
           )}
           {aplicacoes && aplicacoes.bancos.length > 0 && (
             <QuadroPorBanco titulo="Aplicações" tour="aplicacoes" dados={aplicacoes}
-              legenda="Acumulado de outubro/2026 até o fim do período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
+              legenda="Lançamentos da categoria Aplicações no período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
           )}
 
           {/* Listas diária/mensal: despesas, receitas, ordens de compra e o centro de custo em destaque */}
