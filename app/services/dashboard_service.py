@@ -72,6 +72,9 @@ def _gerar_alertas(dre_data: DREResponse, metas_data: MetasResponse | None) -> l
 # duas é receita/despesa. Pendente e aprovada contam (mesma regra da DRE).
 _FORA = ["excluida", "rejeitada"]
 MESES_TOTAL_GERAL = 12
+# Box "Saldo do período" e quadros Empréstimos/Aplicações (05/11/2026): acumulam
+# a partir do mês do Saldo Inicial; o que veio antes dele já está nesse saldo.
+INICIO_ACUMULADO = date(2026, 10, 1)
 
 
 async def _todas(q) -> list[dict]:
@@ -239,46 +242,58 @@ async def buscar_por_banco(
     Variável (Aplicações, Adiantamento a cliente, Imposto, não classificadas
     etc. ficam fora dos cards). Nas receitas, só a categoria Receitas de
     vendas, e mesmo nela saem as classificadas como Aplicações ou Adiantamento
-    a cliente. Só aqui — nas demais telas nada muda."""
-    # As três consultas são independentes — com o wrapper de thread o gather
-    # paralela de verdade: 3 round-trips a São Paulo pelo preço de 1.
+    a cliente. Só aqui — nas demais telas nada muda.
+
+    `saldo` é só do período (card Por Banco). `saldo_acumulado` usa os mesmos
+    critérios, de INICIO_ACUMULADO até `fim` (box "Saldo do período", 05/11/2026).
+    Uma consulta por tabela cobre os dois, recortados em memória. Sequencial: o
+    client HTTP/2 do supabase-py não suporta várias páginas em paralelo."""
     so_dre = await ids_somente_dre(db)   # receitas desses subitens: só na DRE
     vendas = await _ids_subitens_receita_vendas(db)
     saldo_inicial = await _saldo_inicial_por_banco(db)
-    bancos_resp, receitas_resp, despesas_resp = await asyncio.gather(
-        _exec(db.table("bancos").select("id, nome").eq("ativo", True).order("nome")),
-        _exec(sem_somente_dre(
-            db.table("receitas_outras")
-            .select("banco_id, valor, custo_tipo, tipo_lancamento_id")
-            .gte(coluna_data("receitas_outras", base), inicio.isoformat())
-            .lte(coluna_data("receitas_outras", base), fim.isoformat())
-            .not_.is_("banco_id", "null")
-            .not_.is_("recebido_em", "null")
-            .not_.in_("status", _FORA), so_dre)
-        ),
-        _exec(
-            db.table("despesas")
-            .select("banco_id, valor")
-            .gte(coluna_data("despesas", base), inicio.isoformat())
-            .lte(coluna_data("despesas", base), fim.isoformat())
-            .not_.is_("banco_id", "null")
-            .not_.is_("paga_em", "null")
-            .not_.in_("status", _FORA)
-            .in_("custo_tipo", list(_CLASSIF_CARDS_BANCO))
-        ),
-    )
-    bancos = bancos_resp.data or []
+    bancos = (await _exec(db.table("bancos").select("id, nome").eq("ativo", True).order("nome"))).data or []
+
+    col_rec = coluna_data("receitas_outras", base)
+    col_des = coluna_data("despesas", base)
+    ini_s, acu_s, fim_s = inicio.isoformat(), INICIO_ACUMULADO.isoformat(), fim.isoformat()
+    desde = min(ini_s, acu_s)
+    receitas = await _todas(sem_somente_dre(
+        db.table("receitas_outras")
+        .select(f"id, banco_id, valor, custo_tipo, tipo_lancamento_id, {col_rec}")
+        .gte(col_rec, desde)
+        .lte(col_rec, fim_s)
+        .not_.is_("banco_id", "null")
+        .not_.is_("recebido_em", "null")
+        .not_.in_("status", _FORA), so_dre).order("id"))
+    despesas = await _todas(
+        db.table("despesas")
+        .select(f"id, banco_id, valor, {col_des}")
+        .gte(col_des, desde)
+        .lte(col_des, fim_s)
+        .not_.is_("banco_id", "null")
+        .not_.is_("paga_em", "null")
+        .not_.in_("status", _FORA)
+        .in_("custo_tipo", list(_CLASSIF_CARDS_BANCO))
+        .order("id"))
 
     receitas_por_banco: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
-    for row in (receitas_resp.data or []):
-        # Filtro aqui, não no banco: NOT IN descartaria também as sem classificação.
-        if row.get("tipo_lancamento_id") not in vendas or row.get("custo_tipo") in _RECEITAS_FORA_CARDS_BANCO:
-            continue
-        receitas_por_banco[row["banco_id"]] += Decimal(str(row["valor"]))
-
     despesas_por_banco: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
-    for row in (despesas_resp.data or []):
-        despesas_por_banco[row["banco_id"]] += Decimal(str(row["valor"]))
+    acumulado_por_banco: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
+
+    def somar(row: dict, coluna: str, no_periodo: dict[str, Decimal], sinal: int) -> None:
+        dia = (row.get(coluna) or "")[:10]
+        valor = Decimal(str(row["valor"]))
+        if ini_s <= dia <= fim_s:
+            no_periodo[row["banco_id"]] += valor
+        if acu_s <= dia <= fim_s:
+            acumulado_por_banco[row["banco_id"]] += sinal * valor
+
+    for row in receitas:
+        # Filtro aqui, não no banco: NOT IN descartaria também as sem classificação.
+        if row.get("tipo_lancamento_id") in vendas and row.get("custo_tipo") not in _RECEITAS_FORA_CARDS_BANCO:
+            somar(row, col_rec, receitas_por_banco, 1)
+    for row in despesas:
+        somar(row, col_des, despesas_por_banco, -1)
 
     itens = []
     for b in bancos:
@@ -288,6 +303,7 @@ async def buscar_por_banco(
             banco_id=b["id"], banco_nome=b["nome"],
             receitas=r, despesas=d, saldo=r - d,
             saldo_inicial=saldo_inicial.get(b["id"], Decimal(0)),
+            saldo_acumulado=acumulado_por_banco.get(b["id"], Decimal(0)),
         ))
 
     return DashboardPorBancoResponse(periodo={"inicio": inicio, "fim": fim}, bancos=itens)
@@ -325,8 +341,12 @@ async def _quadro_por_banco(
     subitem (quadros Empréstimos e Aplicações da Visão Geral).
 
     Um card por banco ativo (23/10/2026), mais "Sem banco" só quando houver
-    lançamento sem banco (ou de banco inativo). Mesmo período das demais telas
-    (base "pagamento": data de pagamento/recebimento; em aberto, vencimento).
+    lançamento sem banco (ou de banco inativo).
+
+    Regra de 05/11/2026: os valores são acumulados de INICIO_ACUMULADO até `fim`
+    (cada mês herda o anterior, com sinal) e só contam lançamentos com data de
+    pagamento/recebimento; `inicio` não recorta. Consultas sequenciais: o client
+    HTTP/2 do supabase-py não suporta várias páginas em paralelo.
     Excluídas e rejeitadas ficam fora. Subitens ativos sem lançamento aparecem
     com zero, para o card manter as mesmas linhas de um mês para outro."""
     cat_ids, subs = await _subitens_das_categorias(db, alvos)
@@ -335,21 +355,23 @@ async def _quadro_por_banco(
     ids_bancos = {bid for bid, _ in bancos}
     SEM = "sem_banco"
 
-    async def linhas(natureza: str, tabela: str) -> tuple[list[str], dict]:
+    async def linhas(natureza: str, tabela: str, col_liquidacao: str) -> tuple[list[str], dict]:
         """(subitens ativos, {banco_id|SEM: {subitem: [qtd, valor]}})."""
         meus = [s for s in subs if cat_ids.get(s["categoria_id"]) == natureza]
         nomes = {s["id"]: s["nome"].strip() for s in meus}
         ativos = sorted(s["nome"].strip() for s in meus if s.get("ativo", True))
         por_banco: dict[str, dict[str, list]] = defaultdict(dict)
         if nomes:
-            resp = await _exec(
-                db.table(tabela).select("valor, tipo_lancamento_id, banco_id")
+            rows = await _todas(
+                db.table(tabela).select("id, valor, tipo_lancamento_id, banco_id")
                 .in_("tipo_lancamento_id", list(nomes))
-                .gte(coluna_data(tabela, base), inicio.isoformat())
+                .gte(coluna_data(tabela, base), INICIO_ACUMULADO.isoformat())
                 .lte(coluna_data(tabela, base), fim.isoformat())
+                .not_.is_(col_liquidacao, "null")
                 .not_.in_("status", _FORA)
+                .order("id")
             )
-            for row in (resp.data or []):
+            for row in rows:
                 chave = row.get("banco_id") if row.get("banco_id") in ids_bancos else SEM
                 item = por_banco[chave].setdefault(nomes[row["tipo_lancamento_id"]], [0, Decimal(0)])
                 item[0] += 1
@@ -361,8 +383,8 @@ async def _quadro_por_banco(
         itens = [EmprestimoSubitem(subitem=n, qtd=q, valor=v) for n, (q, v) in sorted(tudo.items())]
         return EmprestimoLado(itens=itens, total=sum((i.valor for i in itens), Decimal(0)))
 
-    (sub_rec, rec), (sub_des, des) = await asyncio.gather(
-        linhas("receita", "receitas_outras"), linhas("despesa", "despesas"))
+    sub_rec, rec = await linhas("receita", "receitas_outras", "recebido_em")
+    sub_des, des = await linhas("despesa", "despesas", "paga_em")
     cards = bancos + ([(SEM, "Sem banco")] if rec.get(SEM) or des.get(SEM) else [])
     por_banco = []
     for bid, nome in cards:

@@ -112,7 +112,8 @@ function QuadroPorBanco({ titulo, legenda, tour, dados }: {
 }
 
 /** Box "Saldo do período <banco>" (Itaú e Santander, 23/10/2026). Resultado = Saldo inicial − Empréstimo
- *  − Aplicação + Saldo Itaú (que entra com o próprio sinal: negativo reduz).
+ *  − Aplicação + Saldo Itaú (que entra com o próprio sinal: negativo reduz). Desde 05/11/2026, Empréstimo,
+ *  Aplicação e Saldo são acumulados desde out/2026 e só contam lançamentos com data de pagamento/recebimento.
  *  `null` = dado ainda carregando. */
 function CardSaldoPeriodoBanco({ banco, saldoInicial, emprestimo, aplicacao, saldoBanco }: {
   banco: string; saldoInicial: number; emprestimo: number | null; aplicacao: number | null; saldoBanco: number
@@ -144,14 +145,14 @@ function CardSaldoPeriodoBanco({ banco, saldoInicial, emprestimo, aplicacao, sal
         </div>
       </div>
       <p className="mt-2 text-xs text-gray-400">
-        Resultado = saldo inicial − empréstimo − aplicação + saldo {banco}. Saldo inicial: lançamento de outubro; saldo {banco}: receita − despesas do card do banco.
+        Resultado = saldo inicial − empréstimo − aplicação + saldo {banco}. Cada mês soma o movimento ao acumulado do mês anterior, desde outubro/2026. Só entram lançamentos com data de pagamento ou recebimento.
       </p>
     </div>
   )
 }
 
 // Decimal do backend chega como string no JSON.
-interface BancoResumoItem { banco_id: string; banco_nome: string; receitas: number | string; despesas: number | string; saldo: number | string; saldo_inicial?: number | string }
+interface BancoResumoItem { banco_id: string; banco_nome: string; receitas: number | string; despesas: number | string; saldo: number | string; saldo_inicial?: number | string; saldo_acumulado?: number | string }
 interface DashboardPorBancoResponse { periodo: { inicio: string; fim: string }; bancos: BancoResumoItem[] }
 interface EmprestimoLado { itens: { subitem: string; qtd: number; valor: number | string }[]; total: number | string }
 /** Quadros Empréstimos (linhas = subitens) e Aplicações (linhas = bancos). */
@@ -431,7 +432,8 @@ export default function DashboardPage() {
       saldoInicial: Number(card.saldo_inicial ?? 0),
       emprestimo: emprestimos ? (emp ? Number(emp.despesas.total) - Number(emp.receitas.total) : 0) : null,
       aplicacao: aplicacoes ? (apl ? Number(apl.despesas.total) - Number(apl.receitas.total) : 0) : null,
-      saldoBanco: Number(card.saldo),
+      // Front e backend publicam separados: até o backend novo responder, usa o saldo do período.
+      saldoBanco: Number(card.saldo_acumulado ?? card.saldo),
     }]
   })
   const periodo = data ? filtro.rotulo : ''
@@ -599,11 +601,11 @@ export default function DashboardPage() {
           {/* Empréstimos (um card por banco) e Aplicações (linhas por banco) */}
           {emprestimos && emprestimos.bancos.length > 0 && (
             <QuadroPorBanco titulo="Empréstimos" tour="emprestimos" dados={emprestimos}
-              legenda="Lançamentos das categorias Empréstimo no período, por banco e subitem." />
+              legenda="Acumulado de outubro/2026 até o fim do período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
           )}
           {aplicacoes && aplicacoes.bancos.length > 0 && (
             <QuadroPorBanco titulo="Aplicações" tour="aplicacoes" dados={aplicacoes}
-              legenda="Lançamentos da categoria Aplicações no período, por banco e subitem." />
+              legenda="Acumulado de outubro/2026 até o fim do período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
           )}
 
           {/* Listas diária/mensal: despesas, receitas, ordens de compra e o centro de custo em destaque */}
