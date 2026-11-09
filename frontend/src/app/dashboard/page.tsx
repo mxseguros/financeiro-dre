@@ -287,6 +287,9 @@ function ListaDiaMes({ titulo, subtitulo, dados, cor, header, resumo }: {
   header?: React.ReactNode
   resumo?: React.ReactNode
 }) {
+  // "Hoje" mostra tudo; "No período" abre com LIMITE_LISTA linhas e o "Ver mais"
+  // exibe o restante na mesma lista (09/11/2026) — o backend já manda tudo.
+  const [periodoAberto, setPeriodoAberto] = useState(false)
   const corPadrao = cor === 'red' ? 'text-red-500' : cor === 'green' ? 'text-green-600' : 'text-indigo-600'
   // Numa lista que mistura despesa e receita (bloco por centro de custo), a cor
   // do valor precisa vir do item, não do bloco.
@@ -359,7 +362,17 @@ function ListaDiaMes({ titulo, subtitulo, dados, cor, header, resumo }: {
         <div className="border-t border-gray-100 pt-3">
           <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">No período</p>
           {dados.mes.length > 0 ? (
-            <ul className="space-y-1.5">{dados.mes.map(item => linhaItem(item, true))}</ul>
+            <>
+              <ul className="space-y-1.5">
+                {(periodoAberto ? dados.mes : dados.mes.slice(0, LIMITE_LISTA)).map(item => linhaItem(item, true))}
+              </ul>
+              {dados.mes.length > LIMITE_LISTA && (
+                <button type="button" onClick={() => setPeriodoAberto(v => !v)}
+                  className="mt-2 text-xs font-medium text-blue-500 hover:underline">
+                  {periodoAberto ? 'Ver menos' : `Ver mais (${dados.mes.length - LIMITE_LISTA})`}
+                </button>
+              )}
+            </>
           ) : <p className="text-xs text-gray-400">Nenhum lançamento no período</p>}
         </div>
       </div>
@@ -494,7 +507,7 @@ export default function DashboardPage() {
       { titulo: hojeLabel, itens: hoje, vazio: 'Nenhum lançamento hoje',
         totalTexto: hoje.length ? `Total de hoje: ${fmtBRL(soma(hoje))} (${hoje.length} ${hoje.length === 1 ? 'item' : 'itens'})` : undefined },
       { titulo: `No período · ${filtro.rotulo}`, itens: per, vazio: 'Nenhum lançamento no período',
-        totalTexto: per.length ? `Total dos ${per.length} exibidos: ${fmtBRL(soma(per))}` : undefined },
+        totalTexto: per.length ? `Total do período: ${fmtBRL(soma(per))} (${per.length} ${per.length === 1 ? 'item' : 'itens'})` : undefined },
     ]
   }
   const itensOrdShare = (ordensDiaMes?.mes ?? []).map(i => ({ nome: i.tipo_nome ? `${i.tipo_nome} — ${i.descricao}` : i.descricao, valor: i.valor, data: i.data, status: i.status }))

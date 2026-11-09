@@ -511,8 +511,16 @@ async def buscar_despesas_por_classificacao(
 
 
 # ── Épico 4 — Listas diária/mensal de despesas e receitas ─────
+#
+# Sem limite de linhas (09/11/2026, Gabriel): HOJE e NO PERÍODO trazem tudo; o
+# card mostra as primeiras do período e um "Ver mais" abre o resto. Antes o
+# corte era de 8, ordenado pela competência — que é a mesma para o mês inteiro,
+# então saíam 8 quaisquer e lançamentos do mês sumiam do card.
 
-_LIMITE_LISTA_DIA_MES = 8
+
+def _mais_recentes_primeiro(rows: list[dict]) -> list[dict]:
+    """Últimas lançadas no topo (criado_em desc), id como desempate."""
+    return sorted(rows, key=lambda r: (r.get("criado_em") or "", r["id"]), reverse=True)
 
 
 async def buscar_despesas_dia_mes(
@@ -521,8 +529,8 @@ async def buscar_despesas_dia_mes(
     db: Client,
     base: str = "competencia",
 ) -> LancamentosDiaMesResponse:
-    """Despesas que VENCEM hoje e as do mês/período selecionado, limitadas às
-    mais recentes — a tela de Lançamentos mostra a lista completa.
+    """Despesas que VENCEM hoje e todas as do mês/período selecionado, das
+    últimas lançadas para as mais antigas.
 
     Regra de 19/10/2026 (Gabriel): o bloco HOJE traz só o vencimento de hoje.
     Antes entravam também as pagas hoje e as LANÇADAS hoje — uma recorrência
@@ -531,21 +539,21 @@ async def buscar_despesas_dia_mes(
     hoje, _cri_ini, _cri_fim = _janela_hoje_br()
     cols = "id, descricao, valor, competencia, data_vencimento, paga_em, criado_em, subitens_lancamento(nome)"
 
-    resp_venc_hoje, resp_mes = await asyncio.gather(
-        _exec(
+    linhas_hoje, linhas_mes = await asyncio.gather(
+        _todas(
             db.table("despesas").select(cols)
             .neq("status", "excluida").eq("data_vencimento", hoje.isoformat())
+            .order("criado_em", desc=True).order("id")
         ),
-        _exec(
+        _todas(
             db.table("despesas").select(cols)
             .neq("status", "excluida")
             .gte(coluna_data("despesas", base), inicio.isoformat())
             .lte(coluna_data("despesas", base), fim.isoformat())
-            .order("competencia", desc=True)
-            .limit(_LIMITE_LISTA_DIA_MES)
+            .order("criado_em", desc=True).order("id")
         ),
     )
-    linhas_dia: dict[str, dict] = {r["id"]: r for r in (resp_venc_hoje.data or [])}
+    linhas_dia: dict[str, dict] = {r["id"]: r for r in linhas_hoje}
 
     def _mapear(rows: list[dict]) -> list[LancamentoResumoItem]:
         itens = []
@@ -560,8 +568,8 @@ async def buscar_despesas_dia_mes(
         return itens
 
     return LancamentosDiaMesResponse(
-        dia=_mapear(list(linhas_dia.values())[:_LIMITE_LISTA_DIA_MES]),
-        mes=_mapear(resp_mes.data or []),
+        dia=_mapear(_mais_recentes_primeiro(list(linhas_dia.values()))),
+        mes=_mapear(_mais_recentes_primeiro(linhas_mes)),
     )
 
 
@@ -571,8 +579,8 @@ async def buscar_receitas_dia_mes(
     db: Client,
     base: str = "competencia",
 ) -> LancamentosDiaMesResponse:
-    """Receitas manuais que vencem OU foram recebidas hoje, e as do mês/período
-    selecionado, limitadas às mais recentes.
+    """Receitas manuais que vencem OU foram recebidas hoje, e todas as do
+    mês/período selecionado, das últimas lançadas para as mais antigas.
 
     Regra de 19/10/2026 (Gabriel), par da das despesas: saiu o "lançado hoje",
     que repetia as ocorrências futuras de uma série lançada hoje. O recebimento
@@ -583,26 +591,27 @@ async def buscar_receitas_dia_mes(
     cols = "id, descricao, valor, competencia, data_vencimento, recebido_em, criado_em, subitens_lancamento(nome)"
 
     so_dre = await ids_somente_dre(db)   # receitas desses subitens: só na DRE
-    resp_venc_hoje, resp_recebido_hoje, resp_mes = await asyncio.gather(
-        _exec(sem_somente_dre(
+    linhas_venc_hoje, linhas_recebido_hoje, linhas_mes = await asyncio.gather(
+        _todas(sem_somente_dre(
             db.table("receitas_outras").select(cols)
             .neq("status", "excluida").eq("data_vencimento", hoje.isoformat()), so_dre)
+            .order("criado_em", desc=True).order("id")
         ),
-        _exec(sem_somente_dre(
+        _todas(sem_somente_dre(
             db.table("receitas_outras").select(cols)
             .neq("status", "excluida").eq("recebido_em", hoje.isoformat()), so_dre)
+            .order("criado_em", desc=True).order("id")
         ),
-        _exec(sem_somente_dre(
+        _todas(sem_somente_dre(
             db.table("receitas_outras").select(cols)
             .neq("status", "excluida")
             .gte(coluna_data("receitas_outras", base), inicio.isoformat())
             .lte(coluna_data("receitas_outras", base), fim.isoformat()), so_dre)
-            .order("competencia", desc=True)
-            .limit(_LIMITE_LISTA_DIA_MES)
+            .order("criado_em", desc=True).order("id")
         ),
     )
-    linhas_dia: dict[str, dict] = {r["id"]: r for r in (resp_venc_hoje.data or [])}
-    for r in (resp_recebido_hoje.data or []):
+    linhas_dia: dict[str, dict] = {r["id"]: r for r in linhas_venc_hoje}
+    for r in linhas_recebido_hoje:
         linhas_dia[r["id"]] = r
 
     def _mapear(rows: list[dict]) -> list[LancamentoResumoItem]:
@@ -618,6 +627,6 @@ async def buscar_receitas_dia_mes(
         return itens
 
     return LancamentosDiaMesResponse(
-        dia=_mapear(list(linhas_dia.values())[:_LIMITE_LISTA_DIA_MES]),
-        mes=_mapear(resp_mes.data or []),
+        dia=_mapear(_mais_recentes_primeiro(list(linhas_dia.values()))),
+        mes=_mapear(_mais_recentes_primeiro(linhas_mes)),
     )
