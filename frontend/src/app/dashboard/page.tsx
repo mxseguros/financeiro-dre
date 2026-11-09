@@ -240,15 +240,16 @@ function montarBlocoCentro(
     natureza: 'receita',
   }))
 
-  // "Hoje" = mesmo critério das outras listas (regra de 19/10/2026): despesa só
-  // se VENCE hoje; receita se vence ou foi recebida hoje. Aqui só enxerga o
+  // "Hoje" = mesmo critério das outras listas (regras de 19/10 e 09/11/2026):
+  // despesa só se VENCE hoje e ainda não tem Data de Pagamento; receita se vence
+  // ou foi recebida hoje. Aqui só enxerga o
   // período selecionado, porque é dele que as duas listas vêm. Num mês
   // passado, "Hoje" fica naturalmente vazio.
   const ehDeHoje = (venc: string | null, liq: string | null | undefined) =>
     venc === hoje || dia10(liq) === hoje
 
   const idsDia = new Set<string>([
-    ...despesas.items.filter(d => d.data_vencimento === hoje).map(d => d.id),
+    ...despesas.items.filter(d => d.data_vencimento === hoje && !d.paga_em).map(d => d.id),
     ...receitas.items.filter(r => ehDeHoje(r.data_vencimento, r.recebido_em)).map(r => r.id),
   ])
 

@@ -535,7 +535,10 @@ async def buscar_despesas_dia_mes(
     Regra de 19/10/2026 (Gabriel): o bloco HOJE traz só o vencimento de hoje.
     Antes entravam também as pagas hoje e as LANÇADAS hoje — uma recorrência
     lançada hoje até dezembro aparecia 3 vezes (out, nov, dez), parecendo
-    duplicada, e ia junto no Compartilhar."""
+    duplicada, e ia junto no Compartilhar.
+
+    Regra de 09/11/2026 (Gabriel): o HOJE traz só o que ainda falta pagar —
+    despesa com Data de Pagamento sai do HOJE (continua no NO PERÍODO)."""
     hoje, _cri_ini, _cri_fim = _janela_hoje_br()
     cols = "id, descricao, valor, competencia, data_vencimento, paga_em, criado_em, subitens_lancamento(nome)"
 
@@ -543,6 +546,7 @@ async def buscar_despesas_dia_mes(
         _todas(
             db.table("despesas").select(cols)
             .neq("status", "excluida").eq("data_vencimento", hoje.isoformat())
+            .is_("paga_em", "null")
             .order("criado_em", desc=True).order("id")
         ),
         _todas(
