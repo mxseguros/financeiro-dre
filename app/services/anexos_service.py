@@ -206,6 +206,11 @@ def excluir(anexo_id: UUID, usuario: UsuarioAtual, db: Client) -> None:
     anexo = _carregar_anexo(anexo_id, usuario, db)
     if not ve_tudo(usuario) and str(anexo.get("criado_por")) != str(usuario.user_id):
         raise _erro(status.HTTP_403_FORBIDDEN, "Você só pode excluir anexos que você enviou.")
+    if not ve_tudo(usuario) and anexo["entidade"] == "ordem_compra":
+        # Ordem que já virou despesa: nota e recibo são o comprovante do gasto.
+        ordem = carregar_entidade("ordem_compra", anexo["entidade_id"], usuario, db)
+        if ordem.get("despesa_id"):
+            raise _erro(status.HTTP_409_CONFLICT, "Ordem já aprovada: o anexo não pode mais ser removido.")
     db.table("anexos").delete().eq("id", str(anexo_id)).execute()
     # Só remove o arquivo se nenhum outro registro aponta para ele (OC aprovada
     # copia o anexo para a despesa gerada, com o mesmo path).
@@ -217,10 +222,16 @@ def excluir(anexo_id: UUID, usuario: UsuarioAtual, db: Client) -> None:
             logger.warning("anexo_remover_arquivo_falhou", path=anexo["path"], erro=str(e))
 
 
-def copiar(origem: str, origem_id: str, destino: str, destino_id: str, tenant_id: str | None, db: Client) -> int:
-    """Duplica os registros de anexo (mesmo arquivo) — OC aprovada → despesa."""
+def copiar(
+    origem: str, origem_id: str, destino: str, destino_id: str, tenant_id: str | None, db: Client,
+    anexo_ids: list[str] | None = None,
+) -> int:
+    """Duplica os registros de anexo (mesmo arquivo) — OC aprovada → despesa.
+    Com `anexo_ids`, só esses (o recibo enviado depois da aprovação)."""
     try:
         q = db.table("anexos").select("*").eq("entidade", origem).eq("entidade_id", origem_id)
+        if anexo_ids:
+            q = q.in_("id", [str(i) for i in anexo_ids])
         if tenant_id:
             q = q.eq("tenant_id", tenant_id)
         linhas = q.execute().data or []

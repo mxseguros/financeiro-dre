@@ -18,7 +18,7 @@ from app.middleware.periodo import validar_periodo
 from app.middleware.rate_limit import limiter
 from app.models.schemas import (
     DespesaAprovacaoRejeicao, OrdemCompraAprovacao, OrdemCompraCreate, OrdemCompraItem,
-    OrdemCompraUpdate, OrdensCompraResponse,
+    OrdemCompraRecibo, OrdemCompraReciboConferencia, OrdemCompraUpdate, OrdensCompraResponse,
 )
 from app.services import ordens_compra_service
 from app.services.dre_service import auditar_leitura, registrar_auditoria
@@ -168,6 +168,39 @@ async def rejeitar_ordem(
     item = await ordens_compra_service.rejeitar_ordem_compra(ordem_id, payload.motivo, usuario, db)
     await registrar_auditoria(
         usuario, "rejeitar_ordem_compra", {"ordem_id": str(ordem_id), "motivo": payload.motivo},
+        request.client.host if request.client else None, get_supabase_admin(),
+    )
+    return item
+
+
+@router.post("/{ordem_id}/recibo", response_model=OrdemCompraItem, summary="Enviar o recibo da ordem aprovada")
+async def enviar_recibo(
+    request: Request,
+    ordem_id: UUID,
+    payload: OrdemCompraRecibo,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_leitura(usuario)
+    item = await ordens_compra_service.enviar_recibo(ordem_id, payload.anexo_id, usuario)
+    await registrar_auditoria(
+        usuario, "enviar_recibo_ordem_compra", {"ordem_id": str(ordem_id), "anexo_id": str(payload.anexo_id)},
+        request.client.host if request.client else None, get_supabase_admin(),
+    )
+    return item
+
+
+@router.post("/{ordem_id}/recibo/conferir", response_model=OrdemCompraItem, summary="Conferir o recibo (OK ou devolver)")
+async def conferir_recibo(
+    request: Request,
+    ordem_id: UUID,
+    payload: OrdemCompraReciboConferencia,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_aprovacao(usuario)
+    item = await ordens_compra_service.conferir_recibo(ordem_id, payload.ok, payload.motivo, usuario)
+    await registrar_auditoria(
+        usuario, "conferir_recibo_ordem_compra",
+        {"ordem_id": str(ordem_id), "ok": payload.ok, "motivo": payload.motivo},
         request.client.host if request.client else None, get_supabase_admin(),
     )
     return item

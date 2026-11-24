@@ -17,10 +17,11 @@ from app.models.schemas import (
     BancoCreate, BancoItem, BancoUpdate,
     CategoriaLancamentoCreate, CategoriaLancamentoItem, CategoriaLancamentoUpdate,
     CentroCustoCreate, CentroCustoItem, CentroCustoUpdate, CentroCustoMover,
+    FuncionarioCreate, FuncionarioItem, FuncionarioUpdate,
     ClassificacaoCreate, ClassificacaoItem, ClassificacaoUpdate,
     TipoLancamentoCreate, TipoLancamentoItem, TipoLancamentoUpdate,
 )
-from app.services import classificacao_service, financeiro_service
+from app.services import classificacao_service, financeiro_service, funcionarios_service
 from app.services.dre_service import registrar_auditoria
 
 router = APIRouter(prefix="/configuracoes", tags=["Configurações"])
@@ -186,6 +187,74 @@ async def excluir_centro(
 ):
     _exigir_admin(usuario)
     await financeiro_service.excluir_centro_custo(centro_id, usuario, get_supabase_admin())
+
+
+# ── FUNCIONÁRIOS (0048) ───────────────────────────────────────
+# Lista do "Quem é você?" no link /oc. Colaborador lê só os ativos.
+
+@router.get(
+    "/funcionarios",
+    response_model=list[FuncionarioItem],
+    summary="Listar funcionários",
+)
+async def listar_funcionarios(
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    return funcionarios_service.listar(
+        usuario, get_supabase_admin(), so_ativos=usuario.role not in ("admin", "gestor", "super_admin"),
+    )
+
+
+@router.post(
+    "/funcionarios",
+    response_model=FuncionarioItem,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastrar funcionário (admin/gestor)",
+)
+async def criar_funcionario(
+    request: Request,
+    payload: FuncionarioCreate,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_admin(usuario)
+    item = funcionarios_service.criar(payload, usuario, get_supabase_admin())
+    await registrar_auditoria(
+        usuario, "criar_funcionario", {"funcionario_id": str(item.id), "nome": item.nome},
+        request.client.host if request.client else None, get_supabase_admin(),
+    )
+    return item
+
+
+@router.put(
+    "/funcionarios/{funcionario_id}",
+    response_model=FuncionarioItem,
+    summary="Atualizar funcionário (admin/gestor)",
+)
+async def atualizar_funcionario(
+    funcionario_id: UUID,
+    payload: FuncionarioUpdate,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_admin(usuario)
+    return funcionarios_service.atualizar(funcionario_id, payload, usuario, get_supabase_admin())
+
+
+@router.delete(
+    "/funcionarios/{funcionario_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Excluir funcionário (admin/gestor)",
+)
+async def excluir_funcionario(
+    request: Request,
+    funcionario_id: UUID,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_admin(usuario)
+    funcionarios_service.excluir(funcionario_id, usuario, get_supabase_admin())
+    await registrar_auditoria(
+        usuario, "excluir_funcionario", {"funcionario_id": str(funcionario_id)},
+        request.client.host if request.client else None, get_supabase_admin(),
+    )
 
 
 # ── CATEGORIAS DE LANÇAMENTO ──────────────────────────────────

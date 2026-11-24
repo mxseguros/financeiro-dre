@@ -7,9 +7,10 @@ import { SecaoUsuarios } from './_components/SecaoUsuarios'
 import { SecaoCategoriasSubitens } from './_components/SecaoCategoriasSubitens'
 import { SecaoBancos } from './_components/SecaoBancos'
 import { SecaoCentros } from './_components/SecaoCentros'
+import { SecaoFuncionarios } from './_components/SecaoFuncionarios'
 import { SecaoClassificacoes } from './_components/SecaoClassificacoes'
 
-type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros'
+type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios'
 
 export default function ConfiguracoesPage() {
   const { token, session, signOut } = useAuth()
@@ -28,6 +29,7 @@ export default function ConfiguracoesPage() {
     { id: 'classificacoes', label: 'Classificações', desc: 'Opções do campo Classificação dos subitens de despesas e receitas' },
     { id: 'bancos',     label: 'Bancos',                desc: 'Contas bancárias da corretora' },
     { id: 'centros',    label: 'Centros de Custo',      desc: 'Unidades e filiais' },
+    { id: 'funcionarios', label: 'Funcionários',        desc: 'Quem lança Ordem de Compra pelo link /oc, com o centro de custo de cada um' },
   ]
 
   const [aba, setAba] = useState<Aba>('usuarios')
@@ -79,6 +81,9 @@ export default function ConfiguracoesPage() {
       )}
       {aba === 'centros' && (
         <SecaoCentros token={token} podeCriar={podeCriar} podeEditar={podeEditar} podeExcluir={podeExcluir} />
+      )}
+      {aba === 'funcionarios' && (
+        <SecaoFuncionarios token={token} podeCriar={podeCriar} podeEditar={podeEditar} podeExcluir={podeExcluir} />
       )}
     </div>
   )

@@ -55,6 +55,10 @@ export interface OrdemCompra {
   /** 0047: quando a despesa acontece (pode ser futura), centro e a despesa gerada na aprovação. */
   data_prevista?: string | null; centro_custo?: string | null
   tipo_lancamento_id?: string | null; despesa_id?: string | null
+  /** 0048: funcionário da ordem e recibo depois da aprovação. */
+  funcionario_id?: string | null
+  recibo_status?: 'aguardando' | 'enviado' | 'aprovado' | 'devolvido' | null
+  recibo_motivo?: string | null; recibo_enviado_em?: string | null; recibo_conferido_em?: string | null
 }
 export interface OrdensCompraResp { total: number; items: OrdemCompra[]; soma_total: number; total_pendentes: number }
 

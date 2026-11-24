@@ -28,6 +28,11 @@ _COLS = (
 )
 # Colunas da 0047. Sem a migration, a ordem funciona como antes (sem gerar despesa).
 _COLS_0047 = _COLS + ", data_prevista, centro_custo, tipo_lancamento_id, despesa_id"
+# Colunas da 0048: funcionário e recibo depois da aprovação.
+_COLS_0048 = _COLS_0047 + (
+    ", funcionario_id, recibo_status, recibo_motivo, recibo_enviado_em, recibo_conferido_em"
+)
+_RECIBO_PENDENTE = ("aguardando", "devolvido")
 _APROVADORES = ("admin", "gestor")
 
 
@@ -57,17 +62,47 @@ def _row_para_item(row: dict) -> OrdemCompraItem:
         centro_custo=row.get("centro_custo"),
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
         despesa_id=row.get("despesa_id"),
+        funcionario_id=row.get("funcionario_id"),
+        recibo_status=row.get("recibo_status"),
+        recibo_motivo=row.get("recibo_motivo"),
+        recibo_enviado_em=row.get("recibo_enviado_em"),
+        recibo_conferido_em=row.get("recibo_conferido_em"),
     )
 
 
+def _coluna_ausente(e: Exception) -> bool:
+    s = str(e).lower()
+    return "column" in s or "schema cache" in s or "42703" in s
+
+
 def _selecionar(db: Client, montar):
-    """Roda a consulta com as colunas da 0047; sem elas, com as antigas."""
+    """Roda a consulta com as colunas da 0048; sem elas, da 0047; senão, as antigas."""
+    for cols in (_COLS_0048, _COLS_0047):
+        try:
+            return montar(db.table("ordens_compra").select(cols)).execute()
+        except Exception as e:  # noqa: BLE001
+            if not _coluna_ausente(e):
+                raise
+    return montar(db.table("ordens_compra").select(_COLS)).execute()
+
+
+def _funcionario(funcionario_id, usuario: UsuarioAtual) -> dict:
+    """Funcionário ativo do tenant (0048) — dono da ordem."""
+    from app.services import funcionarios_service
+    f = funcionarios_service.obter(funcionario_id, usuario, get_supabase_admin())
+    if not f.get("ativo", True):
+        raise _erro(422, f"{f['nome']} está inativo em Configurações → Funcionários.")
+    return f
+
+
+def _inserir_ou_atualizar(executar, campos: dict, novos: tuple[str, ...]):
+    """Grava; sem as colunas da 0048 (ou 0047), tenta de novo sem elas."""
     try:
-        return montar(db.table("ordens_compra").select(_COLS_0047)).execute()
+        return executar(campos)
     except Exception as e:  # noqa: BLE001
-        if "data_prevista" not in str(e) and "despesa_id" not in str(e) and "column" not in str(e).lower():
+        if not _coluna_ausente(e) or not any(k in campos for k in novos):
             raise
-        return montar(db.table("ordens_compra").select(_COLS)).execute()
+        return executar({k: v for k, v in campos.items() if k not in novos})
 
 
 def _carregar(ordem_id: UUID, usuario: UsuarioAtual, db_admin: Client) -> dict:
@@ -127,12 +162,17 @@ async def criar_ordem_compra(
 ) -> OrdemCompraItem:
     from app.services.financeiro_service import validar_centro_lancamento
 
-    # O colaborador sempre é o solicitante; os demais podem lançar por alguém.
+    # Com funcionário (0048), a ordem é dele: nome e centro vêm do cadastro.
+    # Sem, o colaborador é o solicitante; os demais podem lançar por alguém.
+    func = _funcionario(payload.funcionario_id, usuario) if payload.funcionario_id else None
     solicitante = (payload.solicitante or "").strip()
-    if usuario.role == "colaborador" or not solicitante:
+    if func:
+        solicitante = func["nome"]
+    elif usuario.role == "colaborador" or not solicitante:
         solicitante = _nome_usuario(usuario)
-    if payload.centro_custo:
-        validar_centro_lancamento(db, payload.centro_custo)
+    centro = payload.centro_custo or (func or {}).get("centro_custo")
+    if centro:
+        validar_centro_lancamento(db, centro)
     dados: dict = {
         "solicitante":      solicitante[:200],
         "assunto":          payload.assunto,
@@ -146,15 +186,18 @@ async def criar_ordem_compra(
         dados["tenant_id"] = usuario.tenant_id
     extras = {
         "data_prevista":      (payload.data_prevista or date.today()).isoformat(),
-        "centro_custo":       payload.centro_custo or None,
+        "centro_custo":       centro or None,
         "tipo_lancamento_id": str(payload.tipo_lancamento_id) if payload.tipo_lancamento_id else None,
     }
+    if func:
+        extras["funcionario_id"] = func["id"]
+    inserir = lambda c: db.table("ordens_compra").insert(c).execute()   # noqa: E731
     try:
-        resp = db.table("ordens_compra").insert({**dados, **extras}).execute()
+        resp = _inserir_ou_atualizar(inserir, {**dados, **extras}, ("funcionario_id",))
     except Exception as e:  # noqa: BLE001 — sem a 0047, grava como antes
-        if "column" not in str(e).lower() and "data_prevista" not in str(e):
+        if not _coluna_ausente(e):
             raise
-        resp = db.table("ordens_compra").insert(dados).execute()
+        resp = inserir(dados)
     return _row_para_item(resp.data[0])
 
 
@@ -190,6 +233,12 @@ async def atualizar_ordem_compra(
         campos["centro_custo"] = payload.centro_custo or None
     if "tipo_lancamento_id" in set_fields:
         campos["tipo_lancamento_id"] = str(payload.tipo_lancamento_id) if payload.tipo_lancamento_id else None
+    if "funcionario_id" in set_fields and payload.funcionario_id and usuario is not None:
+        func = _funcionario(payload.funcionario_id, usuario)
+        campos["funcionario_id"] = func["id"]
+        campos["solicitante"] = func["nome"]
+        if not campos.get("centro_custo") and func.get("centro_custo"):
+            campos["centro_custo"] = func["centro_custo"]
     campos["atualizado_em"] = datetime.now(timezone.utc).isoformat()
     # Editou, volta para aprovação — mesma regra de despesas e receitas. Sem
     # isto, uma ordem aprovada podia ter valor e assunto trocados depois da
@@ -197,13 +246,9 @@ async def atualizar_ordem_compra(
     campos["status"] = "pendente"
     campos["rejeitado_motivo"] = None
 
-    resp = (
-        db.table("ordens_compra")
-        .update(campos)
-        .eq("id", str(ordem_id))
-        .neq("status", "excluida")
-        .execute()
-    )
+    atualizar = lambda c: (db.table("ordens_compra").update(c)   # noqa: E731
+                           .eq("id", str(ordem_id)).neq("status", "excluida").execute())
+    resp = _inserir_ou_atualizar(atualizar, campos, ("funcionario_id",))
     if not resp.data:
         raise HTTPException(status_code=404, detail="Ordem de compra não encontrada.")
     return _row_para_item(resp.data[0])
@@ -289,6 +334,9 @@ async def aprovar_ordem_compra(
             "tipo_lancamento_id": str(aprovacao.tipo_lancamento_id),
             "centro_custo": aprovacao.centro_custo,
         }
+        # 0048: aprovada, falta o recibo — o funcionário envia pelo /oc.
+        if "recibo_status" in ordem:
+            campos["recibo_status"] = "aguardando"
         # Só grava se ninguém aprovou no meio-tempo; se alguém aprovou, desfaz a
         # despesa recém-criada para não lançar em dobro.
         resp = (db_admin.table("ordens_compra").update(campos)
@@ -326,6 +374,83 @@ async def rejeitar_ordem_compra(
     )
     if not resp.data:
         raise HTTPException(status_code=404, detail="Ordem de compra não encontrada.")
+    return _row_para_item(resp.data[0])
+
+
+# ── Recibo da ordem aprovada (0048) ──────────────────────────
+# aguardando → (funcionário envia) enviado → (financeiro confere) aprovado,
+# ou devolvido com motivo → o funcionário envia outro.
+
+def _anexos_recibo(ordem_id: str, tenant: str | None, db_admin: Client) -> list[dict]:
+    q = (db_admin.table("anexos").select("id, path, tipo_documento")
+         .eq("entidade", "ordem_compra").eq("entidade_id", str(ordem_id)).eq("tipo_documento", "comprovante"))
+    if tenant:
+        q = q.eq("tenant_id", tenant)
+    return q.execute().data or []
+
+
+async def enviar_recibo(ordem_id: UUID, anexo_id: UUID, usuario: UsuarioAtual) -> OrdemCompraItem:
+    from app.services import anexos_service
+
+    db_admin = get_supabase_admin()
+    tenant = getattr(usuario, "tenant_id", None)
+    ordem = await asyncio.to_thread(_carregar, ordem_id, usuario, db_admin)
+    if usuario.role not in _APROVADORES and str(ordem.get("criado_por")) != str(usuario.user_id):
+        raise _erro(404, "Ordem de compra não encontrada.")
+    if "recibo_status" not in ordem:
+        raise _erro(503, "Recibo indisponível: rode a migration 0048.")
+    if not ordem.get("despesa_id") or ordem.get("status") != "aprovada":
+        raise _erro(409, "O recibo é enviado depois que a ordem for aprovada.")
+    if ordem.get("recibo_status") not in _RECIBO_PENDENTE:
+        raise _erro(409, "Esta ordem não está esperando recibo.")
+    if not any(a["id"] == str(anexo_id) for a in _anexos_recibo(str(ordem_id), tenant, db_admin)):
+        raise _erro(422, "Envie a foto do recibo antes de confirmar.")
+
+    agora = datetime.now(timezone.utc).isoformat()
+    resp = (db_admin.table("ordens_compra")
+            .update({"recibo_status": "enviado", "recibo_enviado_em": agora, "recibo_motivo": None,
+                     "atualizado_em": agora})
+            .eq("id", str(ordem_id)).in_("recibo_status", list(_RECIBO_PENDENTE)).execute())
+    if not resp.data:
+        raise _erro(409, "Esta ordem não está esperando recibo.")
+    # O recibo também fica na despesa gerada — é ela que o financeiro paga.
+    anexos_service.copiar("ordem_compra", str(ordem_id), "despesa", str(ordem["despesa_id"]), tenant,
+                          db_admin, anexo_ids=[str(anexo_id)])
+    return _row_para_item(resp.data[0])
+
+
+async def conferir_recibo(
+    ordem_id: UUID, ok: bool, motivo: str | None, usuario: UsuarioAtual,
+) -> OrdemCompraItem:
+    db_admin = get_supabase_admin()
+    tenant = getattr(usuario, "tenant_id", None)
+    ordem = await asyncio.to_thread(_carregar, ordem_id, usuario, db_admin)
+    if ordem.get("recibo_status") != "enviado":
+        raise _erro(409, "Não há recibo para conferir nesta ordem.")
+    motivo = (motivo or "").strip()
+    if not ok and len(motivo) < 3:
+        raise _erro(422, "Diga ao funcionário o que está errado no recibo.")
+    agora = datetime.now(timezone.utc).isoformat()
+    campos = {
+        "recibo_status": "aprovado" if ok else "devolvido",
+        "recibo_motivo": None if ok else motivo,
+        "recibo_conferido_por": usuario.user_id,
+        "recibo_conferido_em": agora,
+        "atualizado_em": agora,
+    }
+    resp = (db_admin.table("ordens_compra").update(campos)
+            .eq("id", str(ordem_id)).eq("recibo_status", "enviado").execute())
+    if not resp.data:
+        raise _erro(409, "Não há recibo para conferir nesta ordem.")
+    if not ok and ordem.get("despesa_id"):
+        # Devolvido: o recibo recusado sai da despesa (continua no histórico da ordem).
+        paths = [a["path"] for a in _anexos_recibo(str(ordem_id), tenant, db_admin)]
+        if paths:
+            q = (db_admin.table("anexos").delete().eq("entidade", "despesa")
+                 .eq("entidade_id", str(ordem["despesa_id"])).in_("path", paths))
+            if tenant:
+                q = q.eq("tenant_id", tenant)
+            q.execute()
     return _row_para_item(resp.data[0])
 
 

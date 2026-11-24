@@ -32,11 +32,13 @@ ROLES_VALIDOS = {"admin", "gestor", "comercial", "contador", "super_admin", "col
 _ROTAS_COLABORADOR = [
     ("GET",    re.compile(r"^/usuarios/me/?$")),
     ("GET",    re.compile(r"^/configuracoes/centros-custo/?$")),
+    ("GET",    re.compile(r"^/configuracoes/funcionarios/?$")),
     ("GET",    re.compile(r"^/ordens-compra/?$")),
     ("POST",   re.compile(r"^/ordens-compra/?$")),
     ("POST",   re.compile(r"^/ordens-compra/checar-duplicata/?$")),
     ("PATCH",  re.compile(r"^/ordens-compra/[0-9a-fA-F-]{36}/?$")),
     ("DELETE", re.compile(r"^/ordens-compra/[0-9a-fA-F-]{36}/?$")),
+    ("POST",   re.compile(r"^/ordens-compra/[0-9a-fA-F-]{36}/recibo/?$")),
     ("*",      re.compile(r"^/anexos(/.*)?$")),
 ]
 

@@ -152,6 +152,26 @@ class CentroCustoMover(RespostaBase):
     direcao: Literal["cima", "baixo"]
 
 
+# ── CONFIGURAÇÕES: FUNCIONÁRIOS (0048) ────────────────────────
+
+class FuncionarioItem(RespostaBase):
+    id:           UUID
+    nome:         str
+    centro_custo: str | None = None
+    ativo:        bool = True
+
+
+class FuncionarioCreate(RespostaBase):
+    nome:         str = Field(min_length=3, max_length=200)
+    centro_custo: str | None = None
+
+
+class FuncionarioUpdate(RespostaBase):
+    nome:         str | None = Field(default=None, min_length=3, max_length=200)
+    centro_custo: str | None = None
+    ativo:        bool | None = None
+
+
 # ── CONFIGURAÇÕES: CATEGORIAS DE LANÇAMENTO ───────────────────
 
 class CategoriaLancamentoItem(RespostaBase):
@@ -516,6 +536,9 @@ class OrdemCompraCreate(RespostaBase):
     data_prevista:      date | None = None
     centro_custo:       str | None = Field(default=None, max_length=100)
     tipo_lancamento_id: UUID | None = None
+    # 0048: funcionário da ordem (lista de Configurações → Funcionários). Com
+    # ele, o solicitante é o nome do funcionário e o centro vem do cadastro.
+    funcionario_id:     UUID | None = None
     # data_solicitacao NÃO entra aqui — o servidor grava date.today().
     # status NÃO entra — toda ordem nasce 'pendente'.
 
@@ -540,6 +563,12 @@ class OrdemCompraItem(RespostaBase):
     centro_custo:       str | None = None
     tipo_lancamento_id: UUID | None = None
     despesa_id:         UUID | None = None   # despesa gerada na aprovação
+    # 0048: funcionário e recibo depois da aprovação
+    funcionario_id:      UUID | None = None
+    recibo_status:       str | None = None   # aguardando | enviado | aprovado | devolvido
+    recibo_motivo:       str | None = None
+    recibo_enviado_em:   Any | None = None
+    recibo_conferido_em: Any | None = None
 
 
 class OrdensCompraResponse(RespostaBase):
@@ -557,8 +586,20 @@ class OrdemCompraUpdate(RespostaBase):
     data_prevista:      date | None = None
     centro_custo:       str | None = Field(default=None, max_length=100)
     tipo_lancamento_id: UUID | None = None
+    funcionario_id:     UUID | None = None
 
     _data_ok = field_validator("data_prevista")(_data_prevista_ok)
+
+
+class OrdemCompraRecibo(RespostaBase):
+    """O funcionário enviou a foto do recibo (anexo 'comprovante' da ordem)."""
+    anexo_id: UUID
+
+
+class OrdemCompraReciboConferencia(RespostaBase):
+    """O financeiro confere o recibo: OK conclui; devolver pede outro."""
+    ok:     bool
+    motivo: str | None = Field(default=None, max_length=500)
 
 
 class OrdemCompraAprovacao(RespostaBase):

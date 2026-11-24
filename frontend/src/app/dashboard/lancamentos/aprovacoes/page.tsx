@@ -16,6 +16,8 @@ import { ModalDespesa } from '../_components/ModalDespesa'
 import { ModalOrdemCompra } from '../_components/ModalOrdemCompra'
 import { ModalAprovarOrdem } from '../_components/ModalAprovarOrdem'
 import { DialogExcluirGrupo } from '../_components/DialogExcluirGrupo'
+import { RecibosParaConferir } from '../_components/RecibosParaConferir'
+import { SeloRecibo } from '@/lib/recibo'
 import type { Despesa, DespesasResponse } from '@/types'
 import {
   IconLapis, IconLixo, podeExcluirLancamento,
@@ -189,7 +191,10 @@ function OrdemCard({ ordem, anexos, processandoId, onAprovar, onIniciarRejeicao,
         <span title="Data da despesa">{fmtData(ordem.data_prevista ?? ordem.data_solicitacao)}</span>
       </div>
       {ordem.despesa_id && (
-        <p className="mt-2 text-[11px] font-medium text-green-700">✓ Despesa lançada em Lançamentos</p>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-medium text-green-700">✓ Despesa lançada em Lançamentos</span>
+          <SeloRecibo status={ordem.recibo_status} />
+        </div>
       )}
 
       {ordem.status === 'rejeitada' && ordem.rejeitado_motivo && (
@@ -606,6 +611,8 @@ export default function AprovacoesPage() {
             </div>
           ))}
         </div>
+
+        {token && podeAprovar && <RecibosParaConferir token={token} onMudou={buscar} />}
 
         {loading ? (
           <div className="flex h-64 items-center justify-center">

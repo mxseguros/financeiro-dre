@@ -128,3 +128,113 @@ def test_colaborador_corrige_ordem_rejeitada(db):
     asyncio.run(svc.rejeitar_ordem_compra(ordem.id, "Falta a nota", ADMIN, db))
     item = asyncio.run(svc.atualizar_ordem_compra(ordem.id, OrdemCompraUpdate(valor=120), db, COLAB))
     assert item.status == "pendente" and item.valor == 120 and item.rejeitado_motivo is None
+
+
+# ── 0048: funcionário da ordem e recibo depois da aprovação ──
+
+from app.models.schemas import FuncionarioCreate  # noqa: E402
+from app.services import funcionarios_service  # noqa: E402
+
+FUNC = uid(80)
+
+
+@pytest.fixture
+def db48(monkeypatch):
+    b = banco()
+    b.padroes["ordens_compra"] |= {"recibo_status": None, "funcionario_id": None, "recibo_motivo": None}
+    b.tabelas["funcionarios"] = [
+        {"id": FUNC, "nome": "Maria Souza", "centro_custo": SAUDE, "ativo": True, "tenant_id": "t1"},
+        {"id": uid(81), "nome": "Ex Funcionário", "centro_custo": None, "ativo": False, "tenant_id": "t1"},
+        {"id": uid(82), "nome": "De outro tenant", "centro_custo": None, "ativo": True, "tenant_id": "t2"},
+    ]
+    monkeypatch.setattr(svc, "get_supabase_admin", lambda: b)
+    return b
+
+
+def test_funcionario_define_solicitante_e_centro(db48):
+    item = criar(db48, funcionario_id=FUNC)
+    assert item.solicitante == "Maria Souza" and item.centro_custo == SAUDE
+    assert str(item.funcionario_id) == FUNC
+
+
+def test_funcionario_inativo_ou_de_outro_tenant_nao_vale(db48):
+    for fid, codigo in ((uid(81), 422), (uid(82), 404)):
+        with pytest.raises(HTTPException) as e:
+            criar(db48, funcionario_id=fid)
+        assert e.value.status_code == codigo
+
+
+def _aprovada_com_recibo(db):
+    ordem = criar(db, funcionario_id=FUNC)
+    aprovada = aprovar(db, ordem.id)
+    assert aprovada.recibo_status == "aguardando"
+    db.tabelas["anexos"].append({"id": uid(90), "entidade": "ordem_compra", "entidade_id": str(ordem.id),
+                                 "tipo_documento": "comprovante", "path": f"t1/ordem_compra/{ordem.id}/r.jpg",
+                                 "tenant_id": "t1", "criado_por": COLAB.user_id})
+    return aprovada
+
+
+def test_recibo_enviado_vai_para_a_despesa_e_e_conferido(db48):
+    ordem = _aprovada_com_recibo(db48)
+    enviado = asyncio.run(svc.enviar_recibo(ordem.id, uid(90), COLAB))
+    assert enviado.recibo_status == "enviado"
+    na_despesa = [a for a in db48.tabelas["anexos"] if a["entidade"] == "despesa"]
+    assert [a["path"] for a in na_despesa] == [f"t1/ordem_compra/{ordem.id}/r.jpg"]
+    # Enviar de novo sem devolução: não está esperando recibo.
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(svc.enviar_recibo(ordem.id, uid(90), COLAB))
+    assert e.value.status_code == 409
+    ok = asyncio.run(svc.conferir_recibo(ordem.id, True, None, ADMIN))
+    assert ok.recibo_status == "aprovado"
+
+
+def test_recibo_devolvido_volta_com_motivo_e_sai_da_despesa(db48):
+    ordem = _aprovada_com_recibo(db48)
+    asyncio.run(svc.enviar_recibo(ordem.id, uid(90), COLAB))
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(svc.conferir_recibo(ordem.id, False, "", ADMIN))
+    assert e.value.status_code == 422
+    dev = asyncio.run(svc.conferir_recibo(ordem.id, False, "Foto ilegível", ADMIN))
+    assert dev.recibo_status == "devolvido" and dev.recibo_motivo == "Foto ilegível"
+    assert not [a for a in db48.tabelas["anexos"] if a["entidade"] == "despesa"]
+    # O funcionário manda outro.
+    assert asyncio.run(svc.enviar_recibo(ordem.id, uid(90), COLAB)).recibo_status == "enviado"
+
+
+def test_recibo_so_depois_da_aprovacao_e_com_foto(db48):
+    ordem = criar(db48, funcionario_id=FUNC)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(svc.enviar_recibo(ordem.id, uid(90), COLAB))
+    assert e.value.status_code == 409
+    aprovar(db48, ordem.id)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(svc.enviar_recibo(ordem.id, uid(99), COLAB))   # anexo que não é desta ordem
+    assert e.value.status_code == 422
+
+
+@pytest.mark.parametrize("metodo,caminho,ok", [
+    ("GET", "/configuracoes/funcionarios", True),
+    ("POST", "/configuracoes/funcionarios", False),
+    ("POST", f"/ordens-compra/{uid(1)}/recibo", True),
+    ("POST", f"/ordens-compra/{uid(1)}/recibo/conferir", False),
+])
+def test_colaborador_rotas_0048(metodo, caminho, ok):
+    assert rota_liberada_colaborador(metodo, caminho) is ok
+
+
+def test_cadastro_de_funcionarios(db48):
+    item = funcionarios_service.criar(FuncionarioCreate(nome="  Pedro   Lima ", centro_custo=SAUDE), ADMIN, db48)
+    assert item.nome == "Pedro Lima" and item.ativo
+    with pytest.raises(HTTPException) as e:
+        funcionarios_service.criar(FuncionarioCreate(nome="pedro lima"), ADMIN, db48)
+    assert e.value.status_code == 409
+    with pytest.raises(HTTPException) as e:
+        funcionarios_service.criar(FuncionarioCreate(nome="Ana Grupo", centro_custo=GRUPO), ADMIN, db48)
+    assert e.value.status_code == 422
+    nomes = [f.nome for f in funcionarios_service.listar(COLAB, db48, so_ativos=True)]
+    assert nomes == ["Maria Souza", "Pedro Lima"]           # sem inativo nem outro tenant
+    criar(db48, funcionario_id=FUNC)
+    with pytest.raises(HTTPException) as e:
+        funcionarios_service.excluir(FUNC, ADMIN, db48)       # tem ordem: desativar
+    assert e.value.status_code == 409
+    funcionarios_service.excluir(item.id, ADMIN, db48)

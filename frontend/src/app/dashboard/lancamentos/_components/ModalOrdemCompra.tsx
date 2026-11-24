@@ -1,12 +1,34 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { InputMoeda } from '@/components/ui/InputMoeda'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { Field, Input, Textarea } from '@/components/ui/Field'
+import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Campo, inputCls, selectCls, type OrdemCompra } from './shared'
 import { OpcoesCentro, type CentroCusto } from '@/lib/centros'
 import { CampoAnexos, enviarAnexos, type AnexoPendente } from '@/components/anexos/CampoAnexos'
+import type { Funcionario } from '@/lib/funcionarios'
+import { linkOC } from '@/lib/recibo'
+
+/** Link do /oc para mandar aos funcionários, com Copiar (24/11/2026). */
+function LinkParaFuncionarios() {
+  const [copiado, setCopiado] = useState(false)
+  const link = linkOC()
+  async function copiar() {
+    try { await navigator.clipboard.writeText(link); setCopiado(true) } catch { setCopiado(false) }
+  }
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-navy/15 bg-navy/5 px-3 py-2 text-xs">
+      <span className="text-gray-600">Link para os funcionários:</span>
+      <a href={link} target="_blank" rel="noreferrer" className="break-all font-medium text-navy underline-offset-2 hover:underline">{link}</a>
+      <button type="button" onClick={copiar}
+        className="ml-auto whitespace-nowrap rounded-md bg-navy px-2.5 py-1 font-medium text-white hover:bg-navy-light">
+        {copiado ? '✓ Copiado' : 'Copiar'}
+      </button>
+      {copiado && <p role="status" className="w-full text-green-700">Link copiado: {link}</p>}
+    </div>
+  )
+}
 
 interface ModalOrdemCompraProps {
   token: string
@@ -30,7 +52,25 @@ export function ModalOrdemCompra({ token, ordem, centros = [], onClose, onSaved 
     valor:         ordem?.valor != null ? String(Number(ordem.valor)) : '',
     data_prevista: ordem?.data_prevista ?? ordem?.data_solicitacao ?? hojeISO(),
     centro_custo:  ordem?.centro_custo ?? '',
+    funcionario_id: ordem?.funcionario_id ?? '',
   })
+  // Solicitante = funcionário do cadastro (0048). Sem cadastro, texto livre.
+  const [funcionarios, setFuncionarios] = useState<Funcionario[] | null>(null)
+  useEffect(() => {
+    api.get<Funcionario[]>('/configuracoes/funcionarios', token)
+      .then(fs => setFuncionarios(fs.filter(f => f.ativo || f.id === ordem?.funcionario_id)))
+      .catch(() => setFuncionarios([]))
+  }, [token, ordem?.funcionario_id])
+  const usaLista = !!funcionarios?.length && (!editando || !!ordem?.funcionario_id || !ordem?.solicitante)
+
+  function escolherFuncionario(id: string) {
+    const f = funcionarios?.find(x => x.id === id)
+    setForm(prev => ({
+      ...prev, funcionario_id: id, solicitante: f?.nome ?? '',
+      centro_custo: prev.centro_custo || f?.centro_custo || '',
+    }))
+    setErros(e => ({ ...e, solicitante: '' }))
+  }
   const [anexosPendentes, setAnexosPendentes] = useState<AnexoPendente[]>([])
   const [falhaAnexos, setFalhaAnexos] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
@@ -80,6 +120,7 @@ export function ModalOrdemCompra({ token, ordem, centros = [], onClose, onSaved 
 
     const payload: Record<string, unknown> = {
       solicitante: form.solicitante,
+      ...(usaLista && form.funcionario_id ? { funcionario_id: form.funcionario_id } : {}),
       assunto:     form.assunto,
       descricao:   form.descricao,
       valor:       parseFloat(form.valor),
@@ -120,10 +161,16 @@ export function ModalOrdemCompra({ token, ordem, centros = [], onClose, onSaved 
       maxWidth="sm:max-w-xl"
       dismissable={!salvando}
     >
+      <LinkParaFuncionarios />
       <form onSubmit={salvar} noValidate className="space-y-2.5">
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
           <Field label="Solicitante" required error={erros.solicitante}>
-            {p => (
+            {p => usaLista ? (
+              <Select {...p} size="sm" value={form.funcionario_id} onChange={e => escolherFuncionario(e.target.value)}>
+                <option value="">Selecionar funcionário</option>
+                {funcionarios!.map(f => <option key={f.id} value={f.id}>{f.nome}{f.ativo ? '' : ' (inativo)'}</option>)}
+              </Select>
+            ) : (
               <Input {...p} size="sm" value={form.solicitante}
                 onChange={e => set('solicitante', e.target.value)} placeholder="Ex: João Silva" />
             )}

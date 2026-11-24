@@ -1,4 +1,5 @@
 'use client'
+import { SeloRecibo } from '@/lib/recibo'
 import { OpcoesCentro, nomeCentro } from '@/lib/centros'
 import { MarcaAnexos, useContagemAnexos } from '@/components/anexos/CampoAnexos'
 import { FILTRO_BOTAO, FILTRO_CAMPO } from '@/components/ui/filtros'
@@ -504,18 +505,6 @@ export default function LancamentosPage() {
                 className="flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-navy h-8 px-3 text-xs font-medium text-white hover:bg-navy-light transition-colors sm:flex-none">
                 + Ordem
               </button>
-              {/* Link fácil para os funcionários lançarem despesas (perfil Colaborador, 0047). */}
-              <button
-                type="button"
-                onClick={async () => {
-                  const link = `${window.location.origin}/oc`
-                  try { await navigator.clipboard.writeText(link); toast.sucesso(`Link copiado: ${link}`) }
-                  catch { toast.erro(`Não foi possível copiar. O link é ${link}`) }
-                }}
-                title="Copiar o link da Ordem de Compra para enviar aos funcionários"
-                className="hidden items-center gap-1 whitespace-nowrap rounded-md border border-gray-200 bg-white h-8 px-3 text-xs font-medium text-navy hover:bg-gray-50 transition-colors sm:flex">
-                🔗 Link /oc
-              </button>
             </div>
           </div>
         </div>
@@ -930,6 +919,7 @@ export default function LancamentosPage() {
                         <p className="truncate text-xs font-medium text-gray-800">{o.assunto}</p>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           <StatusBadge status={o.status} />
+                          <SeloRecibo status={o.recibo_status} />
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
@@ -989,7 +979,9 @@ export default function LancamentosPage() {
                         <td className="px-4 py-2 text-gray-600">{o.solicitante}</td>
                         <td className="px-4 py-2 text-gray-700">{o.descricao}</td>
                         <td className="px-4 py-2 text-right font-medium tabular-nums text-navy">{o.valor != null ? fmtBRL(o.valor) : '—'}</td>
-                        <td className="px-4 py-2"><StatusBadge status={o.status} /></td>
+                        <td className="px-4 py-2">
+                          <span className="flex flex-wrap items-center gap-1"><StatusBadge status={o.status} /><SeloRecibo status={o.recibo_status} /></span>
+                        </td>
                         <td className="px-3 py-2 text-right">
                           {confirmandoId === o.id ? (
                             <span className="inline-flex items-center gap-2">
