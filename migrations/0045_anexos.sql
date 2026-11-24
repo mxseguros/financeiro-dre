@@ -8,8 +8,8 @@
 --
 -- Caminho no bucket: {tenant_id}/{entidade}/{entidade_id}/{uuid}-{arquivo}
 --
--- O código tolera a tabela ausente (a modal mostra o campo desabilitado com
--- aviso). Rodar no SQL Editor do Supabase.
+-- Sem esta migration, anexar devolve o aviso "Anexos ainda não habilitados".
+-- Rodar no SQL Editor do Supabase.
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (

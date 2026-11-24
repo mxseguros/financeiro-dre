@@ -10,13 +10,11 @@
 -- não é admin/gestor/contador às próprias ordens; nas demais tabelas o perfil
 -- não aparece nas policies, então não lê nada.
 --
--- RODAR EM DUAS ETAPAS no SQL Editor do Supabase: o novo valor do enum precisa
--- estar commitado antes de ser usado. Rode o bloco 1, depois o bloco 2.
+-- Pode rodar inteira de uma vez no SQL Editor do Supabase: nada aqui usa o
+-- valor novo do enum na mesma transação (o Postgres não deixaria).
 
--- ── Bloco 1 ───────────────────────────────────────────────────
 ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'colaborador';
 
--- ── Bloco 2 ───────────────────────────────────────────────────
 ALTER TABLE ordens_compra
   ADD COLUMN IF NOT EXISTS data_prevista      DATE,
   ADD COLUMN IF NOT EXISTS centro_custo       TEXT,
