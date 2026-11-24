@@ -7,7 +7,7 @@ import { InputMoeda } from '@/components/ui/InputMoeda'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Select } from '@/components/ui/Field'
-import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type SugestaoIA, type Classificacao, classificacoesDe } from './shared'
+import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type Classificacao, classificacoesDe } from './shared'
 
 // Limites espelhados de DespesaCreate/DespesaUpdate (app/models/schemas.py).
 // Sem eles o backend devolvia 422 e a tela mostrava só "HTTP 422".
@@ -129,9 +129,6 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [erros, setErros] = useState<Record<string, string>>({})
-  const [sugestao, setSugestao] = useState<SugestaoIA | null>(null)
-  const [sugerindo, setSugerindo] = useState(false)
-  const [sugestaoErro, setSugestaoErro] = useState<string | null>(null)
   const [anexosPendentes, setAnexosPendentes] = useState<AnexoPendente[]>([])
   // Salvou, mas algum anexo falhou: não deixa salvar de novo (duplicaria a despesa).
   const [falhaAnexos, setFalhaAnexos] = useState<string | null>(null)
@@ -161,36 +158,6 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   function selecionarSubitem(tipoId: string) {
     set('tipo_lancamento_id', tipoId)
     setClassificacao(c => c || (tipos.find(t => t.id === tipoId)?.custo_tipo ?? ''))
-  }
-
-  // ── Copiloto de IA: sugere Categoria/Subitem/Classificação pela descrição ──
-  async function buscarSugestao() {
-    const desc = form.descricao.trim()
-    if (desc.length < 3) return
-    setSugerindo(true); setSugestao(null); setSugestaoErro(null)
-    try {
-      const [y, m] = form.competencia.split('-')
-      const s = await api.post<SugestaoIA>('/lancamentos/sugestao', token, {
-        descricao: desc,
-        natureza: 'despesa',
-        valor: valorParcela > 0 ? valorParcela : undefined,
-        competencia: y && m ? `${y}-${m}-01` : undefined,
-      })
-      setSugestao(s.disponivel || s.duplicata ? s : null)
-      if (!s.disponivel) setSugestaoErro(s.motivo ?? 'Sem sugestão para esta descrição.')
-    } catch (e) {
-      setSugestaoErro(e instanceof Error ? e.message : 'Falha ao consultar a IA.')
-    } finally {
-      setSugerindo(false)
-    }
-  }
-
-  function aplicarSugestao(s: SugestaoIA) {
-    if (s.categoria_id && s.subitem_id) {
-      setForm(f => ({ ...f, categoria_id: s.categoria_id!, tipo_lancamento_id: s.subitem_id! }))
-      setClassificacao(s.classificacao ?? tipos.find(t => t.id === s.subitem_id)?.custo_tipo ?? '')
-    }
-    setSugestao(null); setSugestaoErro(null)
   }
 
   const categoriasDespesa = categorias.filter(c => c.natureza === 'despesa' && c.ativo)
@@ -438,42 +405,9 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           {p => (
             <Input {...p} size="sm" value={form.descricao} onChange={e => set('descricao', e.target.value)}
               maxLength={DESCRICAO_MAX}
-              onBlur={() => { if (!editando && !form.tipo_lancamento_id && !sugestao && !sugerindo) buscarSugestao() }}
               placeholder="Ex: Aluguel sede matriz" />
           )}
         </Field>
-
-        {/* Copiloto de IA — sugere a classificação a partir da descrição */}
-        <div className="-mt-1">
-          <button type="button" onClick={buscarSugestao}
-            disabled={sugerindo || form.descricao.trim().length < 3}
-            className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50">
-            {sugerindo ? 'Consultando IA…' : '✨ Sugerir classificação com IA'}
-          </button>
-          {sugestao?.disponivel && (
-            <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 p-2.5 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <span className="font-semibold text-indigo-900">Sugestão: </span>
-                  <span className="text-indigo-800">{sugestao.categoria_nome} › {sugestao.subitem_nome}</span>
-                  {sugestao.classificacao && <span className="ml-1 capitalize text-indigo-700">· {sugestao.classificacao}</span>}
-                  {sugestao.confianca && <span className="ml-1 text-indigo-400">({sugestao.confianca})</span>}
-                </div>
-                <button type="button" onClick={() => aplicarSugestao(sugestao)}
-                  className="shrink-0 rounded-md bg-indigo-600 px-2.5 py-1 font-medium text-white hover:bg-indigo-700">
-                  Aplicar
-                </button>
-              </div>
-              {sugestao.motivo && <p className="mt-1 text-indigo-500">{sugestao.motivo}</p>}
-            </div>
-          )}
-          {sugestaoErro && <p className="mt-1 text-xs text-gray-400">{sugestaoErro}</p>}
-          {sugestao?.duplicata && (
-            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
-              ⚠️ Possível duplicata: já existe {sugestao.duplicata.quantidade} despesa(s) com a mesma descrição e valor neste mês.
-            </div>
-          )}
-        </div>
 
         {/* Valor, Parcelamento e Competência */}
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
