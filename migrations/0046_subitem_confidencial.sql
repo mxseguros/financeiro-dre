@@ -15,9 +15,19 @@
 ALTER TABLE subitens_lancamento
   ADD COLUMN IF NOT EXISTS confidencial BOOLEAN NOT NULL DEFAULT false;
 
--- Folha de salários já nasce confidencial; os demais subitens de pessoal
--- (13º, férias, rescisões, FGTS…) o Admin marca em Configurações.
+-- Subitens de pessoal cujas despesas levam o nome do funcionário na descrição
+-- (conferido nos dados em 24/11/2026; decisão do Gabriel). 13º e Prêmios ainda
+-- não têm lançamento, mas são pagamento por pessoa. Ficam de fora os que não
+-- identificam ninguém: Guia GPS - Pró-Labore ("INSS"), Seguro de Vida
+-- (coletivo), Encargos Sociais, EPI. O Admin ajusta em Configurações.
 UPDATE subitens_lancamento
    SET confidencial = true
  WHERE natureza = 'despesa'
-   AND lower(nome) LIKE 'folha - sal%';
+   AND (
+     lower(btrim(nome)) LIKE 'folha - sal%'
+     OR lower(btrim(nome)) IN (
+       'folha - adicionais', 'folha - prêmios', 'férias', '13º salário',
+       'pró-labore', 'rescisões contratuais', 'guia fgts',
+       'plano de saúde', 'vale alimentação'
+     )
+   );
