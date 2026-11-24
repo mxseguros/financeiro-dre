@@ -37,6 +37,15 @@ class _Q:
         self.filtros.append(lambda r: r.get(col) is None or r.get(col) not in fora)
         return self
 
+    def is_(self, col, val):
+        alvo = None if val == "null" else val
+        self.filtros.append(lambda r: r.get(col) is alvo)
+        return self
+
+    def maybe_single(self):
+        self.unico = True
+        return self
+
     def range(self, ini, fim):
         self.fatia = (ini, fim)
         return self
@@ -91,6 +100,8 @@ class _Q:
         if self.op == "delete":
             self.db.tabelas[self.tabela] = [r for r in linhas if r not in alvo]
             return SimpleNamespace(data=alvo)
+        if getattr(self, "unico", False):
+            return SimpleNamespace(data=dict(alvo[0]) if alvo else None)
         if getattr(self, "fatia", None):
             alvo = alvo[self.fatia[0]:self.fatia[1] + 1]
         return SimpleNamespace(data=[dict(r) for r in alvo], count=len(alvo) if getattr(self, "contar", False) else None)

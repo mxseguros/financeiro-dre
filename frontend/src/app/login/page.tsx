@@ -4,6 +4,14 @@ import { limparPeriodoSalvo } from '@/contexts/PeriodoContext'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { useAuth } from '@/hooks/useAuth'
+import { api } from '@/lib/api'
+
+/** Volta para onde a pessoa estava (ex.: o link /oc). Só caminho interno. */
+function destinoAposLogin(): string {
+  if (typeof window === 'undefined') return '/dashboard'
+  const next = new URLSearchParams(window.location.search).get('next') ?? ''
+  return next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'
+}
 
 export default function LoginPage() {
   const { signIn } = useAuth()
@@ -17,14 +25,23 @@ export default function LoginPage() {
     e.preventDefault()
     setErro(null)
     setLoading(true)
-    const { error } = await signIn(email, senha)
+    const { data, error } = await signIn(email, senha)
     if (error) {
       setErro('E-mail ou senha inválidos.')
       setLoading(false)
     } else {
       // Entrar sempre comeca no mes atual, mesmo se a sessao anterior expirou sem logout.
       limparPeriodoSalvo()
-      router.push('/dashboard')
+      // Colaborador (0047) só usa a Ordem de Compra: vai direto para /oc.
+      let destino = destinoAposLogin()
+      try {
+        const token = data.session?.access_token
+        if (token) {
+          const eu = await api.get<{ role: string }>('/usuarios/me', token)
+          if (eu.role === 'colaborador') destino = '/oc'
+        }
+      } catch { /* sem o perfil, segue para o destino padrão */ }
+      router.push(destino)
     }
   }
 

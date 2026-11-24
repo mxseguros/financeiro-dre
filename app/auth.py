@@ -7,10 +7,11 @@ via input são rejeitadas automaticamente.
 """
 from __future__ import annotations
 
+import re
 import time as _time
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
@@ -23,7 +24,25 @@ _ROLE_TTL = 60.0
 
 BEARER = HTTPBearer()
 
-ROLES_VALIDOS = {"admin", "gestor", "comercial", "contador", "super_admin"}
+ROLES_VALIDOS = {"admin", "gestor", "comercial", "contador", "super_admin", "colaborador"}
+
+# Perfil Colaborador (0047): funcionário que só lança Ordem de Compra pelo
+# link /oc. Tudo fora desta lista é negado AQUI, antes de qualquer rota —
+# negar por padrão evita depender de cada router lembrar de barrar o perfil.
+_ROTAS_COLABORADOR = [
+    ("GET",    re.compile(r"^/usuarios/me/?$")),
+    ("GET",    re.compile(r"^/configuracoes/centros-custo/?$")),
+    ("GET",    re.compile(r"^/ordens-compra/?$")),
+    ("POST",   re.compile(r"^/ordens-compra/?$")),
+    ("POST",   re.compile(r"^/ordens-compra/checar-duplicata/?$")),
+    ("PATCH",  re.compile(r"^/ordens-compra/[0-9a-fA-F-]{36}/?$")),
+    ("DELETE", re.compile(r"^/ordens-compra/[0-9a-fA-F-]{36}/?$")),
+    ("*",      re.compile(r"^/anexos(/.*)?$")),
+]
+
+
+def rota_liberada_colaborador(metodo: str, caminho: str) -> bool:
+    return any(m in ("*", metodo.upper()) and r.match(caminho) for m, r in _ROTAS_COLABORADOR)
 
 
 class UsuarioAtual(BaseModel):
@@ -38,6 +57,7 @@ class UsuarioAtual(BaseModel):
 
 
 async def obter_usuario_atual(
+    request: Request,
     credenciais: Annotated[HTTPAuthorizationCredentials, Depends(BEARER)],
 ) -> UsuarioAtual:
     """
@@ -91,6 +111,12 @@ async def obter_usuario_atual(
 
     role, tenant_id, equipe_id, produtor_id, permissions = await _buscar_perfil_no_banco(user_id)
 
+    if role == "colaborador" and not rota_liberada_colaborador(request.method, request.url.path):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seu perfil (Colaborador) só lança Ordens de Compra.",
+        )
+
     return UsuarioAtual(
         user_id=user_id,
         email=email,
@@ -120,12 +146,19 @@ async def _buscar_perfil_no_banco(user_id: str) -> tuple[str, str | None, str | 
     try:
         # Tenta buscar com tenant_id e permissions (migrations mais recentes)
         resp = admin.table("usuarios") \
-            .select("role, tenant_id, equipe_id, produtor_id, permissions") \
+            .select("role, tenant_id, equipe_id, produtor_id, permissions, ativo") \
             .eq("id", user_id) \
             .limit(1) \
             .execute()
         if resp.data:
             row = resp.data[0]
+            # Usuário desativado em Configurações perde o acesso (antes só sumia
+            # da lista e continuava entrando). Importa para funcionário desligado.
+            if row.get("ativo") is False:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Usuário desativado. Fale com o administrador.",
+                )
             role = row["role"]
             tenant_id = row.get("tenant_id")
             equipe_id = row.get("equipe_id")
@@ -133,6 +166,8 @@ async def _buscar_perfil_no_banco(user_id: str) -> tuple[str, str | None, str | 
             permissions = resolver_permissions(role, row.get("permissions"))
             _role_cache[user_id] = (role, tenant_id, equipe_id, produtor_id, permissions, now)
             return role, tenant_id, equipe_id, produtor_id, permissions
+    except HTTPException:
+        raise
     except Exception as e:
         err = str(e)
         # Fallback: coluna tenant_id ou permissions pode não existir ainda (migration pendente)

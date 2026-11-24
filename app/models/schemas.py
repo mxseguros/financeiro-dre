@@ -303,7 +303,7 @@ class UsuarioCreate(RespostaBase):
     @field_validator("role")
     @classmethod
     def role_valido(cls, v: str) -> str:
-        validos = {"admin", "gestor", "comercial", "contador"}
+        validos = {"admin", "gestor", "comercial", "contador", "colaborador"}
         if v not in validos:
             raise ValueError(f"role deve ser um de: {validos}")
         return v
@@ -321,7 +321,7 @@ class UsuarioUpdate(RespostaBase):
     @classmethod
     def role_valido(cls, v: str | None) -> str | None:
         if v is not None:
-            validos = {"admin", "gestor", "comercial", "contador"}
+            validos = {"admin", "gestor", "comercial", "contador", "colaborador"}
             if v not in validos:
                 raise ValueError(f"role deve ser um de: {validos}")
         return v
@@ -477,13 +477,35 @@ class DespesaAprovacaoRejeicao(RespostaBase):
 
 # ── ORDENS DE COMPRA ──────────────────────────────────────────
 
+def _data_prevista_ok(v: date | None) -> date | None:
+    """Mesma trava da competência de despesa: até 2 meses à frente — a ordem
+    aprovada vira despesa no mês da data prevista."""
+    if v is None:
+        return v
+    from datetime import date as d
+    hoje = d.today()
+    limite = d(hoje.year + (1 if hoje.month > 10 else 0), (hoje.month + 2 - 1) % 12 + 1, 1)
+    if d(v.year, v.month, 1) > limite:
+        raise ValueError("A data prevista pode ser no máximo 2 meses à frente.")
+    return v
+
+
 class OrdemCompraCreate(RespostaBase):
-    solicitante: str = Field(min_length=1, max_length=200)
+    # Colaborador (0047): o solicitante é sempre o próprio usuário — o servidor
+    # preenche; para os demais perfis, vazio também vira o nome de quem lança.
+    solicitante: str | None = Field(default=None, max_length=200)
     assunto:     str = Field(min_length=1, max_length=200)
     descricao:   str = Field(min_length=3, max_length=2000)
-    valor:       Decimal | None = Field(default=None, ge=0, le=99_999_999.99)
+    # Obrigatório desde a 0047: ordem aprovada vira despesa com este valor.
+    valor:       Decimal = Field(gt=0, le=99_999_999.99)
+    # Quando a despesa acontece (pode ser futura: "viajo amanhã"). Vazio = hoje.
+    data_prevista:      date | None = None
+    centro_custo:       str | None = Field(default=None, max_length=100)
+    tipo_lancamento_id: UUID | None = None
     # data_solicitacao NÃO entra aqui — o servidor grava date.today().
     # status NÃO entra — toda ordem nasce 'pendente'.
+
+    _data_ok = field_validator("data_prevista")(_data_prevista_ok)
 
 
 class OrdemCompraItem(RespostaBase):
@@ -499,6 +521,11 @@ class OrdemCompraItem(RespostaBase):
     aprovado_em:      Any | None = None
     rejeitado_motivo: str | None = None
     criado_em:        Any | None = None
+    # 0047
+    data_prevista:      date | None = None
+    centro_custo:       str | None = None
+    tipo_lancamento_id: UUID | None = None
+    despesa_id:         UUID | None = None   # despesa gerada na aprovação
 
 
 class OrdensCompraResponse(RespostaBase):
@@ -512,7 +539,20 @@ class OrdemCompraUpdate(RespostaBase):
     solicitante: str | None = Field(default=None, min_length=1, max_length=200)
     assunto:     str | None = Field(default=None, min_length=1, max_length=200)
     descricao:   str | None = Field(default=None, min_length=3, max_length=2000)
-    valor:       Decimal | None = Field(default=None, ge=0, le=99_999_999.99)
+    valor:       Decimal | None = Field(default=None, gt=0, le=99_999_999.99)
+    data_prevista:      date | None = None
+    centro_custo:       str | None = Field(default=None, max_length=100)
+    tipo_lancamento_id: UUID | None = None
+
+    _data_ok = field_validator("data_prevista")(_data_prevista_ok)
+
+
+class OrdemCompraAprovacao(RespostaBase):
+    """Ao aprovar, quem aprova confirma como a despesa entra na DRE."""
+    tipo_lancamento_id: UUID
+    centro_custo:       str = Field(min_length=1, max_length=100)
+    custo_tipo:         str | None = None   # classificação; vazio = padrão do subitem
+    banco_id:           UUID | None = None
 
 
 # ── LANÇAMENTOS: RECEITAS ─────────────────────────────────────

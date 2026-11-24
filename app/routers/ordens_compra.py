@@ -8,7 +8,7 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from app.regras_lancamento import garantir_exclusao_propria, pode_excluir_qualquer
@@ -17,7 +17,7 @@ from app.database import get_supabase_admin, get_supabase_usuario
 from app.middleware.periodo import validar_periodo
 from app.middleware.rate_limit import limiter
 from app.models.schemas import (
-    DespesaAprovacaoRejeicao, OrdemCompraCreate, OrdemCompraItem,
+    DespesaAprovacaoRejeicao, OrdemCompraAprovacao, OrdemCompraCreate, OrdemCompraItem,
     OrdemCompraUpdate, OrdensCompraResponse,
 )
 from app.services import ordens_compra_service
@@ -25,8 +25,9 @@ from app.services.dre_service import auditar_leitura, registrar_auditoria
 
 router = APIRouter(prefix="/ordens-compra", tags=["Ordens de Compra"])
 
-_ROLES_LEITURA   = ("admin", "contador", "gestor", "comercial")
-_ROLES_ESCRITA   = ("admin", "contador", "gestor", "comercial")
+# Colaborador (0047): funcionário que só lança e acompanha as próprias ordens.
+_ROLES_LEITURA   = ("admin", "contador", "gestor", "comercial", "colaborador")
+_ROLES_ESCRITA   = ("admin", "contador", "gestor", "comercial", "colaborador")
 _ROLES_APROVACAO = ("admin", "gestor")
 
 
@@ -121,7 +122,7 @@ async def editar_ordem(
     _exigir_leitura(usuario)
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    item = await ordens_compra_service.atualizar_ordem_compra(ordem_id, payload, db)
+    item = await ordens_compra_service.atualizar_ordem_compra(ordem_id, payload, db, usuario)
     await registrar_auditoria(
         usuario, "editar_ordem_compra", {"ordem_id": str(ordem_id)},
         request.client.host if request.client else None, get_supabase_admin(),
@@ -133,14 +134,17 @@ async def editar_ordem(
 async def aprovar_ordem(
     request: Request,
     ordem_id: UUID,
+    payload: OrdemCompraAprovacao | None = Body(None),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
+    """Aprova e lança a despesa (0047): o corpo diz o subitem e o centro de custo."""
     _exigir_aprovacao(usuario)
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    item = await ordens_compra_service.aprovar_ordem_compra(ordem_id, usuario, db)
+    item = await ordens_compra_service.aprovar_ordem_compra(ordem_id, usuario, db, payload)
     await registrar_auditoria(
-        usuario, "aprovar_ordem_compra", {"ordem_id": str(ordem_id)},
+        usuario, "aprovar_ordem_compra",
+        {"ordem_id": str(ordem_id), "despesa_id": str(item.despesa_id) if item.despesa_id else None},
         request.client.host if request.client else None, get_supabase_admin(),
     )
     return item
@@ -177,6 +181,12 @@ async def deletar_ordem(
 ):
     _exigir_leitura(usuario)
     db_admin = get_supabase_admin()
+    ordem = ordens_compra_service._carregar(ordem_id, usuario, db_admin)
+    if ordem.get("despesa_id"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta ordem já virou despesa. Exclua a despesa em Lançamentos, se for o caso.",
+        )
     # Admin/gestor excluem qualquer ordem; os demais, a própria antes da
     # aprovação (ver app/regras_lancamento.py).
     if not pode_excluir_qualquer(usuario):

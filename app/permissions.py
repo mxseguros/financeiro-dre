@@ -2,7 +2,8 @@
 MX Seguros — DRE-IA | Permissões granulares por tela e ação.
 
 Estrutura: {"tela": {"acao": bool}}
-Telas: visao_geral, dre, lancamentos, aprovacoes, relatorios, configuracoes
+Telas: visao_geral, dre, lancamentos, aprovacoes, relatorios, configuracoes,
+ordem_compra (perfil Colaborador)
 ("assistente" é a chave do antigo Monitoramento IA; fica só para compatibilidade
 com permissões personalizadas gravadas antes da tela Relatórios.)
 """
@@ -44,6 +45,18 @@ DEFAULT_PERMISSIONS: dict[str, dict] = {
         "assistente":    {"visualizar": True},
         "relatorios":    {"visualizar": True, "criar": True, "compartilhar": False},
         "configuracoes": {"visualizar": True, "criar": False, "editar": False, "deletar": False},
+    },
+    # Funcionário que só lança Ordem de Compra pelo link /oc (0047). A API nega
+    # o resto pelo perfil (app/auth.py), não por estas chaves.
+    "colaborador": {
+        "visao_geral":   {"visualizar": False},
+        "dre":           {"visualizar": False},
+        "lancamentos":   {"visualizar": False, "criar": False, "editar": False, "deletar": False},
+        "aprovacoes":    {"visualizar": False, "aprovar": False},
+        "assistente":    {"visualizar": False},
+        "relatorios":    {"visualizar": False, "criar": False, "compartilhar": False},
+        "configuracoes": {"visualizar": False, "criar": False, "editar": False, "deletar": False},
+        "ordem_compra":  {"visualizar": True, "criar": True},
     },
 }
 

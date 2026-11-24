@@ -62,7 +62,9 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
       const { createClient } = await import('./supabase')
       await createClient().auth.signOut()
     } catch { /* segue para o redirect mesmo se o signOut falhar */ }
-    if (typeof window !== 'undefined') window.location.href = '/login'
+    if (typeof window !== 'undefined') {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`
+    }
     throw new Error('Sessão expirada. Faça login novamente.')
   }
   if (!res.ok) {

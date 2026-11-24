@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'gestor' | 'comercial' | 'contador'
+export type Role = 'admin' | 'gestor' | 'comercial' | 'contador' | 'colaborador'
 
 export interface Permissions {
   visao_geral:   { visualizar: boolean }
@@ -10,6 +10,8 @@ export interface Permissions {
   /** Opcional: permissões personalizadas antigas não têm (ver permissaoRelatorios). */
   relatorios?:   { visualizar: boolean; criar: boolean; compartilhar: boolean }
   configuracoes: { visualizar: boolean; criar: boolean; editar: boolean; deletar: boolean }
+  /** Perfil Colaborador (0047): só a página /oc. */
+  ordem_compra?: { visualizar: boolean; criar: boolean }
 }
 
 export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {
@@ -48,6 +50,17 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {
     assistente:    { visualizar: true },
     relatorios:    { visualizar: true, criar: true, compartilhar: false },
     configuracoes: { visualizar: true, criar: false, editar: false, deletar: false },
+  },
+  // Funcionário que só lança Ordem de Compra pelo link /oc (espelha app/permissions.py).
+  colaborador: {
+    visao_geral:   { visualizar: false },
+    dre:           { visualizar: false },
+    lancamentos:   { visualizar: false, criar: false, editar: false, deletar: false },
+    aprovacoes:    { visualizar: false, aprovar: false },
+    assistente:    { visualizar: false },
+    relatorios:    { visualizar: false, criar: false, compartilhar: false },
+    configuracoes: { visualizar: false, criar: false, editar: false, deletar: false },
+    ordem_compra:  { visualizar: true, criar: true },
   },
 }
 

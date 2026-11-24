@@ -8,10 +8,11 @@ import { inputCls, selectCls, Chip, BtnExcluir } from './shared'
 import { PermissoesSelector } from './PermissoesSelector'
 import { ModalEdicaoUsuario, type UsuarioItem } from './ModalEdicaoUsuario'
 
-const ROLE_LABEL: Record<string, string> = { admin: 'Admin', gestor: 'Gestor', contador: 'Contador', comercial: 'Comercial' }
+const ROLE_LABEL: Record<string, string> = { admin: 'Admin', gestor: 'Gestor', contador: 'Contador', comercial: 'Comercial', colaborador: 'Colaborador' }
 const ROLE_COLOR: Record<string, string> = {
   admin: 'bg-red-50 text-red-700', gestor: 'bg-amber-50 text-amber-700',
   contador: 'bg-blue-50 text-blue-700', comercial: 'bg-gray-100 text-gray-600',
+  colaborador: 'bg-indigo-50 text-indigo-700',
 }
 
 export function SecaoUsuarios({
@@ -136,11 +137,18 @@ export function SecaoUsuarios({
                 <option value="contador">Contador</option>
                 <option value="gestor">Gestor</option>
                 <option value="admin">Admin</option>
+                <option value="colaborador">Colaborador (só Ordem de Compra)</option>
               </select>
-              <PermissoesSelector
-                permissions={form.permissions}
-                onChange={p => setForm(f => ({ ...f, permissions: p }))}
-              />
+              {form.role === 'colaborador' ? (
+                <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                  Colaborador só acessa o link de Ordem de Compra (<strong>/oc</strong>): lança as próprias despesas, com foto da nota, e acompanha a aprovação.
+                </p>
+              ) : (
+                <PermissoesSelector
+                  permissions={form.permissions}
+                  onChange={p => setForm(f => ({ ...f, permissions: p }))}
+                />
+              )}
               <div className="col-span-1 flex items-center gap-3 sm:col-span-2 lg:col-span-4">
                 {erro && <p className="text-xs text-red-600">{erro}</p>}
                 <button type="submit" disabled={criando}

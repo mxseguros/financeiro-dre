@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/Field'
 import { useUser } from '@/contexts/UserContext'
 import { ModalDespesa } from '../_components/ModalDespesa'
 import { ModalOrdemCompra } from '../_components/ModalOrdemCompra'
+import { ModalAprovarOrdem } from '../_components/ModalAprovarOrdem'
 import { DialogExcluirGrupo } from '../_components/DialogExcluirGrupo'
 import type { Despesa, DespesasResponse } from '@/types'
 import {
@@ -146,6 +147,7 @@ function DespesaCard({ despesa, centros, anexos, processandoId, onAprovar, onIni
 // ── Card de ordem de compra no Kanban ──────────────────────────
 interface OrdemCardProps {
   ordem: OrdemCompra
+  anexos?: number
   processandoId: string | null
   onAprovar?: (id: string) => void
   onIniciarRejeicao?: (id: string) => void
@@ -154,7 +156,7 @@ interface OrdemCardProps {
   onExcluir?: () => void
 }
 
-function OrdemCard({ ordem, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: OrdemCardProps) {
+function OrdemCard({ ordem, anexos, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: OrdemCardProps) {
   const ocupado = processandoId === ordem.id
   const arrastavel = !ocupado
 
@@ -178,14 +180,17 @@ function OrdemCard({ ordem, processandoId, onAprovar, onIniciarRejeicao, onDragS
         )}
       </div>
 
-      <p className="mt-2 text-xs font-semibold text-gray-800 line-clamp-1 leading-snug">{ordem.assunto}</p>
+      <p className="mt-2 text-xs font-semibold text-gray-800 line-clamp-1 leading-snug">{ordem.assunto}<MarcaAnexos n={anexos} /></p>
       <p className="mt-0.5 text-xs text-gray-600 line-clamp-2 leading-snug">{ordem.descricao}</p>
 
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
         <span>{ordem.solicitante}</span>
         <span>·</span>
-        <span>{fmtData(ordem.data_solicitacao)}</span>
+        <span title="Data da despesa">{fmtData(ordem.data_prevista ?? ordem.data_solicitacao)}</span>
       </div>
+      {ordem.despesa_id && (
+        <p className="mt-2 text-[11px] font-medium text-green-700">✓ Despesa lançada em Lançamentos</p>
+      )}
 
       {ordem.status === 'rejeitada' && ordem.rejeitado_motivo && (
         <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
@@ -322,6 +327,9 @@ export default function AprovacoesPage() {
   const [despesas, setDespesas] = useState<Despesa[]>([])
   const [ordens, setOrdens] = useState<OrdemCompra[]>([])
   const anexosDesp = useContagemAnexos(token, 'despesa', useMemo(() => despesas.map(d => d.id), [despesas]))
+  const anexosOrdens = useContagemAnexos(token, 'ordem_compra', useMemo(() => ordens.map(o => o.id), [ordens]))
+  // Aprovar ordem = lançar a despesa: abre o mini-modal de subitem e centro (0047).
+  const [aprovandoOrdem, setAprovandoOrdem] = useState<OrdemCompra | null>(null)
   const [loading, setLoading] = useState(true)
   const [processandoId, setProcessandoId] = useState<string | null>(null)
   const [rejeitando, setRejeitando] = useState<DragRef | null>(null)
@@ -391,6 +399,11 @@ export default function AprovacoesPage() {
 
   async function handleAprovar(id: string, tipo: TipoCard) {
     if (!token) return
+    if (tipo === 'ordem') {
+      const ordem = ordens.find(o => o.id === id)
+      if (ordem) setAprovandoOrdem(ordem)
+      return
+    }
     setProcessandoId(id)
     setErroGlobal(null)
     try {
@@ -486,7 +499,7 @@ export default function AprovacoesPage() {
       )
     }
     return (
-      <OrdemCard key={`o-${i.dado.id}`} ordem={i.dado} processandoId={processandoId}
+      <OrdemCard key={`o-${i.dado.id}`} ordem={i.dado} anexos={anexosOrdens[i.dado.id]} processandoId={processandoId}
         onAprovar={comAcoes ? (id) => handleAprovar(id, 'ordem') : undefined}
         onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'ordem' }) : undefined}
         onDragStart={(id) => { dragId.current = { id, tipo: 'ordem' } }}
@@ -504,7 +517,16 @@ export default function AprovacoesPage() {
           despesa={editando.dado} onClose={() => setEditando(null)} onSaved={buscar} />
       )}
       {editando?.tipo === 'ordem' && token && (
-        <ModalOrdemCompra token={token} ordem={editando.dado} onClose={() => setEditando(null)} onSaved={buscar} />
+        <ModalOrdemCompra token={token} ordem={editando.dado} centros={centros} onClose={() => setEditando(null)} onSaved={buscar} />
+      )}
+      {aprovandoOrdem && token && (
+        <ModalAprovarOrdem token={token} ordem={aprovandoOrdem} categorias={categorias} tipos={tipos}
+          centros={centros} bancos={bancos} classificacoes={classificacoes}
+          onClose={() => setAprovandoOrdem(null)}
+          onAprovada={o => {
+            setOrdens(prev => prev.map(x => (x.id === o.id ? { ...x, ...o } : x)))
+            setAprovandoOrdem(null)
+          }} />
       )}
 
       <DialogExcluirGrupo

@@ -430,6 +430,7 @@ export default function LancamentosPage() {
         <ModalOrdemCompra
           token={token}
           ordem={editandoOrdem ?? undefined}
+          centros={centros}
           onClose={() => { setModalOrdem(false); setEditandoOrdem(null) }}
           onSaved={buscarOrdens}
         />
@@ -502,6 +503,18 @@ export default function LancamentosPage() {
                 title="Nova Ordem de Compra"
                 className="flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-navy h-8 px-3 text-xs font-medium text-white hover:bg-navy-light transition-colors sm:flex-none">
                 + Ordem
+              </button>
+              {/* Link fácil para os funcionários lançarem despesas (perfil Colaborador, 0047). */}
+              <button
+                type="button"
+                onClick={async () => {
+                  const link = `${window.location.origin}/oc`
+                  try { await navigator.clipboard.writeText(link); toast.sucesso(`Link copiado: ${link}`) }
+                  catch { toast.erro(`Não foi possível copiar. O link é ${link}`) }
+                }}
+                title="Copiar o link da Ordem de Compra para enviar aos funcionários"
+                className="hidden items-center gap-1 whitespace-nowrap rounded-md border border-gray-200 bg-white h-8 px-3 text-xs font-medium text-navy hover:bg-gray-50 transition-colors sm:flex">
+                🔗 Link /oc
               </button>
             </div>
           </div>

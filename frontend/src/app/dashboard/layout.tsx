@@ -31,6 +31,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .catch(() => {})
   }, [token])
 
+  // Colaborador (0047) só lança Ordem de Compra: o painel não é para ele.
+  const ehColaborador = usuario?.role === 'colaborador'
+  useEffect(() => {
+    if (ehColaborador) router.replace('/oc')
+  }, [ehColaborador, router])
+
   // Primeiro acesso: tour guiado completo, uma vez por usuário neste navegador.
   // Espera o /usuarios/me (os itens do menu dependem das permissões) e um
   // respiro para os blocos da tela carregarem — passo sem elemento é pulado.
@@ -53,7 +59,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Mesmo estado visual para "carregando sessão" e "sem sessão" — no segundo
   // caso o efeito acima já está redirecionando para /login.
-  if (loading || !session) {
+  if (loading || !session || ehColaborador) {
     return (
       <div className="flex h-screen items-center justify-center bg-canvas">
         <Spinner size="lg" className="text-navy" />
