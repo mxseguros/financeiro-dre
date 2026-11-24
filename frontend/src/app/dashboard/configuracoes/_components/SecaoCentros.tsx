@@ -3,7 +3,7 @@ import { api } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import { inputCls, BtnExcluir } from './shared'
-import { arvoreCentros, rotuloCentro, type CentroCusto } from '@/lib/centros'
+import { arvoreCentros, proximoNumeroSub, rotuloCentro, type CentroCusto } from '@/lib/centros'
 
 // Centros em grupos e subgrupos (24/11/2026): "1.00 - Venda Nova" › "1.21 - Saúde e Vida".
 // Dois níveis. Grupo com subgrupos não recebe lançamento; filtrar pelo grupo
@@ -34,6 +34,15 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
 
   useEffect(() => { carregar() }, [carregar])
 
+  // Numeração automática do subgrupo (24/11/2026): ao escolher o grupo, o Nº
+  // vem preenchido (1.10 → 1.11, 1.12…). Dá para trocar; editado à mão, fica.
+  const [numeroManual, setNumeroManual] = useState(false)
+  const grupoDoForm = items.find(c => c.id === form.parent_id)
+  const sugestao = proximoNumeroSub(grupoDoForm, items)
+  useEffect(() => {
+    if (!numeroManual) setForm(f => ({ ...f, numero: f.parent_id ? sugestao : '' }))
+  }, [sugestao, numeroManual, form.parent_id])
+
   const arvore = arvoreCentros(items)
   // Só centro raiz pode ser grupo (dois níveis).
   const gruposPossiveis = (excetoId?: string) => items.filter(c => !c.parent_id && c.id !== excetoId)
@@ -46,7 +55,7 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
       await api.post('/configuracoes/centros-custo', token, {
         nome: form.nome, numero: form.numero || null, parent_id: form.parent_id || null,
       })
-      setForm(f => ({ ...VAZIO, parent_id: f.parent_id })); carregar()
+      setForm(f => ({ ...VAZIO, parent_id: f.parent_id })); setNumeroManual(false); carregar()
     } catch (err) { setErro(err instanceof Error ? err.message : 'Erro') }
     finally { setCriando(false) }
   }
@@ -99,7 +108,12 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
           </td>
           <td className="px-4 py-1.5">
             <select value={edit.parent_id} disabled={temFilhos(c.id)}
-              onChange={e => setEdit(f => ({ ...f, parent_id: e.target.value }))} aria-label="Grupo"
+              onChange={e => {
+                const pid = e.target.value
+                // Atrelou a outro grupo: renumera pelo grupo novo.
+                const num = pid && pid !== c.parent_id ? proximoNumeroSub(items.find(x => x.id === pid), items, c.id) : null
+                setEdit(f => ({ ...f, parent_id: pid, ...(num !== null ? { numero: num } : {}) }))
+              }} aria-label="Grupo"
               className="w-full rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none disabled:bg-gray-50">
               <option value="">— Grupo principal —</option>
               {gruposPossiveis(c.id).map(g => <option key={g.id} value={g.id}>{rotuloCentro(g)}</option>)}
@@ -160,11 +174,11 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Novo Centro de Custo</h3>
           <form onSubmit={criar} className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-            <input value={form.numero} onChange={e => setForm(f => ({ ...f, numero: e.target.value }))}
-              placeholder="Nº (ex.: 1.21)" aria-label="Número" className={`${inputCls} sm:w-32`} />
+            <input value={form.numero} onChange={e => { setNumeroManual(true); setForm(f => ({ ...f, numero: e.target.value })) }}
+              placeholder={form.parent_id ? 'Nº' : 'Nº (ex.: 1.10)'} aria-label="Número" className={`${inputCls} sm:w-32`} />
             <input required value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
               placeholder="Nome (ex.: Saúde e Vida)" aria-label="Nome" className={`${inputCls} flex-1`} />
-            <select value={form.parent_id} onChange={e => setForm(f => ({ ...f, parent_id: e.target.value }))}
+            <select value={form.parent_id} onChange={e => { setNumeroManual(false); setForm(f => ({ ...f, parent_id: e.target.value })) }}
               aria-label="Grupo" className={`${inputCls} sm:w-60`}>
               <option value="">— Grupo principal —</option>
               {gruposPossiveis().map(g => <option key={g.id} value={g.id}>Subgrupo de {rotuloCentro(g)}</option>)}
@@ -175,8 +189,14 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
             </button>
           </form>
           {erro && <p className="mt-2 text-xs text-red-600">{erro}</p>}
+          {grupoDoForm && !sugestao && (
+            <p className="mt-2 text-xs text-amber-600">
+              {grupoDoForm.numero ? 'Não há mais número livre neste grupo: informe o Nº à mão.'
+                : `Dê um número ao grupo "${grupoDoForm.nome}" (ex.: 1.10) para os subgrupos serem numerados sozinhos.`}
+            </p>
+          )}
           <p className="mt-2 text-xs text-gray-400">
-            Lançamentos vão nos subgrupos. Um grupo com subgrupos serve para somar e filtrar.
+            Ao escolher o grupo, o subgrupo é numerado sozinho (1.10 → 1.11, 1.12…). Lançamentos vão nos subgrupos; o grupo soma e filtra.
           </p>
         </div>
       )}

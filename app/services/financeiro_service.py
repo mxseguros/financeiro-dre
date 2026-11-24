@@ -107,6 +107,40 @@ def _chave_ordem(c: dict):
     return (0 if num else 1, partes, c.get("ordem") or 0, (c.get("nome") or "").lower())
 
 
+def proximo_numero_sub(grupo_numero: str | None, centros: list[dict], grupo_id: str | None = None) -> str | None:
+    """Numeração automática do subgrupo (pedido de 24/11/2026): segue a última
+    casa do número do grupo — "1.10 Financeiro" → 1.11, 1.12, 1.13…; grupo "1"
+    → 1.1, 1.2… Continua do maior subgrupo que já existe e pula número usado.
+    Sem número no grupo (ou se estourar as casas, ex. 1.99), devolve None."""
+    import re
+    g = (grupo_numero or "").strip()
+    if not re.fullmatch(r"\d+(\.\d+)?", g):
+        return None
+    inteiro, _, dec = g.partition(".")
+    largura = len(dec) or 1
+    maior = int(dec) if dec else 0
+    padrao = re.compile(rf"{inteiro}\.(\d{{{largura}}})")
+    for c in centros:
+        if grupo_id and c.get("parent_id") != grupo_id:
+            continue
+        m = padrao.fullmatch((c.get("numero") or "").strip())
+        if m:
+            maior = max(maior, int(m.group(1)))
+    usados = {(c.get("numero") or "").strip() for c in centros}
+    prox = maior + 1
+    while len(str(prox)) <= largura:
+        candidato = f"{inteiro}.{prox:0{largura}d}"
+        if candidato not in usados:
+            return candidato
+        prox += 1
+    return None
+
+
+def _garantir_numero_livre(numero: str | None, centros: list[dict], proprio_id: str | None = None) -> None:
+    if numero and any((c.get("numero") or "").strip() == numero and c.get("id") != proprio_id for c in centros):
+        raise _erro_centro(409, f"O número {numero} já está em uso por outro centro.")
+
+
 async def listar_centros_custo(db: Client) -> list[CentroCustoItem]:
     linhas = sorted(_ler_centros(db), key=_chave_ordem)
     return [CentroCustoItem(**r) for r in linhas]
@@ -135,7 +169,13 @@ async def criar_centro_custo(
 ) -> CentroCustoItem:
     tenant = getattr(usuario, "tenant_id", None)
     _validar_pai(db, payload.parent_id, tenant)
-    existentes = {c["codigo"] for c in _ler_centros(db, tenant)}
+    centros = _ler_centros(db, tenant)
+    existentes = {c["codigo"] for c in centros}
+    numero = (payload.numero or "").strip() or None
+    if payload.parent_id and not numero:
+        pai = next((c for c in centros if c["id"] == str(payload.parent_id)), {})
+        numero = proximo_numero_sub(pai.get("numero"), centros, str(payload.parent_id))
+    _garantir_numero_livre(numero, centros)
     # Trim evita espaços acidentais no código/nome, que quebram o filtro por centro
     codigo = (payload.codigo or "").strip() or _slug(payload.nome)
     if codigo in existentes:
@@ -151,7 +191,7 @@ async def criar_centro_custo(
         dados["tenant_id"] = tenant
     extras = {
         "parent_id": str(payload.parent_id) if payload.parent_id else None,
-        "numero":    (payload.numero or "").strip() or None,
+        "numero":    numero,
         "ordem":     payload.ordem,
     }
     try:
@@ -171,11 +211,21 @@ async def atualizar_centro_custo(
         dados["nome"] = dados["nome"].strip()
     if "numero" in dados:
         dados["numero"] = dados["numero"].strip() or None
+    tenant = getattr(usuario, "tenant_id", None)
+    centros = _ler_centros(db, tenant)
+    atual = next((c for c in centros if c["id"] == str(centro_id)), {})
     if payload.sem_grupo:
         dados["parent_id"] = None
     elif payload.parent_id:
-        _validar_pai(db, payload.parent_id, getattr(usuario, "tenant_id", None), centro_id)
+        _validar_pai(db, payload.parent_id, tenant, centro_id)
         dados["parent_id"] = str(payload.parent_id)
+        # Atrelou a um grupo (novo) sem informar número: numeração automática.
+        if str(payload.parent_id) != atual.get("parent_id") and not dados.get("numero"):
+            pai = next((c for c in centros if c["id"] == str(payload.parent_id)), {})
+            outros = [c for c in centros if c["id"] != str(centro_id)]
+            dados["numero"] = proximo_numero_sub(pai.get("numero"), outros, str(payload.parent_id))
+    if "numero" in dados:
+        _garantir_numero_livre(dados["numero"], centros, str(centro_id))
     q = db.table("centros_custo").update(dados).eq("id", str(centro_id))
     if getattr(usuario, "tenant_id", None):
         q = q.eq("tenant_id", usuario.tenant_id)

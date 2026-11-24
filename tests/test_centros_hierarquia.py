@@ -103,3 +103,42 @@ def test_lancamento_nao_vai_para_grupo():
 def test_lista_ordena_pelo_numero():
     itens = run(fs.listar_centros_custo(base()))
     assert [i.numero for i in itens][:3] == ["1.00", "1.21", "1.22"]
+
+
+# ── Numeração automática do subgrupo (24/11/2026) ────────────
+
+def _banco_numeros():
+    return Db(centros_custo=[
+        centro(G1, "financeiro", "Financeiro", numero="1.10"),
+        centro(M, "matriz", "Matriz", numero="1"),
+        centro(S1, "contas", "Contas", numero=None),
+    ], despesas=[], receitas_outras=[])
+
+
+def test_subgrupo_segue_o_numero_do_grupo():
+    db = _banco_numeros()
+    nums = [run(fs.criar_centro_custo(CentroCustoCreate(nome=n, parent_id=G1), ADMIN, db)).numero
+            for n in ("Bancos", "Tarifas", "Juros")]
+    assert nums == ["1.11", "1.12", "1.13"]
+    assert run(fs.criar_centro_custo(CentroCustoCreate(nome="Sede", parent_id=M), ADMIN, db)).numero == "1.1"
+
+
+def test_numero_informado_vale_e_nao_repete():
+    db = _banco_numeros()
+    assert run(fs.criar_centro_custo(CentroCustoCreate(nome="X", parent_id=G1, numero="1.15"), ADMIN, db)).numero == "1.15"
+    assert run(fs.criar_centro_custo(CentroCustoCreate(nome="Y", parent_id=G1), ADMIN, db)).numero == "1.16"
+    with pytest.raises(HTTPException) as e:
+        run(fs.criar_centro_custo(CentroCustoCreate(nome="Z", numero="1.10"), ADMIN, db))
+    assert e.value.status_code == 409
+
+
+def test_atrelar_centro_existente_ao_grupo_numera():
+    db = _banco_numeros()
+    item = run(fs.atualizar_centro_custo(S1, CentroCustoUpdate(parent_id=G1, numero=""), ADMIN, db))
+    assert item.numero == "1.11" and str(item.parent_id) == G1
+
+
+def test_grupo_sem_numero_nao_numera():
+    db = _banco_numeros()
+    db.tabelas["centros_custo"][0]["numero"] = None
+    assert run(fs.criar_centro_custo(CentroCustoCreate(nome="Bancos", parent_id=G1), ADMIN, db)).numero is None
