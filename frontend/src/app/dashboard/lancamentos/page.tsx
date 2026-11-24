@@ -20,7 +20,7 @@ import { ModalOrdemCompra } from './_components/ModalOrdemCompra'
 import { ModalImportarExtrato } from './_components/ModalImportarExtrato'
 import { DialogExcluirGrupo } from './_components/DialogExcluirGrupo'
 import {
-  Badge, StatusBadge, IconLapis, IconLixo, fmtCompetencia, tipoCor,
+  Badge, StatusBadge, IconLapis, IconLixo, fmtCompetencia, tipoCor, CadeadoConfidencial,
   type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp,
   type Receita, type ReceitasResp, type OrdemCompra, type OrdensCompraResp, podeExcluirLancamento,
   type Classificacao } from './_components/shared'
@@ -697,6 +697,8 @@ export default function LancamentosPage() {
                           <span className="text-gray-300">|</span>
                           <button onClick={() => setConfirmandoId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
                         </span>
+                      ) : d.agregado ? (
+                        <CadeadoConfidencial n={d.quantidade} />
                       ) : (
                         <span className="inline-flex items-center gap-2">
                           <button onClick={() => setEditandoDespesa(d)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar despesa ${d.descricao}`}><IconLapis /></button>
@@ -767,6 +769,8 @@ export default function LancamentosPage() {
                               <span className="text-gray-300">|</span>
                               <button onClick={() => setConfirmandoId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
                             </span>
+                          ) : d.agregado ? (
+                            <CadeadoConfidencial n={d.quantidade} />
                           ) : (
                             <span className="inline-flex items-center gap-2">
                               <button onClick={() => setEditandoDespesa(d)} className="text-gray-300 hover:text-blue-500 transition-colors" title="Editar"><IconLapis /></button>

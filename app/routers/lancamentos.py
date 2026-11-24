@@ -56,6 +56,21 @@ def _exigir_admin_ou_gestor(usuario: UsuarioAtual) -> None:
         )
 
 
+def _bloquear_confidencial(despesa_id: UUID, usuario: UsuarioAtual) -> None:
+    """Despesa de subitem confidencial (salários, 0046): só o Admin mexe nela.
+    Para os demais ela nem existe por id — 404, como na lista agregada."""
+    from app.services import confidencial
+    if confidencial.ve_detalhe(usuario):
+        return
+    db = get_supabase_admin()
+    q = db.table("despesas").select("tipo_lancamento_id").eq("id", str(despesa_id))
+    if getattr(usuario, "tenant_id", None):
+        q = q.eq("tenant_id", usuario.tenant_id)
+    linhas = q.execute().data or []
+    if linhas:
+        confidencial.garantir_detalhe("despesa", linhas[0], usuario, db)
+
+
 def _exigir_aprovacao(usuario: UsuarioAtual) -> None:
     from app.permissions import tem_permissao
     if usuario.role not in _ROLES_APROVACAO:
@@ -187,6 +202,7 @@ async def editar_despesa(
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_leitura(usuario)
+    _bloquear_confidencial(despesa_id, usuario)
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
     # Quem não aprova não refaz, reparcelando, uma série com parcela aprovada.
@@ -215,6 +231,7 @@ async def deletar_despesa(
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_despesas_leitura(usuario)
+    _bloquear_confidencial(despesa_id, usuario)
     db_admin = get_supabase_admin()
     # Admin/gestor excluem qualquer despesa. Os demais, só a própria e só
     # enquanto não aprovada — depois de aprovada ela já compõe o DRE, e
@@ -245,6 +262,7 @@ async def aprovar_despesa(
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_aprovacao(usuario)
+    _bloquear_confidencial(despesa_id, usuario)
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
     item = await financeiro_service.aprovar_despesa(despesa_id, usuario, db)
@@ -269,6 +287,7 @@ async def rejeitar_despesa(
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_aprovacao(usuario)
+    _bloquear_confidencial(despesa_id, usuario)
     if not payload.motivo:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

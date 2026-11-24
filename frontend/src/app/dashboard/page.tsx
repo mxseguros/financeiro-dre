@@ -195,6 +195,7 @@ interface LancamentoResumoItem {
   id: string; descricao: string; tipo_nome: string | null; valor: number; data: string | null
   status?: string | null
   natureza?: 'despesa' | 'receita' | null   // só no bloco por centro de custo
+  agregado?: boolean   // "Total Salários Funcionários" (0046): soma, detalhe só Admin
 }
 interface LancamentosDiaMesResponse { dia: LancamentoResumoItem[]; mes: LancamentoResumoItem[] }
 interface CentroCustoResumo extends LancamentosDiaMesResponse {
@@ -233,6 +234,7 @@ function montarBlocoCentro(
     id: d.id, descricao: d.descricao, tipo_nome: d.tipo_nome, valor: d.valor,
     data: d.data_vencimento ?? d.paga_em ?? d.competencia,
     natureza: 'despesa',
+    agregado: d.agregado,
   }))
   const itensRec: LancamentoResumoItem[] = receitas.items.map(r => ({
     id: r.id, descricao: r.descricao, tipo_nome: r.tipo_nome, valor: r.valor,
@@ -315,7 +317,10 @@ function ListaDiaMes({ titulo, subtitulo, dados, cor, header, resumo }: {
     return (
       <li key={item.id} className="flex items-start justify-between gap-2 text-xs">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-gray-700">{principal}</p>
+          <p className="truncate text-gray-700">
+            {item.agregado && <span aria-hidden className="mr-1" title="Detalhe por funcionário só para o Admin">🔒</span>}
+            {principal}
+          </p>
           {detalhe && <p className="truncate text-[10px] leading-tight text-gray-400">{detalhe}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-1.5 pl-2 text-right">

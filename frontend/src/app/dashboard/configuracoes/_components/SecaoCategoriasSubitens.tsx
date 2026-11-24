@@ -3,6 +3,7 @@ import { api } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import { inputCls, BtnExcluir } from './shared'
+import { useUser } from '@/contexts/UserContext'
 
 interface CategoriaItem { id: string; nome: string; natureza: string; ordem: number; ativo: boolean }
 interface SubitemItem {
@@ -10,6 +11,7 @@ interface SubitemItem {
   categoria_id: string | null; categoria_nome: string | null
   custo_tipo: string | null; ativo: boolean
   somente_dre?: boolean
+  confidencial?: boolean
 }
 
 export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcluir }: {
@@ -22,6 +24,10 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<string | null>(null)
   const [excluindo, setExcluindo] = useState(false)
   const toast = useToast()
+  // Salários confidenciais (0046): só o Admin vê e define.
+  const { role } = useUser()
+  const ehAdmin = role === 'admin'
+  const colConfidencial = natureza === 'despesa' && ehAdmin
 
   const [formCategoria, setFormCategoria] = useState({ nome: '', ordem: 0 })
   const [criandoCategoria, setCriandoCategoria] = useState(false)
@@ -151,6 +157,20 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
       toast.sucesso(novo ? `"${s.nome}" passa a constar apenas na DRE.` : `"${s.nome}" volta a constar em todo o sistema.`)
     } catch (err) {
       setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, somente_dre: !novo } : x))
+      toast.erro(err instanceof Error ? err.message : 'Erro ao atualizar subitem.')
+    }
+  }
+
+  async function alternarConfidencial(s: SubitemItem) {
+    const novo = !s.confidencial
+    setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, confidencial: novo } : x))
+    try {
+      await api.put(`/configuracoes/tipos/${s.id}`, token, { confidencial: novo })
+      toast.sucesso(novo
+        ? `"${s.nome}": quem não é Admin passa a ver só o total ("Total Salários Funcionários").`
+        : `"${s.nome}" volta a mostrar cada lançamento para todos.`)
+    } catch (err) {
+      setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, confidencial: !novo } : x))
       toast.erro(err instanceof Error ? err.message : 'Erro ao atualizar subitem.')
     }
   }
@@ -318,6 +338,11 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
                         Constar apenas na DRE
                       </th>
                     )}
+                    {colConfidencial && (
+                      <th className="px-4 py-3" title="Quem não é Admin vê só a linha &quot;Total Salários Funcionários&quot;, sem nome nem valor de cada funcionário.">
+                        Confidencial (só Admin)
+                      </th>
+                    )}
                     {(podeEditar || podeExcluir) && <th className="px-4 py-3 text-right">Ações</th>}
                   </tr>
                 </thead>
@@ -339,6 +364,7 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
                             </select>
                           </td>
                           {natureza === 'receita' && <td className="px-4 py-1.5" />}
+                          {colConfidencial && <td className="px-4 py-1.5" />}
                           <td className="px-4 py-1.5 text-right">
                             <span className="inline-flex gap-2">
                               <button onClick={() => salvarEdicaoSubitem(s.id)} className="text-xs font-medium text-green-600 hover:underline">Salvar</button>
@@ -358,6 +384,14 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
                                 className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy disabled:opacity-50" />
                             </td>
                           )}
+                          {colConfidencial && (
+                            <td className="px-4 py-2.5">
+                              <input type="checkbox" checked={!!s.confidencial}
+                                onChange={() => alternarConfidencial(s)}
+                                aria-label={`Confidencial, detalhe só para o Admin: ${s.nome}`}
+                                className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
+                            </td>
+                          )}
                           {(podeEditar || podeExcluir) && (
                             <td className="px-4 py-2.5 text-right">
                               <span className="inline-flex gap-3">
@@ -373,7 +407,7 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
                     </tr>
                   ))}
                   {subitensExibidos.length === 0 && (
-                    <tr><td colSpan={4} className="py-8 text-center text-sm text-gray-400">Nenhum subitem cadastrado</td></tr>
+                    <tr><td colSpan={5} className="py-8 text-center text-sm text-gray-400">Nenhum subitem cadastrado</td></tr>
                   )}
                 </tbody>
               </table>

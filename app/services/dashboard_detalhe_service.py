@@ -226,6 +226,6 @@ async def detalhe(
     total_d, total_r = ds._soma(despesas), ds._soma(receitas)
     so_despesas = bloco == "classificacao" or lado == "despesas"
     valor = total_d if so_despesas else total_r if lado == "receitas" else total_r - total_d
-    itens = [rs._linha(r, "Despesa", nomes, so_dre) for r in despesas]
+    itens = rs.linhas_despesas(despesas, nomes, so_dre, usuario, db)
     itens += [rs._linha(r, "Receita", nomes, so_dre) for r in receitas]
     return {"valor": valor, "total": len(itens), "parcial": not rs._ve_tudo(usuario), "itens": itens}

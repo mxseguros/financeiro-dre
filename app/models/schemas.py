@@ -234,6 +234,8 @@ class TipoLancamentoItem(RespostaBase):
     ativo:         bool
     # Receitas deste subitem constam só na DRE (migration 0037).
     somente_dre:   bool = False
+    # Despesas deste subitem: detalhe só para o Admin (0046).
+    confidencial:  bool = False
 
 
 def _validar_categoria_enum(v: str | None) -> str | None:
@@ -270,6 +272,7 @@ class TipoLancamentoUpdate(RespostaBase):
     custo_tipo:   str | None = None
     ativo:        bool | None = None
     somente_dre:  bool | None = None
+    confidencial: bool | None = None   # só o Admin altera
 
     _categoria_ok = field_validator("categoria")(_validar_categoria_enum)
 
@@ -429,6 +432,10 @@ class DespesaItem(RespostaBase):
     aprovado_por:       UUID | None = None
     aprovado_em:        Any | None = None
     rejeitado_motivo:   str | None = None
+    # Linha "Total Salários Funcionários" (0046): soma de despesas confidenciais
+    # para quem não é Admin. Não existe no banco — sem editar, excluir ou aprovar.
+    agregado:           bool = False
+    quantidade:         int | None = None
 
 
 class DespesasResponse(RespostaBase):
@@ -817,6 +824,8 @@ class LancamentoResumoItem(RespostaBase):
     valor:     Decimal
     data:      date | None = None
     status:    str | None = None   # usado por Ordens de Compra (badge)
+    # "Total Salários Funcionários" (0046): soma, não um lançamento — sem detalhe.
+    agregado:  bool = False
 
 
 class LancamentosDiaMesResponse(RespostaBase):

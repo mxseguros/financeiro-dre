@@ -128,10 +128,14 @@ export function TabelaLancamentos({ lancamentos, onEditar, editando, zebrada = f
                 <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">{fmt(r.valor, 'brl')}</td>
                 {onEditar && (
                   <td className="px-2 py-1 text-right">
-                    <button type="button" onClick={() => onEditar(r)} disabled={editando === r.id}
-                      className="font-medium text-navy hover:underline disabled:opacity-50">
-                      {editando === r.id ? 'Abrindo…' : 'Editar'}
-                    </button>
+                    {r.agregado ? (
+                      <span className="text-gray-400" title="Detalhe por funcionário só para o Admin">🔒</span>
+                    ) : (
+                      <button type="button" onClick={() => onEditar(r)} disabled={editando === r.id}
+                        className="font-medium text-navy hover:underline disabled:opacity-50">
+                        {editando === r.id ? 'Abrindo…' : 'Editar'}
+                      </button>
+                    )}
                   </td>
                 )}
               </tr>

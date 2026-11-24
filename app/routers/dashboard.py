@@ -194,7 +194,10 @@ async def get_despesas_dia_mes(
     inicio, fim = periodo
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
-    return await dashboard_service.buscar_despesas_dia_mes(inicio, fim, db, base=base)
+    from app.services import confidencial
+    return await dashboard_service.buscar_despesas_dia_mes(
+        inicio, fim, db, base=base, ocultos=confidencial.ids_ocultos(usuario, db),
+    )
 
 
 @router.get(

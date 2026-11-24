@@ -12,7 +12,33 @@ class _Q:
     def __init__(self, db, tabela):
         self.db, self.tabela, self.filtros, self.op, self.dados = db, tabela, [], "select", None
 
-    def select(self, *_a, **_k):
+    def select(self, *_a, count=None, **_k):
+        self.contar = count is not None
+        return self
+
+    def gte(self, col, val):
+        self.filtros.append(lambda r: (r.get(col) or "") >= val)
+        return self
+
+    def lte(self, col, val):
+        self.filtros.append(lambda r: (r.get(col) or "") <= val)
+        return self
+
+    def ilike(self, col, padrao):
+        termo = padrao.strip("%").lower()
+        self.filtros.append(lambda r: termo in (r.get(col) or "").lower())
+        return self
+
+    def or_(self, expr):
+        # Só o formato usado pelos filtros do app: "col.is.null,col.not.in.(a,b)"
+        partes = expr.split(",", 1)
+        col = partes[0].split(".")[0]
+        fora = set(partes[1].split(".not.in.(", 1)[1].rstrip(")").split(","))
+        self.filtros.append(lambda r: r.get(col) is None or r.get(col) not in fora)
+        return self
+
+    def range(self, ini, fim):
+        self.fatia = (ini, fim)
         return self
 
     def eq(self, col, val):
@@ -65,7 +91,9 @@ class _Q:
         if self.op == "delete":
             self.db.tabelas[self.tabela] = [r for r in linhas if r not in alvo]
             return SimpleNamespace(data=alvo)
-        return SimpleNamespace(data=[dict(r) for r in alvo])
+        if getattr(self, "fatia", None):
+            alvo = alvo[self.fatia[0]:self.fatia[1] + 1]
+        return SimpleNamespace(data=[dict(r) for r in alvo], count=len(alvo) if getattr(self, "contar", False) else None)
 
 
 class _Bucket:

@@ -296,8 +296,8 @@ async def listar_tipos_lancamento(
         return q.eq("natureza", natureza) if natureza else q
 
     base = "id, nome, natureza, categoria, categoria_id, custo_tipo, ativo, categorias_lancamento(nome)"
-    # Coluna da migration 0037: sem ela, lista sem o campo.
-    for extras in (", somente_dre", ""):
+    # Colunas das migrations 0037/0046: sem elas, lista sem os campos.
+    for extras in (", somente_dre, confidencial", ", somente_dre", ""):
         try:
             resp = _consulta(base + extras).execute()
             break
@@ -451,11 +451,16 @@ async def buscar_despesas(
     tipo_lancamento_id: str | None = None,
 ) -> DespesasResponse:
     from app.services.periodo_base import coluna_data, ids_do_tipo
+    from app.services import confidencial as conf
     termo = _termo_busca(busca)
     col = coluna_data("despesas", base)
     ids_tipo = ids_do_tipo(db, categoria_id, tipo_lancamento_id)
+    # Salários confidenciais (0046): quem não é Admin vê uma linha de total.
+    ocultos = conf.ids_ocultos(usuario, db)
 
-    def _aplicar_filtros(q):
+    def _aplicar_filtros(q, linhas_ocultas: bool = False):
+        """linhas_ocultas=True: os filtros da tela, sem a busca, para somar as
+        linhas confidenciais; False: a lista normal, sem elas."""
         q = (
             q.neq("status", "excluida")
             .gte(col, inicio.isoformat())
@@ -473,6 +478,10 @@ async def buscar_despesas(
             q = q.eq("banco_id", banco_id)
         if status_filter:
             q = q.eq("status", status_filter)
+        if linhas_ocultas:
+            return q
+        if ocultos:
+            q = conf.sem_confidenciais(q, ocultos)
         # A busca entra aqui (e não só na query de itens) para que o total e a
         # soma do período reflitam o que a tela está mostrando.
         if termo:
@@ -513,11 +522,10 @@ async def buscar_despesas(
             ),
             _exec(_aplicar_filtros(db.table("despesas").select("valor"))),
         )
-    items = []
-    for row in (resp.data or []):
+    def _item(row: dict) -> DespesaItem:
         tipo_nome  = (row.get("subitens_lancamento") or {}).get("nome")
         banco_nome = (row.get("bancos") or {}).get("nome")
-        items.append(DespesaItem(
+        return DespesaItem(
             id=row["id"],
             tipo_lancamento_id=row.get("tipo_lancamento_id"),
             custo_tipo=row.get("custo_tipo"),
@@ -542,7 +550,22 @@ async def buscar_despesas(
             aprovado_por=row.get("aprovado_por"),
             aprovado_em=row.get("aprovado_em"),
             rejeitado_motivo=row.get("rejeitado_motivo"),
-        ))
+            agregado=bool(row.get("agregado")),
+            quantidade=row.get("quantidade"),
+        )
+
+    items = [_item(row) for row in (resp.data or [])]
+
+    # Linhas "Total Salários Funcionários". Com busca, não entram: buscar um
+    # nome não pode revelar o valor de ninguém.
+    agregados: list[DespesaItem] = []
+    alvo = ocultos if ids_tipo is None else ocultos & {str(i) for i in ids_tipo}
+    if alvo and not termo:
+        linhas = await asyncio.to_thread(
+            conf.ler_ocultas, lambda q: _aplicar_filtros(q, linhas_ocultas=True),
+            alvo, usuario, get_supabase_admin(),
+        )
+        agregados = [_item(r) for r in conf.agregar(linhas, getattr(usuario, "tenant_id", None))]
 
     if limit is None:
         soma = sum(i.valor for i in items)
@@ -561,6 +584,12 @@ async def buscar_despesas(
         total = resp_total.count or 0
         pendentes = resp_pend.count or 0
         soma = sum(_dec(r.get("valor", 0)) for r in (resp_soma.data or []))
+    if agregados:
+        # Entram no topo da 1ª página; total e soma contam em todas.
+        total += len(agregados)
+        soma += sum(a.valor for a in agregados)
+        if not offset:
+            items = agregados + items
     return DespesasResponse(total=total, items=items, soma_total=soma, total_pendentes=pendentes)
 
 

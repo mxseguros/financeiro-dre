@@ -23,6 +23,8 @@ export interface Despesa {
   centro_custo: string; banco_nome: string | null; valor: number
   data_vencimento: string | null; paga_em: string | null; status: string
   recorrente: boolean; parcela_atual: number | null; parcela_total: number | null
+  /** "Total Salários Funcionários" (0046): soma de salários para quem não é Admin. Não é editável. */
+  agregado?: boolean; quantidade?: number | null
   criado_em: string | null; atualizado_em?: string | null
   criado_por?: string | null
   /** Classificação do lançamento (migration 0040). */
@@ -143,4 +145,16 @@ export function podeExcluirLancamento(
 ): boolean {
   if (role === 'admin' || role === 'gestor') return true
   return item.status !== 'aprovada' && !!userId && item.criado_por === userId
+}
+
+/** No lugar de editar/excluir, na linha "Total Salários Funcionários" (0046). */
+export function CadeadoConfidencial({ n }: { n?: number | null }) {
+  const qtd = n ? `${n} lançamento${n > 1 ? 's' : ''}` : 'lançamentos'
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] text-gray-400"
+      title={`Soma de ${qtd} de salário. O detalhe por funcionário é visível só para o Admin.`}>
+      <span aria-hidden>🔒</span>{n ? n : ''}
+      <span className="sr-only">Confidencial: soma de {qtd}, detalhe só para o Admin</span>
+    </span>
+  )
 }

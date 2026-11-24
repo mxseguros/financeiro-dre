@@ -348,7 +348,18 @@ async def atualizar_tipo(
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_admin(usuario)
-    return await financeiro_service.atualizar_tipo_lancamento(tipo_id, payload, get_supabase_admin())
+    if payload.confidencial is not None and usuario.role not in ("admin", "super_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Só o Admin define quais subitens são confidenciais.",
+        )
+    item = await financeiro_service.atualizar_tipo_lancamento(tipo_id, payload, get_supabase_admin())
+    if payload.confidencial is not None:
+        await registrar_auditoria(
+            usuario, "subitem_confidencial", {"subitem_id": str(tipo_id), "confidencial": payload.confidencial},
+            request.client.host if request.client else None, get_supabase_admin(),
+        )
+    return item
 
 
 @router.delete(

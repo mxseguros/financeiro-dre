@@ -528,6 +528,7 @@ async def buscar_despesas_dia_mes(
     fim: date,
     db: Client,
     base: str = "competencia",
+    ocultos: set[str] | None = None,
 ) -> LancamentosDiaMesResponse:
     """Despesas que VENCEM hoje e todas as do mês/período selecionado, das
     últimas lançadas para as mais antigas.
@@ -540,7 +541,8 @@ async def buscar_despesas_dia_mes(
     Regra de 09/11/2026 (Gabriel): o HOJE traz só o que ainda falta pagar —
     despesa com Data de Pagamento sai do HOJE (continua no NO PERÍODO)."""
     hoje, _cri_ini, _cri_fim = _janela_hoje_br()
-    cols = "id, descricao, valor, competencia, data_vencimento, paga_em, criado_em, subitens_lancamento(nome)"
+    cols = ("id, descricao, valor, competencia, data_vencimento, paga_em, criado_em, status, "
+            "tipo_lancamento_id, subitens_lancamento(nome)")
 
     linhas_hoje, linhas_mes = await asyncio.gather(
         _todas(
@@ -560,14 +562,19 @@ async def buscar_despesas_dia_mes(
     linhas_dia: dict[str, dict] = {r["id"]: r for r in linhas_hoje}
 
     def _mapear(rows: list[dict]) -> list[LancamentoResumoItem]:
+        # Salários confidenciais (0046): uma linha de total no lugar dos nomes.
+        from app.services import confidencial
+        visiveis = [r for r in rows if not confidencial.eh_oculta(r, ocultos or set())]
+        somas = confidencial.agregar([r for r in rows if confidencial.eh_oculta(r, ocultos or set())])
         itens = []
-        for row in rows:
+        for row in somas + visiveis:
             itens.append(LancamentoResumoItem(
                 id=row["id"],
                 descricao=row.get("descricao", ""),
                 tipo_nome=(row.get("subitens_lancamento") or {}).get("nome"),
                 valor=Decimal(str(row.get("valor", 0))),
                 data=row.get("data_vencimento") or row.get("paga_em") or row.get("competencia"),
+                agregado=bool(row.get("agregado")),
             ))
         return itens
 

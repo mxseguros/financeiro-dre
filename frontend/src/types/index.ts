@@ -150,6 +150,9 @@ export interface Despesa {
   competencia: string
   data_vencimento: string | null
   paga_em: string | null
+  /** "Total Salários Funcionários" (0046): soma para quem não é Admin, não é editável. */
+  agregado?: boolean
+  quantidade?: number | null
   centro_custo: string
   recorrente: boolean
   parcela_atual: number | null

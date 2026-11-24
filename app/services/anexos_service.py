@@ -82,6 +82,9 @@ def carregar_entidade(entidade: str, entidade_id: UUID | str, usuario: UsuarioAt
         raise nao_achou
     if not ve_tudo(usuario) and str(row.get("criado_por")) != str(usuario.user_id):
         raise nao_achou
+    # Salário confidencial (0046): anexo (holerite, guia) só para o Admin.
+    from app.services.confidencial import garantir_detalhe
+    garantir_detalhe(entidade, row, usuario, db)
     return row
 
 

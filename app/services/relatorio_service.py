@@ -158,7 +158,23 @@ def _linha(row: dict, tipo: str, nomes: dict[str, dict[str, str]], so_dre: set[s
         "criado_por": nomes["usuario"].get(str(row.get("criado_por"))),
         "so_dre": row.get("tipo_lancamento_id") in so_dre,
         "valor": float(Decimal(str(row.get("valor") or 0))),
+        # "Total Salários Funcionários" (0046): soma, não abre para editar.
+        "agregado": bool(row.get("agregado")),
     }
+
+
+def linhas_despesas(
+    rows: list[dict], nomes: dict[str, dict[str, str]], so_dre: set[str], usuario: UsuarioAtual, db: Client,
+) -> list[dict]:
+    """Despesas para a tabela dinâmica e para o detalhe da Visão Geral. Para
+    quem não é Admin, as de subitem confidencial viram linhas de total (0046)."""
+    from app.services import confidencial
+    ocultos = confidencial.ids_ocultos(usuario, db)
+    visiveis = [r for r in rows if not confidencial.eh_oculta(r, ocultos)]
+    somas = confidencial.agregar(
+        [r for r in rows if confidencial.eh_oculta(r, ocultos)], getattr(usuario, "tenant_id", None),
+    )
+    return [_linha(r, "Despesa", nomes, so_dre) for r in somas + visiveis]
 
 
 def pode_ler_despesas(usuario: UsuarioAtual) -> bool:
@@ -186,7 +202,7 @@ async def dados(
     usuarios = await _mapa(db, "usuarios", "id", "nome")
     so_dre = await ids_somente_dre(db)
     nomes = {"classificacao": classif, "centro": centros, "centro_grupo": grupos, "usuario": usuarios}
-    itens = [_linha(r, "Despesa", nomes, so_dre) for r in desp]
+    itens = linhas_despesas(desp, nomes, so_dre, usuario, db)
     itens += [_linha(r, "Receita", nomes, so_dre) for r in rec]
     return {
         "inicio": inicio.isoformat(),
@@ -215,6 +231,8 @@ async def obter_lancamento(tipo: str, lancamento_id: UUID, usuario: UsuarioAtual
         row = (resp.data or [None])[0]
         if not row or (not _ve_tudo(usuario) and str(row.get("criado_por")) != usuario.user_id):
             raise nao_achou
+        from app.services.confidencial import garantir_detalhe
+        garantir_detalhe("despesa", row, usuario, db)
         return _row_para_despesa_item(row).model_dump(mode="json")
 
     resp = await _exec(

@@ -25,6 +25,8 @@ export interface Lancamento {
   parcela: string | null
   criado_por: string | null
   so_dre: boolean
+  /** "Total Salários Funcionários" (0046): soma, não abre para editar. */
+  agregado?: boolean
   valor: number
 }
 

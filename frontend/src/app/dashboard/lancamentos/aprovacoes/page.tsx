@@ -341,7 +341,9 @@ export default function AprovacoesPage() {
       api.get<DespesasResponse>(`/lancamentos/despesas?inicio=${inicio}&fim=${fim}&base=${base}&ordenar_por=registro&ordem=desc`, token).then(r => r.items).catch(() => []),
       api.get<OrdensCompraResp>(`/ordens-compra?inicio=${inicio}&fim=${fim}`, token).then(r => r.items).catch(() => []),
     ])
-      .then(([d, o]) => { setDespesas(d); setOrdens(o) })
+      // Linhas "Total Salários Funcionários" não são lançamentos: salário
+      // confidencial é aprovado só pelo Admin, que vê o detalhe (0046).
+      .then(([d, o]) => { setDespesas(d.filter(x => !x.agregado)); setOrdens(o) })
       .finally(() => setLoading(false))
   }, [token, filtro.inicio, filtro.fim, filtro.base])
 
