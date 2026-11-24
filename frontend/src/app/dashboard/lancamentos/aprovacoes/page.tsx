@@ -1,4 +1,5 @@
 'use client'
+import { nomeCentro } from '@/lib/centros'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
@@ -61,6 +62,7 @@ function AcoesEdicao({ ocupado, onEditar, onExcluir }: {
 // ── Card de despesa no Kanban ──────────────────────────────────
 interface CardProps {
   despesa: Despesa
+  centros: CentroCusto[]
   processandoId: string | null
   onAprovar?: (id: string) => void
   onIniciarRejeicao?: (id: string) => void
@@ -69,7 +71,7 @@ interface CardProps {
   onExcluir?: () => void
 }
 
-function DespesaCard({ despesa, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: CardProps) {
+function DespesaCard({ despesa, centros, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: CardProps) {
   const ocupado = processandoId === despesa.id
   const arrastavel = !ocupado
 
@@ -96,7 +98,7 @@ function DespesaCard({ despesa, processandoId, onAprovar, onIniciarRejeicao, onD
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
-        <span className="capitalize">{despesa.centro_custo.replace('_', ' ')}</span>
+        <span>{nomeCentro(despesa.centro_custo, centros)}</span>
         <span>·</span>
         <span>{fmtCompetencia(despesa.competencia)}</span>
       </div>
@@ -469,7 +471,7 @@ export default function AprovacoesPage() {
     const excluir = () => setExcluindo(i)
     if (i.tipo === 'despesa') {
       return (
-        <DespesaCard key={`d-${i.dado.id}`} despesa={i.dado} processandoId={processandoId}
+        <DespesaCard key={`d-${i.dado.id}`} despesa={i.dado} centros={centros} processandoId={processandoId}
           onAprovar={comAcoes ? (id) => handleAprovar(id, 'despesa') : undefined}
           onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'despesa' }) : undefined}
           onDragStart={(id) => { dragId.current = { id, tipo: 'despesa' } }}

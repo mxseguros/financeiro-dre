@@ -303,7 +303,7 @@ export default function RelatoriosPage() {
           })),
           lancamentos: base.map(r => ({
             data: r.data, tipo: r.tipo, descricao: r.descricao, categoria: r.categoria, subitem: r.subitem,
-            classificacao: r.classificacao, banco: r.banco, centro: r.centro, status: r.status, valor: r.valor,
+            classificacao: r.classificacao, banco: r.banco, centro_grupo: r.centro_grupo, centro: r.centro, status: r.status, valor: r.valor,
           })),
         }),
       })

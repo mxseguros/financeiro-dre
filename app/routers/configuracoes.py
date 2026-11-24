@@ -134,9 +134,9 @@ async def criar_centro(
 ):
     _exigir_admin(usuario)
     db = get_supabase_admin()
-    item = await financeiro_service.criar_centro_custo(payload, db)
+    item = await financeiro_service.criar_centro_custo(payload, usuario, db)
     await registrar_auditoria(
-        usuario, "criar_centro_custo", {"nome": payload.nome, "codigo": payload.codigo},
+        usuario, "criar_centro_custo", {"nome": payload.nome, "codigo": item.codigo},
         request.client.host if request.client else None,
         get_supabase_admin(),
     )
@@ -155,7 +155,9 @@ async def atualizar_centro(
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_admin(usuario)
-    return await financeiro_service.atualizar_centro_custo(centro_id, payload, get_supabase_admin())
+    return await financeiro_service.atualizar_centro_custo(
+        centro_id, payload, usuario, get_supabase_admin(),
+    )
 
 
 @router.delete(
@@ -169,7 +171,7 @@ async def excluir_centro(
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_admin(usuario)
-    await financeiro_service.excluir_centro_custo(centro_id, get_supabase_admin())
+    await financeiro_service.excluir_centro_custo(centro_id, usuario, get_supabase_admin())
 
 
 # ── CATEGORIAS DE LANÇAMENTO ──────────────────────────────────

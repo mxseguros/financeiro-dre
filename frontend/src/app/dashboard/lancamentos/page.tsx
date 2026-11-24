@@ -1,4 +1,5 @@
 'use client'
+import { OpcoesCentro, nomeCentro } from '@/lib/centros'
 import { FILTRO_BOTAO, FILTRO_CAMPO } from '@/components/ui/filtros'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
@@ -627,7 +628,7 @@ export default function LancamentosPage() {
               <select value={filtroCentro} onChange={e => setFiltroCentro(e.target.value)}
                 aria-label="Centro de custo" className={`${FILTRO_CAMPO} w-full ${filtroCentro ? '!border-navy font-medium !text-navy' : ''}`}>
                 <option value="">Todos os centros</option>
-                {centros.map(c => <option key={c.id} value={c.codigo}>{c.nome}</option>)}
+                <OpcoesCentro centros={centros} filtro />
               </select>
               <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
                 aria-label="Status" className={`${FILTRO_CAMPO} w-full ${filtroStatus ? '!border-navy font-medium !text-navy' : ''}`}>
@@ -678,7 +679,7 @@ export default function LancamentosPage() {
                     </div>
                     <div className="mt-2 flex items-center justify-between">
                       <p className="text-xs text-gray-400 capitalize">
-                        {d.centro_custo.replace('_', ' ')}
+                        {nomeCentro(d.centro_custo, centros)}
                         {d.banco_nome ? ` · ${d.banco_nome}` : ''}
                         {d.data_vencimento ? ` · Vence ${fmtData(d.data_vencimento)}` : ''}
                         {d.paga_em ? ` · Pagamento ${fmtData(d.paga_em)}` : ''}
@@ -746,7 +747,7 @@ export default function LancamentosPage() {
                             <span className="ml-1.5 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">recorrente</span>
                           )}
                         </td>
-                        <td className="px-4 py-2 capitalize text-gray-600">{d.centro_custo.replace('_', ' ')}</td>
+                        <td className="px-4 py-2 text-gray-600">{nomeCentro(d.centro_custo, centros)}</td>
                         <td className="px-4 py-2 text-gray-600">{d.banco_nome ?? '—'}</td>
                         <td className="px-4 py-2 text-right font-medium tabular-nums text-red-500">{fmtBRL(d.valor)}</td>
                         <td className="px-4 py-2 text-gray-400">{fmtData(d.data_vencimento)}</td>
@@ -812,7 +813,7 @@ export default function LancamentosPage() {
                     </div>
                     <div className="mt-2 flex items-center justify-between">
                       <p className="text-xs text-gray-400 capitalize">
-                        {r.centro_custo?.replace('_', ' ') ?? ''}
+                        {r.centro_custo ? nomeCentro(r.centro_custo, centros) : ''}
                         {r.banco_nome ? ` · ${r.banco_nome}` : ''}
                         {r.recebido_em ? ` · Pagamento ${fmtData(r.recebido_em)}` : ''}
                       </p>
@@ -863,7 +864,7 @@ export default function LancamentosPage() {
                           </span>
                         </td>
                         <td className="px-4 py-2 text-gray-700">{r.descricao}</td>
-                        <td className="px-4 py-2 capitalize text-gray-600">{r.centro_custo?.replace('_',' ') ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-600">{nomeCentro(r.centro_custo, centros)}</td>
                         <td className="px-4 py-2 text-gray-600">{r.banco_nome ?? '—'}</td>
                         <td className="px-4 py-2 text-right font-medium tabular-nums text-green-600">{fmtBRL(r.valor)}</td>
                         <td className="px-4 py-2 text-gray-400">{fmtData(r.recebido_em)}</td>

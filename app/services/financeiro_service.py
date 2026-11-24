@@ -65,35 +65,173 @@ async def excluir_banco(banco_id: UUID, db: Client) -> None:
 
 # ── Centros de Custo ──────────────────────────────────────────
 
+# Hierarquia (0044): grupo (parent_id NULL) › subgrupo. O lançamento guarda o
+# CODIGO do centro; grupo com subgrupos não recebe lançamento, e filtrar por
+# um grupo traz os lançamentos dos seus subgrupos (ver expandir_centro).
+
+_COLS_CENTRO = "id, nome, codigo, ativo"
+_COLS_CENTRO_HIER = _COLS_CENTRO + ", parent_id, numero, ordem"
+
+
+def _erro_centro(codigo: int, msg: str):
+    from fastapi import HTTPException
+    return HTTPException(status_code=codigo, detail=msg)
+
+
+def _ler_centros(db: Client, tenant_id: str | None = None) -> list[dict]:
+    """Centros visíveis (com o client admin, passe o tenant: ele ignora a RLS).
+    Sem a migration 0044, vêm sem as colunas novas."""
+    for cols in (_COLS_CENTRO_HIER, _COLS_CENTRO):
+        try:
+            q = db.table("centros_custo").select(cols)
+            if tenant_id:
+                q = q.eq("tenant_id", tenant_id)
+            return q.execute().data or []
+        except Exception:  # noqa: BLE001 — coluna ainda não criada
+            continue
+    return []
+
+
+def _slug(texto: str) -> str:
+    import re
+    s = _sem_acento(texto).lower()
+    return re.sub(r"[^a-z0-9]+", "_", s).strip("_")[:40] or "centro"
+
+
+def _chave_ordem(c: dict):
+    # "1.21" antes de "1.3": ordena número por partes numéricas; sem número, pelo nome.
+    num = (c.get("numero") or "").strip()
+    partes = []
+    for p in num.replace("-", ".").split("."):
+        partes.append((0, int(p), "") if p.isdigit() else (1, 0, p))
+    return (0 if num else 1, partes, c.get("ordem") or 0, (c.get("nome") or "").lower())
+
+
 async def listar_centros_custo(db: Client) -> list[CentroCustoItem]:
-    resp = db.table("centros_custo").select("id, nome, codigo, ativo").order("nome").execute()
-    return [CentroCustoItem(**r) for r in (resp.data or [])]
+    linhas = sorted(_ler_centros(db), key=_chave_ordem)
+    return [CentroCustoItem(**r) for r in linhas]
 
 
-async def criar_centro_custo(payload: CentroCustoCreate, db: Client) -> CentroCustoItem:
+def _validar_pai(
+    db: Client, parent_id: UUID | None, tenant_id: str | None, proprio_id: UUID | None = None,
+) -> None:
+    """Só dois níveis: o pai tem de existir, ser raiz e não ser o próprio centro."""
+    if not parent_id:
+        return
+    if proprio_id and str(parent_id) == str(proprio_id):
+        raise _erro_centro(422, "Um centro não pode ser grupo de si mesmo.")
+    centros = _ler_centros(db, tenant_id)
+    pai = next((c for c in centros if c["id"] == str(parent_id)), None)
+    if not pai:
+        raise _erro_centro(422, "Grupo não encontrado.")
+    if pai.get("parent_id"):
+        raise _erro_centro(422, "Só há dois níveis: escolha um grupo principal, não um subgrupo.")
+    if proprio_id and any(c.get("parent_id") == str(proprio_id) for c in centros):
+        raise _erro_centro(422, "Este centro já tem subgrupos — ele não pode virar subgrupo de outro.")
+
+
+async def criar_centro_custo(
+    payload: CentroCustoCreate, usuario: UsuarioAtual, db: Client
+) -> CentroCustoItem:
+    tenant = getattr(usuario, "tenant_id", None)
+    _validar_pai(db, payload.parent_id, tenant)
+    existentes = {c["codigo"] for c in _ler_centros(db, tenant)}
     # Trim evita espaços acidentais no código/nome, que quebram o filtro por centro
-    resp = db.table("centros_custo").insert({
-        "nome":   payload.nome.strip(),
-        "codigo": payload.codigo.strip(),
-    }).execute()
-    row = resp.data[0]
-    return CentroCustoItem(**row)
+    codigo = (payload.codigo or "").strip() or _slug(payload.nome)
+    if codigo in existentes:
+        if payload.codigo:
+            raise _erro_centro(409, f"Já existe um centro com o código '{codigo}'.")
+        base, n = codigo, 2
+        while f"{base}_{n}" in existentes:
+            n += 1
+        codigo = f"{base}_{n}"
+    dados: dict = {"nome": payload.nome.strip(), "codigo": codigo}
+    # Sem tenant_id a RLS esconde o centro de todos os usuários (bug até 0044).
+    if tenant:
+        dados["tenant_id"] = tenant
+    extras = {
+        "parent_id": str(payload.parent_id) if payload.parent_id else None,
+        "numero":    (payload.numero or "").strip() or None,
+        "ordem":     payload.ordem,
+    }
+    try:
+        resp = db.table("centros_custo").insert({**dados, **extras}).execute()
+    except Exception:  # noqa: BLE001 — sem a 0044, grava sem hierarquia
+        if payload.parent_id:
+            raise
+        resp = db.table("centros_custo").insert(dados).execute()
+    return CentroCustoItem(**resp.data[0])
 
 
 async def atualizar_centro_custo(
-    centro_id: UUID, payload: CentroCustoUpdate, db: Client
+    centro_id: UUID, payload: CentroCustoUpdate, usuario: UsuarioAtual, db: Client
 ) -> CentroCustoItem:
-    dados = payload.model_dump(exclude_none=True)
-    for campo in ("nome", "codigo"):
-        if isinstance(dados.get(campo), str):
-            dados[campo] = dados[campo].strip()
-    resp = db.table("centros_custo").update(dados).eq("id", str(centro_id)).execute()
-    row = resp.data[0]
-    return CentroCustoItem(**row)
+    dados = payload.model_dump(exclude_none=True, exclude={"sem_grupo", "parent_id"})
+    if isinstance(dados.get("nome"), str):
+        dados["nome"] = dados["nome"].strip()
+    if "numero" in dados:
+        dados["numero"] = dados["numero"].strip() or None
+    if payload.sem_grupo:
+        dados["parent_id"] = None
+    elif payload.parent_id:
+        _validar_pai(db, payload.parent_id, getattr(usuario, "tenant_id", None), centro_id)
+        dados["parent_id"] = str(payload.parent_id)
+    q = db.table("centros_custo").update(dados).eq("id", str(centro_id))
+    if getattr(usuario, "tenant_id", None):
+        q = q.eq("tenant_id", usuario.tenant_id)
+    resp = q.execute()
+    if not resp.data:
+        raise _erro_centro(404, "Centro de custo não encontrado.")
+    return CentroCustoItem(**resp.data[0])
 
 
-async def excluir_centro_custo(centro_id: UUID, db: Client) -> None:
-    db.table("centros_custo").delete().eq("id", str(centro_id)).execute()
+async def excluir_centro_custo(centro_id: UUID, usuario: UsuarioAtual, db: Client) -> None:
+    tenant = getattr(usuario, "tenant_id", None)
+    centros = _ler_centros(db, tenant)
+    alvo = next((c for c in centros if c["id"] == str(centro_id)), None)
+    if not alvo:
+        raise _erro_centro(404, "Centro de custo não encontrado.")
+    if any(c.get("parent_id") == alvo["id"] for c in centros):
+        raise _erro_centro(409, "Este grupo tem subgrupos — exclua ou mova os subgrupos antes.")
+    for tabela in ("despesas", "receitas_outras"):
+        q = db.table(tabela).select("id").eq("centro_custo", alvo["codigo"]).limit(1)
+        if tenant:
+            q = q.eq("tenant_id", tenant)
+        if q.execute().data:
+            raise _erro_centro(
+                409, "Há lançamentos neste centro — desative-o em vez de excluir, para manter o histórico.",
+            )
+    q = db.table("centros_custo").delete().eq("id", alvo["id"])
+    if tenant:
+        q = q.eq("tenant_id", tenant)
+    q.execute()
+
+
+def expandir_centro(db: Client, codigo: str) -> list[str]:
+    """Códigos que um filtro por centro deve trazer: o próprio e, se for grupo,
+    os seus subgrupos (lançamentos antigos podem estar no próprio grupo)."""
+    codigo = (codigo or "").strip()
+    centros = _ler_centros(db)
+    alvo = next((c for c in centros if c.get("codigo") == codigo), None)
+    if not alvo or not alvo.get("id"):
+        return [codigo]
+    return [codigo] + [c["codigo"] for c in centros if c.get("parent_id") == alvo["id"]]
+
+
+def validar_centro_lancamento(
+    db: Client, codigo: str | None, atual: str | None = None, tenant_id: str | None = None,
+) -> None:
+    """Lançamento só vai para centro sem subgrupos. Manter o centro que o
+    lançamento já tinha é sempre aceito (dado antigo em centro que virou grupo)."""
+    codigo = (codigo or "").strip()
+    if not codigo or codigo == (atual or "").strip():
+        return
+    centros = _ler_centros(db, tenant_id)
+    alvo = next((c for c in centros if c.get("codigo") == codigo), None)
+    if alvo and alvo.get("id") and any(c.get("parent_id") == alvo["id"] for c in centros):
+        raise _erro_centro(
+            422, f"'{alvo['nome']}' é um grupo — escolha um dos subgrupos dele como centro de custo.",
+        )
 
 
 # ── Categorias de Lançamento ──────────────────────────────────
@@ -329,7 +467,8 @@ async def buscar_despesas(
         if usuario.role in ("comercial", "contador"):
             q = q.eq("criado_por", usuario.user_id)
         if centro_custo:
-            q = q.eq("centro_custo", centro_custo.strip())
+            # Grupo de centros traz também os subgrupos (0044)
+            q = q.in_("centro_custo", expandir_centro(db, centro_custo))
         if banco_id:
             q = q.eq("banco_id", banco_id)
         if status_filter:
@@ -497,6 +636,7 @@ async def criar_despesa(
 ) -> DespesaItem:
     # Bloqueia escrita em período fechado (Task 3.1)
     _verificar_periodo_aberto(payload.competencia, db)
+    validar_centro_lancamento(db, payload.centro_custo)
 
     # Se tipo_lancamento_id informado, busca categoria para backward compat com DRE
     categoria = payload.categoria
@@ -917,6 +1057,8 @@ async def atualizar_despesa(
     if "paga_em" in set_fields:
         campos["paga_em"] = payload.paga_em.isoformat() if payload.paga_em else None
     if "centro_custo" in set_fields and payload.centro_custo:
+        atual = db.table("despesas").select("centro_custo").eq("id", str(despesa_id)).execute().data
+        validar_centro_lancamento(db, payload.centro_custo, atual[0]["centro_custo"] if atual else None)
         campos["centro_custo"] = payload.centro_custo
     if "tipo_lancamento_id" in set_fields:
         campos["tipo_lancamento_id"] = str(payload.tipo_lancamento_id) if payload.tipo_lancamento_id else None
@@ -1175,7 +1317,7 @@ async def buscar_receitas(
     if not ver_tudo:
         q_rec = q_rec.eq("criado_por", usuario.user_id)
     if centro_custo:
-        q_rec = q_rec.eq("centro_custo", centro_custo.strip())
+        q_rec = q_rec.in_("centro_custo", expandir_centro(db, centro_custo))
     if banco_id:
         q_rec = q_rec.eq("banco_id", banco_id)
     if status_filter:
@@ -1270,6 +1412,7 @@ async def criar_receita_outra(
     db: Client,
 ) -> ReceitaItem:
     _verificar_periodo_aberto(payload.competencia, db)
+    validar_centro_lancamento(db, payload.centro_custo)
 
     db_admin = get_supabase_admin()
 
@@ -1465,6 +1608,8 @@ async def atualizar_receita_outra(
     if "recebido_em" in set_fields:
         campos["recebido_em"] = payload.recebido_em.isoformat() if payload.recebido_em else None
     if "centro_custo" in set_fields and payload.centro_custo:
+        atual = db_admin.table("receitas_outras").select("centro_custo").eq("id", str(receita_id)).execute().data
+        validar_centro_lancamento(db, payload.centro_custo, atual[0]["centro_custo"] if atual else None)
         campos["centro_custo"] = payload.centro_custo
     if "observacao" in set_fields:
         campos["observacao"] = payload.observacao

@@ -119,20 +119,33 @@ class BancoUpdate(RespostaBase):
 # ── CONFIGURAÇÕES: CENTROS DE CUSTO ───────────────────────────
 
 class CentroCustoItem(RespostaBase):
-    id:     UUID
-    nome:   str
-    codigo: str
-    ativo:  bool
+    id:        UUID
+    nome:      str
+    codigo:    str
+    ativo:     bool
+    # Hierarquia (0044): grupo tem parent_id None; subgrupo aponta para o grupo.
+    parent_id: UUID | None = None
+    numero:    str | None = None
+    ordem:     int = 0
 
 
 class CentroCustoCreate(RespostaBase):
-    nome:   str
-    codigo: str
+    nome:      str
+    # Gerado a partir do nome quando não informado (é a chave gravada no lançamento).
+    codigo:    str | None = None
+    parent_id: UUID | None = None
+    numero:    str | None = None
+    ordem:     int = 0
 
 
 class CentroCustoUpdate(RespostaBase):
-    nome:  str | None = None
-    ativo: bool | None = None
+    nome:      str | None = None
+    ativo:     bool | None = None
+    numero:    str | None = None
+    ordem:     int | None = None
+    # Mover para outro grupo; para virar grupo raiz, mande sem_grupo=True.
+    parent_id: UUID | None = None
+    sem_grupo: bool = False
 
 
 # ── CONFIGURAÇÕES: CATEGORIAS DE LANÇAMENTO ───────────────────

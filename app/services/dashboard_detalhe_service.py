@@ -11,6 +11,8 @@ recorte, por isso a resposta avisa com `parcial` quando a lista pode ser menor.
 """
 from __future__ import annotations
 
+import asyncio
+
 from datetime import date, timedelta
 
 from fastapi import HTTPException
@@ -144,16 +146,19 @@ class _Leitor:
                        if c["nome"].strip().lower() == alvo or c["codigo"].strip().lower() == alvo), None)
         if codigo is None:
             raise _erro(f'Centro de custo "{nome}" não está cadastrado.')
+        # Grupo traz os subgrupos, como no filtro de GET /lancamentos/* (0044).
+        from app.services.financeiro_service import expandir_centro
+        codigos = await asyncio.to_thread(expandir_centro, self.db, codigo)
         despesas: list[dict] = []
         receitas: list[dict] = []
         if self.ler_despesas and lado != "receitas":
             despesas = await ds._todas(
-                self._no_intervalo("despesas", self.inicio, self.fim).eq("centro_custo", codigo)
+                self._no_intervalo("despesas", self.inicio, self.fim).in_("centro_custo", codigos)
                 .neq("status", "excluida").order("id"))
         if lado != "despesas":
             so_dre = await ids_somente_dre(self.db)
             linhas = await ds._todas(
-                self._no_intervalo("receitas_outras", self.inicio, self.fim).eq("centro_custo", codigo).order("id"))
+                self._no_intervalo("receitas_outras", self.inicio, self.fim).in_("centro_custo", codigos).order("id"))
             receitas = [r for r in linhas if r.get("tipo_lancamento_id") not in so_dre]
         return despesas, receitas
 
@@ -213,10 +218,10 @@ async def detalhe(
     despesas, receitas = await _selecionar(leitor, bloco, banco, lado, subitem, classificacao, centro)
 
     classif = await rs._mapa(db, "classificacoes", "codigo", "nome")
-    centros = await rs._mapa(db, "centros_custo", "codigo", "nome")
+    centros, grupos = await rs.mapas_centro(db)
     usuarios = await rs._mapa(db, "usuarios", "id", "nome")
     so_dre = await ids_somente_dre(db)
-    nomes = {"classificacao": classif, "centro": centros, "usuario": usuarios}
+    nomes = {"classificacao": classif, "centro": centros, "centro_grupo": grupos, "usuario": usuarios}
 
     total_d, total_r = ds._soma(despesas), ds._soma(receitas)
     so_despesas = bloco == "classificacao" or lado == "despesas"

@@ -1,3 +1,4 @@
+import { OpcoesCentro } from '@/lib/centros'
 import { useState } from 'react'
 import { api } from '@/lib/api'
 import { mesAtual } from '@/lib/utils'
@@ -221,9 +222,7 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
             </Campo>
             <Campo label="Centro de custo">
               <select value={form.centro_custo} onChange={e => set('centro_custo', e.target.value)} className={selectCls}>
-                {centros.filter(c => c.ativo || c.codigo === form.centro_custo).map(c => (
-                  <option key={c.id} value={c.codigo}>{c.nome}</option>
-                ))}
+                <OpcoesCentro centros={centros} atual={form.centro_custo} />
               </select>
             </Campo>
           </div>

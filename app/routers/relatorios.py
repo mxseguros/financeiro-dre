@@ -175,6 +175,7 @@ class LancamentoExportacao(BaseModel):
     subitem:       str | None = Field(default=None, max_length=200)
     classificacao: str | None = Field(default=None, max_length=200)
     banco:         str | None = Field(default=None, max_length=200)
+    centro_grupo:  str | None = Field(default=None, max_length=200)
     centro:        str | None = Field(default=None, max_length=200)
     status:        str | None = Field(default=None, max_length=20)
     valor:         float | None = None

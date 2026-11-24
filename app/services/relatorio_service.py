@@ -98,6 +98,29 @@ async def _mapa(db: Client, tabela: str, chave: str, valor: str) -> dict[str, st
         return {}
 
 
+async def mapas_centro(db: Client) -> tuple[dict[str, str], dict[str, str]]:
+    """(codigo → "1.21 - Saúde e Vida", codigo → grupo). O grupo de um subgrupo é
+    o centro pai; o de um centro raiz é ele mesmo (0044)."""
+    linhas: list[dict] = []
+    for cols in ("id, codigo, nome, numero, parent_id", "id, codigo, nome"):
+        try:
+            linhas = (await _exec(db.table("centros_custo").select(cols))).data or []
+            break
+        except Exception:  # noqa: BLE001 — sem a 0044, sem hierarquia
+            continue
+
+    def rotulo(c: dict) -> str | None:
+        num = (c.get("numero") or "").strip()
+        nome = _nome(c.get("nome"))
+        return f"{num} - {nome}" if num and nome else nome
+
+    linhas = [c for c in linhas if c.get("codigo") is not None]
+    por_id = {c.get("id"): c for c in linhas}
+    rotulos = {str(c["codigo"]): rotulo(c) for c in linhas}
+    grupos = {str(c["codigo"]): rotulo(por_id.get(c.get("parent_id")) or c) for c in linhas}
+    return rotulos, grupos
+
+
 def _nome(v: str | None) -> str | None:
     """Cadastros têm nomes com espaço sobrando ("Empréstimo "), que viravam
     grupos separados na tabela dinâmica."""
@@ -128,6 +151,7 @@ def _linha(row: dict, tipo: str, nomes: dict[str, dict[str, str]], so_dre: set[s
         "classificacao": nomes["classificacao"].get(custo, custo) if custo else None,
         "banco": _nome((row.get("bancos") or {}).get("nome")),
         "centro": nomes["centro"].get(centro, centro) if centro else None,
+        "centro_grupo": nomes.get("centro_grupo", {}).get(centro, centro) if centro else None,
         "status": _STATUS.get(row.get("status") or "", row.get("status")),
         "descricao": _nome(row.get("descricao")),
         "parcela": parcela,
@@ -158,10 +182,10 @@ async def dados(
     desp = await _ler_lancamentos("despesas", inicio, fim, base, usuario, db) if ler_despesas else []
     rec = await _ler_lancamentos("receitas_outras", inicio, fim, base, usuario, db) if ler_receitas else []
     classif = await _mapa(db, "classificacoes", "codigo", "nome")
-    centros = await _mapa(db, "centros_custo", "codigo", "nome")
+    centros, grupos = await mapas_centro(db)
     usuarios = await _mapa(db, "usuarios", "id", "nome")
     so_dre = await ids_somente_dre(db)
-    nomes = {"classificacao": classif, "centro": centros, "usuario": usuarios}
+    nomes = {"classificacao": classif, "centro": centros, "centro_grupo": grupos, "usuario": usuarios}
     itens = [_linha(r, "Despesa", nomes, so_dre) for r in desp]
     itens += [_linha(r, "Receita", nomes, so_dre) for r in rec]
     return {
@@ -297,7 +321,7 @@ _FMT = {"brl": 'R$ #,##0.00;[Red]-R$ #,##0.00', "pct": '0.0"%"', "int": "#,##0"}
 COLUNAS_LANCAMENTOS = [
     ("Data", "data"), ("Tipo", "tipo"), ("Descrição", "descricao"), ("Categoria", "categoria"),
     ("Subitem", "subitem"), ("Classificação", "classificacao"), ("Banco", "banco"),
-    ("Centro de custo", "centro"), ("Status", "status"), ("Valor", "valor"),
+    ("Grupo de centro", "centro_grupo"), ("Centro de custo", "centro"), ("Status", "status"), ("Valor", "valor"),
 ]
 
 

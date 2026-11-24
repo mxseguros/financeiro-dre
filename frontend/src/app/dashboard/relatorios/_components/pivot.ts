@@ -18,6 +18,7 @@ export interface Lancamento {
   subitem: string | null
   classificacao: string | null
   banco: string | null
+  centro_grupo?: string | null
   centro: string | null
   status: string | null
   descricao: string | null
@@ -30,7 +31,7 @@ export interface Lancamento {
 export type CampoId =
   | 'mes' | 'competencia' | 'vencimento'
   | 'categoria' | 'subitem' | 'classificacao'
-  | 'tipo' | 'banco' | 'centro' | 'status' | 'pago'
+  | 'tipo' | 'banco' | 'centro_grupo' | 'centro' | 'status' | 'pago'
   | 'descricao' | 'parcela' | 'criado_por'
 export type MedidaId = 'valor' | 'qtd' | 'saldo'
 export type Agg = 'soma' | 'media' | 'min' | 'max' | 'pct' | 'pct_linha' | 'pct_coluna' | 'contagem'
@@ -76,6 +77,7 @@ export const CAMPOS: CampoDef[] = [
   { id: 'classificacao', nome: 'Classificação',      grupo: 'Classificação' },
   { id: 'tipo',          nome: 'Tipo (Despesa/Receita)', grupo: 'Origem' },
   { id: 'banco',         nome: 'Banco',              grupo: 'Origem' },
+  { id: 'centro_grupo',  nome: 'Grupo de centro',    grupo: 'Origem' },
   { id: 'centro',        nome: 'Centro de custo',    grupo: 'Origem' },
   { id: 'status',        nome: 'Status',             grupo: 'Origem' },
   { id: 'pago',          nome: 'Pago / Em aberto',   grupo: 'Origem' },

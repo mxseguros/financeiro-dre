@@ -109,8 +109,8 @@ def test_excel_com_tabela_e_aba_de_lancamentos():
     assert ws["A6"].value == "Salários" and ws["A6"].alignment.indent == 1
     assert ws["B5"].font.bold and ws["C5"].number_format == '0.0"%"'
     wl = wb["Lançamentos"]
-    assert wl["A1"].value == "Data" and wl["J1"].value == "Valor"
-    assert wl["A2"].value.date() == date(2026, 10, 9) and wl["J2"].value == 10.5
+    assert wl["A1"].value == "Data" and wl["K1"].value == "Valor"
+    assert wl["A2"].value.date() == date(2026, 10, 9) and wl["K2"].value == 10.5
 
 
 def test_excel_sem_lancamentos_tem_uma_aba():

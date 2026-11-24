@@ -1,4 +1,5 @@
 'use client'
+import { OpcoesCentro } from '@/lib/centros'
 import { useMemo, useRef, useState } from 'react'
 import { api, API_BASE } from '@/lib/api'
 import { fmtBRL, fmtData } from '@/lib/utils'
@@ -197,7 +198,7 @@ export function ModalImportarExtrato({ token, bancos, centros, tipos, categorias
               </Campo>
               <Campo label="Centro de custo">
                 <select value={centro} onChange={e => setCentro(e.target.value)} className={selectCls}>
-                  {centros.filter(c => c.ativo).map(c => <option key={c.id} value={c.codigo}>{c.nome}</option>)}
+                  <OpcoesCentro centros={centros} atual={centro} />
                 </select>
               </Campo>
             </div>

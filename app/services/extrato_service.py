@@ -20,7 +20,9 @@ from supabase import Client
 
 from app.auth import UsuarioAtual
 from app.logging_config import get_logger
-from app.services.financeiro_service import aprovacao_por_pagamento, campos_aprovacao
+from app.services.financeiro_service import (
+    aprovacao_por_pagamento, campos_aprovacao, validar_centro_lancamento,
+)
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from etl.extrato_parser import parsear  # noqa: E402
@@ -130,6 +132,7 @@ async def confirmar(payload: ConfirmarExtratoRequest, usuario: UsuarioAtual, db_
     # (que ignora a RLS na escrita), o insert passa e o problema só aparece na
     # primeira tentativa de edição.
     tenant_id = getattr(usuario, "tenant_id", None)
+    validar_centro_lancamento(db_admin, payload.centro_custo, tenant_id=tenant_id)
 
     for it in payload.itens:
         try:

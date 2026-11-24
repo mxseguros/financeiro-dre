@@ -15,7 +15,7 @@ export function classificacoesDe(lista: Classificacao[] | undefined, natureza: '
   return (lista?.length ? lista : CLASSIFICACOES_PADRAO)
     .filter(c => (c.natureza === natureza || c.natureza === 'ambas') && (c.ativo || c.codigo === atual))
 }
-export interface CentroCusto { id: string; nome: string; codigo: string; ativo: boolean }
+export type { CentroCusto } from '@/lib/centros'
 
 export interface Despesa {
   id: string; competencia: string; tipo_lancamento_id: string | null; banco_id: string | null
