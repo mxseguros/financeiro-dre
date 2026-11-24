@@ -778,6 +778,21 @@ def _somar_meses_preservando_dia(d: date, n: int) -> date:
     return date(ano, mes, min(d.day, ultimo_dia))
 
 
+def _inserir_serie(db: Client, tabela: str, linhas: list[dict]):
+    """INSERT de uma série recorrente; sem a migration 0048, grava sem as
+    colunas novas (grupo_recorrencia, e recorrente em receitas)."""
+    try:
+        return db.table(tabela).insert(linhas).execute()
+    except Exception as e:  # noqa: BLE001
+        if "grupo_recorrencia" not in str(e) and "recorrente" not in str(e) and "column" not in str(e).lower():
+            raise
+        for linha in linhas:
+            linha.pop("grupo_recorrencia", None)
+            if tabela == "receitas_outras":
+                linha.pop("recorrente", None)
+        return db.table(tabela).insert(linhas).execute()
+
+
 async def criar_despesa(
     payload: DespesaCreate,
     usuario: UsuarioAtual,
@@ -888,8 +903,10 @@ async def criar_despesa(
                 detail="Recorrência limitada a 60 meses.",
             )
         ocorrencias = []
+        grupo_rec = str(uuid4())   # marca a série (0048): a edição acha as irmãs por ele
         for i in range(n_meses):
             o = dict(dados)
+            o["grupo_recorrencia"] = grupo_rec
             o["competencia"]     = _somar_meses(payload.competencia, i).isoformat()
             o["data_vencimento"] = _somar_meses_preservando_dia(payload.data_vencimento, i).isoformat()
             # Mesma regra do parcelamento: a data informada vale para a 1ª
@@ -898,7 +915,7 @@ async def criar_despesa(
                 o.pop("paga_em", None)
             ocorrencias.append(o)
         _aprovar_pagas(ocorrencias, usuario.user_id)
-        resp = db.table("despesas").insert(ocorrencias).execute()
+        resp = _inserir_serie(db, "despesas", ocorrencias)
     else:
         _aprovar_pagas([dados], usuario.user_id)
         resp = db.table("despesas").insert(dados).execute()
@@ -1311,6 +1328,13 @@ async def atualizar_despesa(
 
     if plano:
         _executar_reparcelamento(plano, row, db)
+    if "recorrente" in set_fields and payload.recorrente is not None and usuario is not None:
+        from app.services import recorrencia_service
+        recorrencia_service.aplicar(
+            "despesas", str(alvo_id), payload.recorrente, payload.repetir_ate, usuario, db,
+            preservar_aprovadas=preservar_aprovadas,
+        )
+        row["recorrente"] = payload.recorrente
     return DespesaItem(
         id=row["id"],
         tipo_lancamento_id=row.get("tipo_lancamento_id"),
@@ -1610,8 +1634,11 @@ async def criar_receita_outra(
     # Todos gravam ou nenhum grava — sem risco de criação parcial.
     if len(meses_recorrencia) > 1:
         registros = []
+        grupo_rec = str(uuid4())   # marca a série (0048): a edição acha as irmãs por ele
         for i, mes in enumerate(meses_recorrencia):
             r = dict(dados)
+            r["recorrente"] = True
+            r["grupo_recorrencia"] = grupo_rec
             r["competencia"] = mes.isoformat()
             if payload.data_vencimento:
                 r["data_vencimento"] = _somar_meses_preservando_dia(payload.data_vencimento, i).isoformat()
@@ -1620,7 +1647,7 @@ async def criar_receita_outra(
             if i > 0:
                 r.pop("recebido_em", None)
             registros.append(r)
-        resp = db_admin.table("receitas_outras").insert(registros).execute()
+        resp = _inserir_serie(db_admin, "receitas_outras", registros)
     else:
         resp = db_admin.table("receitas_outras").insert(dados).execute()
     row = resp.data[0]
@@ -1792,6 +1819,11 @@ async def atualizar_receita_outra(
     resp = db_admin.table("receitas_outras").update(campos).eq("id", str(receita_id)).execute()
     if not resp.data:
         raise HTTPException(status_code=404, detail="Receita não encontrada.")
+    if "recorrente" in set_fields and payload.recorrente is not None and usuario is not None:
+        from app.services import recorrencia_service
+        recorrencia_service.aplicar(
+            "receitas_outras", str(receita_id), payload.recorrente, payload.repetir_ate, usuario, db_admin,
+        )
 
     full = (
         db_admin.table("receitas_outras")

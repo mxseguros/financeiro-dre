@@ -24,6 +24,17 @@ class _Q:
         self.filtros.append(lambda r: (r.get(col) or "") <= val)
         return self
 
+    def gt(self, col, val):
+        self.filtros.append(lambda r: (r.get(col) or "") > val)
+        return self
+
+    def lt(self, col, val):
+        self.filtros.append(lambda r: (r.get(col) or "") < val)
+        return self
+
+    def single(self):
+        return self.maybe_single()
+
     def ilike(self, col, padrao):
         termo = padrao.strip("%").lower()
         self.filtros.append(lambda r: termo in (r.get(col) or "").lower())

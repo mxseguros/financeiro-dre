@@ -466,6 +466,16 @@ class DespesaUpdate(RespostaBase):
     # Existe para o caso de uma despesa importada do extrato que, na verdade,
     # era a primeira cobrança de um financiamento.
     num_parcelas:       int | None = Field(default=None, ge=1, le=999)
+    # Recorrência na edição (24/11/2026): liga/estende/encurta/desliga a série
+    # a partir deste lançamento. Só vale quando `recorrente` vem no payload.
+    recorrente:         bool | None = None
+    repetir_ate:        date | None = None
+
+    @model_validator(mode="after")
+    def recorrencia_e_parcelas_sao_exclusivas(self) -> "DespesaUpdate":
+        if self.recorrente and self.num_parcelas and self.num_parcelas > 1:
+            raise ValueError("Despesa parcelada não pode ser recorrente.")
+        return self
 
     @field_validator("centro_custo")
     @classmethod
@@ -572,6 +582,9 @@ class ReceitaOutraUpdate(RespostaBase):
     data_vencimento:    date | None = None
     recebido_em:        date | None = None
     observacao:         str | None = Field(default=None, max_length=1000)
+    # Recorrência na edição (24/11/2026) — ver DespesaUpdate.
+    recorrente:         bool | None = None
+    repetir_ate:        date | None = None
 
     @field_validator("centro_custo")
     @classmethod

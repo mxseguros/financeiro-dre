@@ -7,6 +7,7 @@ import { InputMoeda } from '@/components/ui/InputMoeda'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Select } from '@/components/ui/Field'
+import { AvisoRecorrencia, type SerieRecorrencia } from './AvisoRecorrencia'
 import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type Classificacao, classificacoesDe } from './shared'
 
 // Limites espelhados de DespesaCreate/DespesaUpdate (app/models/schemas.py).
@@ -174,6 +175,21 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   // parcela, então o backend só aceita o pedido vindo dela (422 caso contrário).
   const naoEhPrimeiraParcela = !!editando && (despesa?.parcela_atual ?? 1) > 1
 
+  // Recorrência na edição (24/11/2026): a série atual vem da API e o
+  // "Repetir até" abre preenchido com o último mês dela.
+  const [serie, setSerie] = useState<SerieRecorrencia | null>(null)
+  useEffect(() => {
+    if (!despesa?.id || (despesa.parcela_total ?? 1) > 1) return
+    api.get<SerieRecorrencia>(`/lancamentos/despesas/${despesa.id}/recorrencia`, token)
+      .then(s => {
+        setSerie(s)
+        setForm(f => ({ ...f, recorrente: s.recorrente, repetir_ate: s.ate ? s.ate.slice(0, 7) : '' }))
+      })
+      .catch(() => {})
+  }, [despesa?.id, despesa?.parcela_total, token])
+  const mudouRecorrencia = !!serie && (form.recorrente !== serie.recorrente
+    || (form.recorrente && form.repetir_ate !== (serie.ate ?? '').slice(0, 7)))
+
   const nMesesRecorrencia = (() => {
     if (!form.recorrente || !form.repetir_ate || form.repetir_ate < form.competencia) return 0
     const [sy, sm] = form.competencia.split('-').map(Number)
@@ -200,7 +216,8 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     // Só na criação: o campo "Repetir até" não é desenhado na edição, e exigi-lo
     // ali travava o Salvar de toda despesa recorrente em silêncio (erro num
     // campo invisível).
-    if (!editando && form.recorrente && !form.repetir_ate) e.repetir_ate = 'Informe até quando repetir.'
+    if (form.recorrente && !form.repetir_ate && (!editando || (serie && !parcelado))) e.repetir_ate = 'Informe até quando repetir.'
+    else if (editando && form.recorrente && form.repetir_ate && form.repetir_ate < form.competencia) e.repetir_ate = 'Não pode ser antes da competência.'
     setErros(e)
     return Object.keys(e).length === 0
   }
@@ -239,6 +256,12 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           num_parcelas:       numParcelas,
         }
         payload.paga_em = form.paga_em || null
+        // Só manda a recorrência quando ela mudou: o backend cria, remove ou
+        // desmarca as ocorrências seguintes a partir desta.
+        if (mudouRecorrencia && !parcelado) {
+          payload.recorrente = form.recorrente
+          if (form.recorrente) payload.repetir_ate = `${form.repetir_ate}-01`
+        }
         await api.patch(`/lancamentos/despesas/${despesa!.id}`, token, payload)
       } else if (parcelado) {
         // Backend cria as N parcelas atomicamente em uma única chamada
@@ -479,8 +502,9 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           </p>
         )}
 
-        {/* Recorrente — só aparece quando não é parcelado e não está editando */}
-        {!parcelado && !editando && (
+        {/* Recorrente — não combina com parcelamento. Na edição (24/11/2026),
+            liga, estende, encurta ou desliga a série a partir desta despesa. */}
+        {!parcelado && (!editando || serie) && (
           <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-2.5">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
@@ -499,9 +523,10 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
                 )}
               </Field>
             )}
-            {nMesesRecorrencia > 1 && (
+            {!editando && nMesesRecorrencia > 1 && (
               <p className="text-xs text-blue-600">Serão criados <strong>{nMesesRecorrencia} registros</strong> mensais.</p>
             )}
+            {editando && serie && <AvisoRecorrencia serie={serie} recorrente={form.recorrente} ate={form.repetir_ate} competencia={form.competencia} />}
           </div>
         )}
 

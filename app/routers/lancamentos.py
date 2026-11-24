@@ -219,6 +219,22 @@ async def editar_despesa(
     return item
 
 
+@router.get(
+    "/despesas/{despesa_id}/recorrencia",
+    summary="Série de recorrência da despesa (para a edição)",
+)
+async def recorrencia_despesa(
+    request: Request,
+    despesa_id: UUID,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_leitura(usuario)
+    _bloquear_confidencial(despesa_id, usuario)
+    from app.services import recorrencia_service
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    return recorrencia_service.resumo("despesas", str(despesa_id), get_supabase_usuario(token))
+
+
 @router.delete(
     "/despesas/{despesa_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -449,6 +465,21 @@ async def editar_receita(
         get_supabase_admin(),
     )
     return item
+
+
+@router.get(
+    "/receitas/{receita_id}/recorrencia",
+    summary="Série de recorrência da receita (para a edição)",
+)
+async def recorrencia_receita(
+    receita_id: UUID,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_leitura(usuario)
+    from app.services import recorrencia_service
+    return recorrencia_service.resumo(
+        "receitas_outras", str(receita_id), get_supabase_admin(), getattr(usuario, "tenant_id", None),
+    )
 
 
 @router.delete(

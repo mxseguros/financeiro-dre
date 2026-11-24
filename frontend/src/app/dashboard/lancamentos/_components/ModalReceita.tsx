@@ -1,6 +1,6 @@
 import { OpcoesCentro } from '@/lib/centros'
 import { CampoAnexos, enviarAnexos, type AnexoPendente } from '@/components/anexos/CampoAnexos'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { mesAtual } from '@/lib/utils'
 import { InputMoeda } from '@/components/ui/InputMoeda'
@@ -12,6 +12,7 @@ import {
   type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Receita, type ReceitasResp,
   type Classificacao, classificacoesDe,
 } from './shared'
+import { AvisoRecorrencia, type SerieRecorrencia } from './AvisoRecorrencia'
 
 interface ModalReceitaProps {
   token: string
@@ -53,6 +54,20 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
   // Salvou, mas algum anexo falhou: não deixa salvar de novo (duplicaria a receita).
   const [falhaAnexos, setFalhaAnexos] = useState<string | null>(null)
 
+  // Recorrência na edição (24/11/2026): a série atual vem da API.
+  const [serie, setSerie] = useState<SerieRecorrencia | null>(null)
+  useEffect(() => {
+    if (!receita?.id) return
+    api.get<SerieRecorrencia>(`/lancamentos/receitas/${receita.id}/recorrencia`, token)
+      .then(s => {
+        setSerie(s)
+        setForm(f => ({ ...f, recorrente: s.recorrente, data_final: s.ate ? s.ate.slice(0, 7) : '' }))
+      })
+      .catch(() => {})
+  }, [receita?.id, token])
+  const mudouRecorrencia = !!serie && (form.recorrente !== serie.recorrente
+    || (form.recorrente && form.data_final !== (serie.ate ?? '').slice(0, 7)))
+
   const limparErro = (k: string) => setErros(e => (k in e ? { ...e, [k]: '' } : e))
   const set = (k: string, v: string | boolean) => {
     setForm(f => ({ ...f, [k]: v }))
@@ -78,6 +93,7 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
     if (!((parseFloat(form.valor) || 0) > 0)) e.valor = 'Informe um valor maior que zero.'
     if (!form.competencia) e.competencia = 'Informe a competência.'
     if (form.recorrente && !form.data_final) e.data_final = 'Informe até quando repetir.'
+    else if (form.recorrente && form.data_final < form.competencia) e.data_final = 'Não pode ser antes da competência.'
     setErros(e)
     return Object.keys(e).length === 0
   }
@@ -105,7 +121,14 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
     try {
       let criadaId: string | undefined
       if (editando) {
-        await api.patch(`/lancamentos/receitas/${receita!.id}`, token, { ...basePayload, competencia: `${form.competencia.split('-')[0]}-${form.competencia.split('-')[1]}-01` })
+        await api.patch(`/lancamentos/receitas/${receita!.id}`, token, {
+          ...basePayload,
+          competencia: compMes,
+          // Só manda a recorrência quando ela mudou (o backend cria/remove as seguintes).
+          ...(mudouRecorrencia
+            ? { recorrente: form.recorrente, ...(form.recorrente ? { repetir_ate: `${form.data_final}-01` } : {}) }
+            : {}),
+        })
       } else if (form.recorrente && form.data_final && form.data_final >= form.competencia) {
         // Backend cria um registro por mês atomicamente em uma única chamada
         const [ey, em] = form.data_final.split('-')
@@ -241,8 +264,8 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
             </p>
           )}
 
-          {/* Receita Recorrente */}
-          {!editando && (
+          {/* Receita Recorrente — na edição (24/11/2026), a partir desta receita. */}
+          {(!editando || serie) && (
             <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-2.5">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
@@ -261,7 +284,8 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
                   )}
                 </Field>
               )}
-              {form.recorrente && form.data_final && form.data_final >= form.competencia && (() => {
+              {editando && serie && <AvisoRecorrencia serie={serie} recorrente={form.recorrente} ate={form.data_final} competencia={form.competencia} />}
+              {!editando && form.recorrente && form.data_final && form.data_final >= form.competencia && (() => {
                 const [sy, sm] = form.competencia.split('-').map(Number)
                 const [ey, em] = form.data_final.split('-').map(Number)
                 const n = (ey - sy) * 12 + (em - sm) + 1
