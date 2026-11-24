@@ -3,7 +3,7 @@ import { api } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import { inputCls, BtnExcluir } from './shared'
-import { arvoreCentros, proximoNumeroSub, rotuloCentro, type CentroCusto } from '@/lib/centros'
+import { arvoreCentros, numeroSub, proximoNumeroSub, rotuloCentro, type CentroCusto } from '@/lib/centros'
 
 // Centros em grupos e subgrupos (24/11/2026): "1.00 - Venda Nova" › "1.21 - Saúde e Vida".
 // Dois níveis. Grupo com subgrupos não recebe lançamento; filtrar pelo grupo
@@ -34,14 +34,25 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
 
   useEffect(() => { carregar() }, [carregar])
 
-  // Numeração automática do subgrupo (24/11/2026): ao escolher o grupo, o Nº
-  // vem preenchido (1.10 → 1.11, 1.12…). Dá para trocar; editado à mão, fica.
-  const [numeroManual, setNumeroManual] = useState(false)
+  // Numeração automática do subgrupo (24/11/2026): o subgrupo recebe o número
+  // pelo grupo (1.10 → 1.11, 1.12…; 1 → 1.1 … 1.9, 2.0…) e o backend renumera
+  // ao criar, excluir ou mover. Só o número do grupo é digitado.
   const grupoDoForm = items.find(c => c.id === form.parent_id)
   const sugestao = proximoNumeroSub(grupoDoForm, items)
-  useEffect(() => {
-    if (!numeroManual) setForm(f => ({ ...f, numero: f.parent_id ? sugestao : '' }))
-  }, [sugestao, numeroManual, form.parent_id])
+  const numerado = (grupoId: string | null | undefined) => !!numeroSub(items.find(g => g.id === grupoId)?.numero, 1)
+  const [movendo, setMovendo] = useState<string | null>(null)
+
+  async function mover(c: CentroCusto, direcao: 'cima' | 'baixo') {
+    setMovendo(c.id)
+    try {
+      await api.post(`/configuracoes/centros-custo/${c.id}/mover`, token, { direcao })
+      carregar()
+    } catch (err) {
+      toast.erro(err instanceof Error ? err.message : 'Não foi possível mover.')
+    } finally {
+      setMovendo(null)
+    }
+  }
 
   const arvore = arvoreCentros(items)
   // Só centro raiz pode ser grupo (dois níveis).
@@ -53,9 +64,9 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
     setCriando(true); setErro(null)
     try {
       await api.post('/configuracoes/centros-custo', token, {
-        nome: form.nome, numero: form.numero || null, parent_id: form.parent_id || null,
+        nome: form.nome, numero: (!form.parent_id && form.numero) || null, parent_id: form.parent_id || null,
       })
-      setForm(f => ({ ...VAZIO, parent_id: f.parent_id })); setNumeroManual(false); carregar()
+      setForm(f => ({ ...VAZIO, parent_id: f.parent_id })); carregar()
     } catch (err) { setErro(err instanceof Error ? err.message : 'Erro') }
     finally { setCriando(false) }
   }
@@ -68,7 +79,9 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
   async function salvarEdicao(c: CentroCusto) {
     try {
       await api.put(`/configuracoes/centros-custo/${c.id}`, token, {
-        nome: edit.nome, numero: edit.numero, ativo: edit.ativo,
+        nome: edit.nome, ativo: edit.ativo,
+        // Subgrupo de grupo numerado: número automático (o backend ignora).
+        ...(edit.parent_id && numerado(edit.parent_id) ? {} : { numero: edit.numero }),
         ...(edit.parent_id ? { parent_id: edit.parent_id } : { sem_grupo: true }),
       })
       setEditId(null); carregar()
@@ -98,9 +111,15 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
         <>
           <td className="px-4 py-1.5">
             <div className="flex gap-2">
-              <input value={edit.numero} onChange={e => setEdit(f => ({ ...f, numero: e.target.value }))}
-                placeholder="Nº" aria-label="Número"
-                className="w-20 rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none" />
+              {edit.parent_id && numerado(edit.parent_id) ? (
+                <span className="w-20 shrink-0 self-center text-xs text-gray-400" title="Número automático pelo grupo">
+                  {edit.parent_id === c.parent_id ? c.numero : 'auto'}
+                </span>
+              ) : (
+                <input value={edit.numero} onChange={e => setEdit(f => ({ ...f, numero: e.target.value }))}
+                  placeholder="Nº" aria-label="Número"
+                  className="w-20 rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none" />
+              )}
               <input value={edit.nome} onChange={e => setEdit(f => ({ ...f, nome: e.target.value }))}
                 aria-label="Nome"
                 className="w-full rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none" />
@@ -108,12 +127,7 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
           </td>
           <td className="px-4 py-1.5">
             <select value={edit.parent_id} disabled={temFilhos(c.id)}
-              onChange={e => {
-                const pid = e.target.value
-                // Atrelou a outro grupo: renumera pelo grupo novo.
-                const num = pid && pid !== c.parent_id ? proximoNumeroSub(items.find(x => x.id === pid), items, c.id) : null
-                setEdit(f => ({ ...f, parent_id: pid, ...(num !== null ? { numero: num } : {}) }))
-              }} aria-label="Grupo"
+              onChange={e => setEdit(f => ({ ...f, parent_id: e.target.value }))} aria-label="Grupo"
               className="w-full rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none disabled:bg-gray-50">
               <option value="">— Grupo principal —</option>
               {gruposPossiveis(c.id).map(g => <option key={g.id} value={g.id}>{rotuloCentro(g)}</option>)}
@@ -145,7 +159,18 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
           <td className="px-4 py-2.5 text-xs text-gray-500">{c.ativo ? 'Ativo' : 'Inativo'}</td>
           {(podeEditar || podeExcluir) && (
             <td className="px-4 py-2.5 text-right">
-              <span className="inline-flex gap-3">
+              <span className="inline-flex items-center gap-3">
+                {podeEditar && sub && numerado(c.parent_id) && (
+                  <span className="inline-flex gap-0.5">
+                    {(['cima', 'baixo'] as const).map(d => (
+                      <button key={d} type="button" onClick={() => mover(c, d)} disabled={movendo !== null}
+                        aria-label={d === 'cima' ? 'Subir' : 'Descer'} title={d === 'cima' ? 'Subir' : 'Descer'}
+                        className="rounded px-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-navy disabled:opacity-40">
+                        {d === 'cima' ? '↑' : '↓'}
+                      </button>
+                    ))}
+                  </span>
+                )}
                 {podeEditar && (
                   <button onClick={() => iniciarEdicao(c)} className="text-xs text-blue-500 hover:underline">Editar</button>
                 )}
@@ -174,11 +199,15 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Novo Centro de Custo</h3>
           <form onSubmit={criar} className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-            <input value={form.numero} onChange={e => { setNumeroManual(true); setForm(f => ({ ...f, numero: e.target.value })) }}
-              placeholder={form.parent_id ? 'Nº' : 'Nº (ex.: 1.10)'} aria-label="Número" className={`${inputCls} sm:w-32`} />
+            <input value={form.parent_id ? (sugestao ? `${sugestao} (auto)` : '') : form.numero}
+              disabled={!!form.parent_id}
+              onChange={e => setForm(f => ({ ...f, numero: e.target.value }))}
+              placeholder={form.parent_id ? 'Nº auto' : 'Nº (ex.: 1.10)'} aria-label="Número"
+              title={form.parent_id ? 'Número automático pelo grupo' : undefined}
+              className={`${inputCls} sm:w-32 disabled:bg-gray-100 disabled:text-gray-500`} />
             <input required value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
               placeholder="Nome (ex.: Saúde e Vida)" aria-label="Nome" className={`${inputCls} flex-1`} />
-            <select value={form.parent_id} onChange={e => { setNumeroManual(false); setForm(f => ({ ...f, parent_id: e.target.value })) }}
+            <select value={form.parent_id} onChange={e => setForm(f => ({ ...f, parent_id: e.target.value }))}
               aria-label="Grupo" className={`${inputCls} sm:w-60`}>
               <option value="">— Grupo principal —</option>
               {gruposPossiveis().map(g => <option key={g.id} value={g.id}>Subgrupo de {rotuloCentro(g)}</option>)}
@@ -191,12 +220,12 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
           {erro && <p className="mt-2 text-xs text-red-600">{erro}</p>}
           {grupoDoForm && !sugestao && (
             <p className="mt-2 text-xs text-amber-600">
-              {grupoDoForm.numero ? 'Não há mais número livre neste grupo: informe o Nº à mão.'
-                : `Dê um número ao grupo "${grupoDoForm.nome}" (ex.: 1.10) para os subgrupos serem numerados sozinhos.`}
+              Dê um número ao grupo &quot;{grupoDoForm.nome}&quot; (ex.: 1.10) para os subgrupos serem numerados sozinhos.
             </p>
           )}
           <p className="mt-2 text-xs text-gray-400">
-            Ao escolher o grupo, o subgrupo é numerado sozinho (1.10 → 1.11, 1.12…). Lançamentos vão nos subgrupos; o grupo soma e filtra.
+            Numeração automática: o subgrupo segue o grupo (1.10 → 1.11, 1.12…; 1.9 → 2.0) e, ao excluir, os seguintes sobem.
+            Use ↑ ↓ para mudar a ordem. Lançamentos vão nos subgrupos; o grupo soma e filtra.
           </p>
         </div>
       )}

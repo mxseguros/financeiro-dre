@@ -16,7 +16,7 @@ from app.database import get_supabase_admin, get_supabase_usuario
 from app.models.schemas import (
     BancoCreate, BancoItem, BancoUpdate,
     CategoriaLancamentoCreate, CategoriaLancamentoItem, CategoriaLancamentoUpdate,
-    CentroCustoCreate, CentroCustoItem, CentroCustoUpdate,
+    CentroCustoCreate, CentroCustoItem, CentroCustoUpdate, CentroCustoMover,
     ClassificacaoCreate, ClassificacaoItem, ClassificacaoUpdate,
     TipoLancamentoCreate, TipoLancamentoItem, TipoLancamentoUpdate,
 )
@@ -158,6 +158,20 @@ async def atualizar_centro(
     return await financeiro_service.atualizar_centro_custo(
         centro_id, payload, usuario, get_supabase_admin(),
     )
+
+
+@router.post(
+    "/centros-custo/{centro_id}/mover",
+    response_model=CentroCustoItem,
+    summary="Subir/descer o subgrupo uma posição (admin)",
+)
+async def mover_centro(
+    centro_id: UUID,
+    payload: CentroCustoMover,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_admin(usuario)
+    return await financeiro_service.mover_centro(centro_id, payload.direcao, usuario, get_supabase_admin())
 
 
 @router.delete(

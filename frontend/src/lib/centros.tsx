@@ -67,28 +67,24 @@ export function OpcoesCentro({ centros, atual, filtro = false }: {
 }
 
 /**
- * Próximo número de subgrupo (espelha financeiro_service.proximo_numero_sub):
- * segue a última casa do grupo — "1.10" → 1.11, 1.12…; "1" → 1.1, 1.2… —,
- * continua do maior subgrupo existente e pula número em uso. Sem número no
- * grupo (ou se estourar, ex. 1.99), devolve ''.
+ * Número do k-ésimo subgrupo (espelha financeiro_service.numero_sub): soma k
+ * na última casa do grupo, sem trava em 9 — "1" → 1.1 … 1.9, 2.0, 2.1…;
+ * "1.10" → 1.11 … 1.19, 1.20… Grupo sem número: ''.
  */
-export function proximoNumeroSub(grupo: CentroCusto | undefined, centros: CentroCusto[], excetoId?: string): string {
-  const g = (grupo?.numero ?? '').trim()
-  if (!grupo || !/^\d+(\.\d+)?$/.test(g)) return ''
+export function numeroSub(grupoNumero: string | null | undefined, k: number): string {
+  const g = (grupoNumero ?? '').trim()
+  if (!/^\d+(\.\d+)?$/.test(g)) return ''
   const [inteiro, dec = ''] = g.split('.')
-  const largura = dec.length || 1
-  let maior = dec ? parseInt(dec, 10) : 0
-  const outros = centros.filter(c => c.id !== excetoId)
-  const padrao = new RegExp(`^${inteiro}\.(\d{${largura}})$`)
-  for (const c of outros) {
-    if (c.parent_id !== grupo.id) continue
-    const m = padrao.exec((c.numero ?? '').trim())
-    if (m) maior = Math.max(maior, parseInt(m[1], 10))
-  }
-  const usados = new Set(outros.map(c => (c.numero ?? '').trim()))
-  for (let prox = maior + 1; String(prox).length <= largura; prox++) {
-    const candidato = `${inteiro}.${String(prox).padStart(largura, '0')}`
-    if (!usados.has(candidato)) return candidato
-  }
-  return ''
+  const casas = dec.length || 1
+  // Em inteiros na menor casa, para não errar com ponto flutuante.
+  const escala = 10 ** casas
+  const total = parseInt(inteiro, 10) * escala + (dec ? parseInt(dec, 10) : 0) + k
+  return `${Math.floor(total / escala)}.${String(total % escala).padStart(casas, '0')}`
+}
+
+/** Prévia do número que um subgrupo novo recebe no grupo (entra no fim). */
+export function proximoNumeroSub(grupo: CentroCusto | undefined, centros: CentroCusto[], excetoId?: string): string {
+  if (!grupo) return ''
+  const n = centros.filter(c => c.parent_id === grupo.id && c.id !== excetoId).length
+  return numeroSub(grupo.numero, n + 1)
 }

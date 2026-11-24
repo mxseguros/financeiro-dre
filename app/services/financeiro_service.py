@@ -107,38 +107,65 @@ def _chave_ordem(c: dict):
     return (0 if num else 1, partes, c.get("ordem") or 0, (c.get("nome") or "").lower())
 
 
-def proximo_numero_sub(grupo_numero: str | None, centros: list[dict], grupo_id: str | None = None) -> str | None:
-    """Numeração automática do subgrupo (pedido de 24/11/2026): segue a última
-    casa do número do grupo — "1.10 Financeiro" → 1.11, 1.12, 1.13…; grupo "1"
-    → 1.1, 1.2… Continua do maior subgrupo que já existe e pula número usado.
-    Sem número no grupo (ou se estourar as casas, ex. 1.99), devolve None."""
+def numero_sub(grupo_numero: str | None, k: int) -> str | None:
+    """Número do k-ésimo subgrupo (k a partir de 1). Soma k na última casa do
+    número do grupo, sem trava em 9 (pedido de 24/11/2026):
+    grupo "1" → 1.1 … 1.9, 2.0, 2.1…; grupo "1.10" → 1.11 … 1.19, 1.20…
+    Grupo sem número (ou com número fora do padrão): None."""
     import re
+    from decimal import Decimal
     g = (grupo_numero or "").strip()
     if not re.fullmatch(r"\d+(\.\d+)?", g):
         return None
-    inteiro, _, dec = g.partition(".")
-    largura = len(dec) or 1
-    maior = int(dec) if dec else 0
-    padrao = re.compile(rf"{inteiro}\.(\d{{{largura}}})")
-    for c in centros:
-        if grupo_id and c.get("parent_id") != grupo_id:
-            continue
-        m = padrao.fullmatch((c.get("numero") or "").strip())
-        if m:
-            maior = max(maior, int(m.group(1)))
-    usados = {(c.get("numero") or "").strip() for c in centros}
-    prox = maior + 1
-    while len(str(prox)) <= largura:
-        candidato = f"{inteiro}.{prox:0{largura}d}"
-        if candidato not in usados:
-            return candidato
-        prox += 1
-    return None
+    casas = len(g.partition(".")[2]) or 1
+    return f"{Decimal(g) + Decimal(k).scaleb(-casas):.{casas}f}"
 
 
 def _garantir_numero_livre(numero: str | None, centros: list[dict], proprio_id: str | None = None) -> None:
     if numero and any((c.get("numero") or "").strip() == numero and c.get("id") != proprio_id for c in centros):
         raise _erro_centro(409, f"O número {numero} já está em uso por outro centro.")
+
+
+def renumerar_grupo(
+    db: Client, grupo_id: str | None, tenant_id: str | None, ordem_ids: list[str] | None = None,
+) -> None:
+    """Renumera os subgrupos de um grupo em sequência (1.1, 1.2…), na ordem
+    atual — ou em `ordem_ids`, quando vem de "mover". Excluiu o 1.8, o 1.9 vira
+    1.8; criou, entra no fim. Lançamentos guardam o CODIGO, não o número: nada
+    muda neles. Grupo sem número não é renumerado."""
+    if not grupo_id:
+        return
+    centros = _ler_centros(db, tenant_id)
+    grupo = next((c for c in centros if c.get("id") == str(grupo_id)), None)
+    if not grupo or numero_sub(grupo.get("numero"), 1) is None:
+        return
+    subs = sorted((c for c in centros if c.get("parent_id") == str(grupo_id)), key=_chave_ordem)
+    if ordem_ids:
+        pos = {i: n for n, i in enumerate(ordem_ids)}
+        subs.sort(key=lambda c: pos.get(c["id"], len(pos)))
+    ids = {c["id"] for c in subs}
+    fora = {(c.get("numero") or "").strip(): c for c in centros if c.get("id") not in ids}
+    novos = [(c, numero_sub(grupo["numero"], k)) for k, c in enumerate(subs, start=1)]
+    for c, num in novos:
+        if num in fora:
+            raise _erro_centro(
+                409,
+                f"O número {num} já é de '{fora[num]['nome']}'. Mude o número de um dos grupos "
+                "para os subgrupos caberem.",
+            )
+    for c, num in novos:
+        if (c.get("numero") or "").strip() != num:
+            q = db.table("centros_custo").update({"numero": num}).eq("id", c["id"])
+            if tenant_id:
+                q = q.eq("tenant_id", tenant_id)
+            q.execute()
+
+
+def _centro_atual(db: Client, centro_id: str, tenant_id: str | None) -> CentroCustoItem:
+    linha = next((c for c in _ler_centros(db, tenant_id) if c.get("id") == str(centro_id)), None)
+    if not linha:
+        raise _erro_centro(404, "Centro de custo não encontrado.")
+    return CentroCustoItem(**linha)
 
 
 async def listar_centros_custo(db: Client) -> list[CentroCustoItem]:
@@ -172,10 +199,16 @@ async def criar_centro_custo(
     centros = _ler_centros(db, tenant)
     existentes = {c["codigo"] for c in centros}
     numero = (payload.numero or "").strip() or None
-    if payload.parent_id and not numero:
+    if payload.parent_id:
+        # Subgrupo é numerado pelo grupo (renumerar_grupo, abaixo). Um número
+        # informado só serve de posição: "1.15" entra depois do 1.14.
         pai = next((c for c in centros if c["id"] == str(payload.parent_id)), {})
-        numero = proximo_numero_sub(pai.get("numero"), centros, str(payload.parent_id))
-    _garantir_numero_livre(numero, centros)
+        if numero_sub(pai.get("numero"), 1) is not None:
+            numero = numero if numero and numero not in {(c.get("numero") or "") for c in centros} else None
+        else:
+            _garantir_numero_livre(numero, centros)
+    else:
+        _garantir_numero_livre(numero, centros)
     # Trim evita espaços acidentais no código/nome, que quebram o filtro por centro
     codigo = (payload.codigo or "").strip() or _slug(payload.nome)
     if codigo in existentes:
@@ -200,7 +233,10 @@ async def criar_centro_custo(
         if payload.parent_id:
             raise
         resp = db.table("centros_custo").insert(dados).execute()
-    return CentroCustoItem(**resp.data[0])
+    if not payload.parent_id:
+        return CentroCustoItem(**resp.data[0])
+    renumerar_grupo(db, str(payload.parent_id), tenant)
+    return _centro_atual(db, resp.data[0]["id"], tenant)
 
 
 async def atualizar_centro_custo(
@@ -214,17 +250,23 @@ async def atualizar_centro_custo(
     tenant = getattr(usuario, "tenant_id", None)
     centros = _ler_centros(db, tenant)
     atual = next((c for c in centros if c["id"] == str(centro_id)), {})
+    pai_antigo = atual.get("parent_id")
     if payload.sem_grupo:
         dados["parent_id"] = None
     elif payload.parent_id:
         _validar_pai(db, payload.parent_id, tenant, centro_id)
         dados["parent_id"] = str(payload.parent_id)
-        # Atrelou a um grupo (novo) sem informar número: numeração automática.
-        if str(payload.parent_id) != atual.get("parent_id") and not dados.get("numero"):
-            pai = next((c for c in centros if c["id"] == str(payload.parent_id)), {})
-            outros = [c for c in centros if c["id"] != str(centro_id)]
-            dados["numero"] = proximo_numero_sub(pai.get("numero"), outros, str(payload.parent_id))
-    if "numero" in dados:
+    pai_novo = dados["parent_id"] if "parent_id" in dados else pai_antigo
+    trocou_grupo = pai_novo != pai_antigo
+    grupo_novo = next((c for c in centros if c["id"] == pai_novo), {}) if pai_novo else {}
+    if pai_novo and numero_sub(grupo_novo.get("numero"), 1) is not None:
+        # Subgrupo de grupo numerado: o número é automático. Mudou de grupo,
+        # entra no fim do novo; senão, mantém o que tem (a ordem é por "mover").
+        if trocou_grupo:
+            dados["numero"] = None
+        else:
+            dados.pop("numero", None)
+    elif "numero" in dados:
         _garantir_numero_livre(dados["numero"], centros, str(centro_id))
     q = db.table("centros_custo").update(dados).eq("id", str(centro_id))
     if getattr(usuario, "tenant_id", None):
@@ -232,7 +274,33 @@ async def atualizar_centro_custo(
     resp = q.execute()
     if not resp.data:
         raise _erro_centro(404, "Centro de custo não encontrado.")
-    return CentroCustoItem(**resp.data[0])
+    if trocou_grupo:
+        renumerar_grupo(db, pai_antigo, tenant)
+        renumerar_grupo(db, pai_novo, tenant)
+    elif not pai_novo and "numero" in dados and dados["numero"] != atual.get("numero"):
+        renumerar_grupo(db, str(centro_id), tenant)   # grupo mudou de número: os filhos seguem
+    elif pai_novo and atual.get("numero") is None:
+        renumerar_grupo(db, pai_novo, tenant)
+    return _centro_atual(db, str(centro_id), tenant)
+
+
+async def mover_centro(centro_id: UUID, direcao: str, usuario: UsuarioAtual, db: Client) -> CentroCustoItem:
+    """Sobe/desce o subgrupo uma posição dentro do grupo e renumera."""
+    tenant = getattr(usuario, "tenant_id", None)
+    centros = _ler_centros(db, tenant)
+    alvo = next((c for c in centros if c.get("id") == str(centro_id)), None)
+    if not alvo:
+        raise _erro_centro(404, "Centro de custo não encontrado.")
+    if not alvo.get("parent_id"):
+        raise _erro_centro(422, "Só subgrupos mudam de posição; o grupo é ordenado pelo número.")
+    irmaos = sorted((c for c in centros if c.get("parent_id") == alvo["parent_id"]), key=_chave_ordem)
+    ids = [c["id"] for c in irmaos]
+    i = ids.index(alvo["id"])
+    j = i - 1 if direcao == "cima" else i + 1
+    if 0 <= j < len(ids):
+        ids[i], ids[j] = ids[j], ids[i]
+        renumerar_grupo(db, alvo["parent_id"], tenant, ordem_ids=ids)
+    return _centro_atual(db, str(centro_id), tenant)
 
 
 async def excluir_centro_custo(centro_id: UUID, usuario: UsuarioAtual, db: Client) -> None:
@@ -255,6 +323,8 @@ async def excluir_centro_custo(centro_id: UUID, usuario: UsuarioAtual, db: Clien
     if tenant:
         q = q.eq("tenant_id", tenant)
     q.execute()
+    # Excluiu o 1.8: o 1.9 vira 1.8, e assim por diante.
+    renumerar_grupo(db, alvo.get("parent_id"), tenant)
 
 
 def expandir_centro(db: Client, codigo: str) -> list[str]:

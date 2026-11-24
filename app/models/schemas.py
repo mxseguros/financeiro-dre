@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -146,6 +146,10 @@ class CentroCustoUpdate(RespostaBase):
     # Mover para outro grupo; para virar grupo raiz, mande sem_grupo=True.
     parent_id: UUID | None = None
     sem_grupo: bool = False
+
+
+class CentroCustoMover(RespostaBase):
+    direcao: Literal["cima", "baixo"]
 
 
 # ── CONFIGURAÇÕES: CATEGORIAS DE LANÇAMENTO ───────────────────

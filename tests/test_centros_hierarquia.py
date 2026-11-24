@@ -123,10 +123,73 @@ def test_subgrupo_segue_o_numero_do_grupo():
     assert run(fs.criar_centro_custo(CentroCustoCreate(nome="Sede", parent_id=M), ADMIN, db)).numero == "1.1"
 
 
-def test_numero_informado_vale_e_nao_repete():
+def test_numero_segue_depois_do_9():
+    assert [fs.numero_sub("1", k) for k in (1, 9, 10, 11)] == ["1.1", "1.9", "2.0", "2.1"]
+    assert [fs.numero_sub("1.10", k) for k in (1, 9, 10)] == ["1.11", "1.19", "1.20"]
+    assert fs.numero_sub(None, 1) is None and fs.numero_sub("abc", 1) is None
+
+
+def _matriz():
+    """Produção em 24/11: Matriz "1" com 1.1, 1.3 … 1.9 e 2.0 (sem 1.2)."""
+    nomes = ["Financeiro", "Venda Nova", "Renovação", "Benefícios", "Sinistros", "TI", "Emissão",
+             "Gerência", "Presidência"]
+    nums = ["1.1", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "2.0"]
+    subs = [centro(_u(100 + i), f"c{i}", n, parent=M, numero=num) for i, (n, num) in enumerate(zip(nomes, nums))]
+    return Db(centros_custo=[centro(M, "matriz", "Matriz", numero="1")] + subs, despesas=[], receitas_outras=[])
+
+
+def _numeros(db, grupo=M):
+    return [c["numero"] for c in sorted((c for c in db.tabelas["centros_custo"] if c["parent_id"] == grupo),
+                                        key=fs._chave_ordem)]
+
+
+def test_criar_compacta_e_entra_no_fim():
+    db = _matriz()
+    item = run(fs.criar_centro_custo(CentroCustoCreate(nome="Novo", parent_id=M), ADMIN, db))
+    assert item.numero == "2.0"
+    assert _numeros(db) == ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "2.0"]
+    presid = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "Presidência")
+    assert presid["numero"] == "1.9"
+
+
+def test_excluir_sobe_os_seguintes():
+    db = _matriz()
+    emissao = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "Emissão")
+    run(fs.excluir_centro_custo(emissao["id"], ADMIN, db))
+    nomes = {c["numero"]: c["nome"] for c in db.tabelas["centros_custo"] if c["parent_id"] == M}
+    assert nomes["1.6"] == "TI" and nomes["1.7"] == "Gerência" and nomes["1.8"] == "Presidência"
+    assert len(nomes) == 8
+
+
+def test_mover_troca_com_o_vizinho():
+    db = _matriz()
+    ti = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "TI")
+    assert run(fs.mover_centro(ti["id"], "cima", ADMIN, db)).numero == "1.5"
+    sin = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "Sinistros")
+    assert sin["numero"] == "1.6"
+    fin = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "Financeiro")
+    assert run(fs.mover_centro(fin["id"], "cima", ADMIN, db)).numero == "1.1"   # já é o primeiro
+
+
+def test_trocar_de_grupo_renumera_os_dois():
     db = _banco_numeros()
-    assert run(fs.criar_centro_custo(CentroCustoCreate(nome="X", parent_id=G1, numero="1.15"), ADMIN, db)).numero == "1.15"
-    assert run(fs.criar_centro_custo(CentroCustoCreate(nome="Y", parent_id=G1), ADMIN, db)).numero == "1.16"
+    a = run(fs.criar_centro_custo(CentroCustoCreate(nome="A", parent_id=G1), ADMIN, db))
+    b = run(fs.criar_centro_custo(CentroCustoCreate(nome="B", parent_id=G1), ADMIN, db))
+    assert (a.numero, b.numero) == ("1.11", "1.12")
+    movido = run(fs.atualizar_centro_custo(a.id, CentroCustoUpdate(parent_id=M), ADMIN, db))
+    assert movido.numero == "1.1"
+    assert _numeros(db, G1) == ["1.11"]
+
+
+def test_numero_do_grupo_muda_e_filhos_seguem():
+    db = _banco_numeros()
+    run(fs.criar_centro_custo(CentroCustoCreate(nome="A", parent_id=G1), ADMIN, db))
+    run(fs.atualizar_centro_custo(G1, CentroCustoUpdate(numero="3.20"), ADMIN, db))
+    assert _numeros(db, G1) == ["3.21"]
+
+
+def test_numero_de_grupo_repetido_da_409():
+    db = _banco_numeros()
     with pytest.raises(HTTPException) as e:
         run(fs.criar_centro_custo(CentroCustoCreate(nome="Z", numero="1.10"), ADMIN, db))
     assert e.value.status_code == 409
