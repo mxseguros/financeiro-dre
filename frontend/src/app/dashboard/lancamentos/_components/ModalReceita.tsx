@@ -1,4 +1,5 @@
 import { OpcoesCentro } from '@/lib/centros'
+import { CampoAnexos, enviarAnexos, type AnexoPendente } from '@/components/anexos/CampoAnexos'
 import { useState } from 'react'
 import { api } from '@/lib/api'
 import { mesAtual } from '@/lib/utils'
@@ -51,6 +52,9 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
   const [sugestao, setSugestao] = useState<SugestaoIA | null>(null)
   const [sugerindo, setSugerindo] = useState(false)
   const [sugestaoErro, setSugestaoErro] = useState<string | null>(null)
+  const [anexosPendentes, setAnexosPendentes] = useState<AnexoPendente[]>([])
+  // Salvou, mas algum anexo falhou: não deixa salvar de novo (duplicaria a receita).
+  const [falhaAnexos, setFalhaAnexos] = useState<string | null>(null)
 
   const limparErro = (k: string) => setErros(e => (k in e ? { ...e, [k]: '' } : e))
   const set = (k: string, v: string | boolean) => {
@@ -133,16 +137,17 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
     if (form.observacao)  basePayload.observacao  = form.observacao
 
     try {
+      let criadaId: string | undefined
       if (editando) {
         await api.patch(`/lancamentos/receitas/${receita!.id}`, token, { ...basePayload, competencia: `${form.competencia.split('-')[0]}-${form.competencia.split('-')[1]}-01` })
       } else if (form.recorrente && form.data_final && form.data_final >= form.competencia) {
         // Backend cria um registro por mês atomicamente em uma única chamada
         const [ey, em] = form.data_final.split('-')
-        await api.post('/lancamentos/receitas', token, {
+        criadaId = (await api.post<Receita>('/lancamentos/receitas', token, {
           ...basePayload,
           competencia: compMes,
           repetir_ate: `${ey}-${em}-01`,
-        })
+        }))?.id
         // Guarda de compatibilidade: um backend desatualizado ignora
         // `repetir_ate` e cria apenas o 1º mês. Confere se o último mês existe.
         if (form.data_final > form.competencia) {
@@ -159,7 +164,17 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
           }
         }
       } else {
-        await api.post('/lancamentos/receitas', token, { ...basePayload, competencia: `${form.competencia.split('-')[0]}-${form.competencia.split('-')[1]}-01` })
+        criadaId = (await api.post<Receita>('/lancamentos/receitas', token, { ...basePayload, competencia: `${form.competencia.split('-')[0]}-${form.competencia.split('-')[1]}-01` }))?.id
+      }
+      // Anexos de receita nova: vão para a do 1º mês.
+      if (criadaId && anexosPendentes.length) {
+        const falhas = await enviarAnexos(token, 'receita', criadaId, anexosPendentes)
+        if (falhas.length) {
+          onSaved()
+          setFalhaAnexos(`A receita foi salva, mas: ${falhas.join(' ')} Abra a receita para anexar de novo.`)
+          setSalvando(false)
+          return
+        }
       }
       onSaved()
       onClose()
@@ -323,14 +338,24 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
             </div>
           )}
 
+          <CampoAnexos token={token} entidade="receita" entidadeId={receita?.id}
+            pendentes={anexosPendentes} onPendentes={setAnexosPendentes} />
+
           {/* Erro de submissão (servidor). Erros de preenchimento ficam nos campos. */}
           {erro && <p role="alert" className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-600">{erro}</p>}
+          {falhaAnexos && <p role="alert" className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-700">{falhaAnexos}</p>}
 
           <div className="flex justify-end gap-3 pt-1">
-            <Button type="button" variant="secondary" onClick={onClose} disabled={salvando}>Cancelar</Button>
-            <Button type="submit" loading={salvando}>
-              {salvando ? 'Salvando…' : editando ? 'Salvar alterações' : 'Salvar'}
-            </Button>
+            {falhaAnexos ? (
+              <Button type="button" onClick={onClose}>Fechar</Button>
+            ) : (
+              <>
+                <Button type="button" variant="secondary" onClick={onClose} disabled={salvando}>Cancelar</Button>
+                <Button type="submit" loading={salvando}>
+                  {salvando ? 'Salvando…' : editando ? 'Salvar alterações' : 'Salvar'}
+                </Button>
+              </>
+            )}
           </div>
       </form>
     </Modal>

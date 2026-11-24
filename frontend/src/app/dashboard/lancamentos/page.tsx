@@ -1,5 +1,6 @@
 'use client'
 import { OpcoesCentro, nomeCentro } from '@/lib/centros'
+import { MarcaAnexos, useContagemAnexos } from '@/components/anexos/CampoAnexos'
 import { FILTRO_BOTAO, FILTRO_CAMPO } from '@/components/ui/filtros'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
@@ -58,6 +59,9 @@ export default function LancamentosPage() {
   const [aba, setAba] = useState<'despesas' | 'receitas' | 'ordens'>('despesas')
   const [despesas, setDespesas] = useState<DespesasResp | null>(null)
   const [receitas, setReceitas] = useState<ReceitasResp | null>(null)
+  const anexosDesp = useContagemAnexos(token, 'despesa', useMemo(() => despesas?.items.map(d => d.id), [despesas]))
+  const anexosRec = useContagemAnexos(token, 'receita',
+    useMemo(() => receitas?.items.filter(r => r.origem === 'manual').map(r => r.id), [receitas]))
   const [ordens, setOrdens] = useState<OrdensCompraResp | null>(null)
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [tipos, setTipos]   = useState<TipoLancamento[]>([])
@@ -659,7 +663,7 @@ export default function LancamentosPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium text-gray-800">
-                          {d.descricao}
+                          {d.descricao}<MarcaAnexos n={anexosDesp[d.id]} />
                           {d.parcela_total && d.parcela_total > 1 && (
                             <span className="ml-2 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">parcela {d.parcela_atual}/{d.parcela_total}</span>
                           )}
@@ -734,7 +738,7 @@ export default function LancamentosPage() {
                         <td className="px-4 py-2 text-gray-600">{fmtCompetencia(d.competencia)}</td>
                         <td className="px-4 py-2"><Badge text={d.tipo_nome ?? d.categoria ?? '—'} cor={tipoCor(d.tipo_nome ?? d.categoria)} /></td>
                         <td className="px-4 py-2 text-gray-700">
-                          <span>{d.descricao}</span>
+                          <span>{d.descricao}</span><MarcaAnexos n={anexosDesp[d.id]} />
                           {d.parcela_total && d.parcela_total > 1 && (
                             <span
                               className="ml-2 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600"
@@ -800,7 +804,7 @@ export default function LancamentosPage() {
                   <div key={r.id} className="px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-gray-800">{r.descricao}</p>
+                        <p className="truncate text-xs font-medium text-gray-800">{r.descricao}<MarcaAnexos n={anexosRec[r.id]} /></p>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           <Badge text={r.tipo_nome ?? '—'} cor="bg-green-100 text-green-700" />
                           {r.somente_dre && <Badge text="Só DRE" cor="bg-indigo-100 text-indigo-700" />}
@@ -863,7 +867,7 @@ export default function LancamentosPage() {
                             {r.somente_dre && <Badge text="Só DRE" cor="bg-indigo-100 text-indigo-700" />}
                           </span>
                         </td>
-                        <td className="px-4 py-2 text-gray-700">{r.descricao}</td>
+                        <td className="px-4 py-2 text-gray-700">{r.descricao}<MarcaAnexos n={anexosRec[r.id]} /></td>
                         <td className="px-4 py-2 text-gray-600">{nomeCentro(r.centro_custo, centros)}</td>
                         <td className="px-4 py-2 text-gray-600">{r.banco_nome ?? '—'}</td>
                         <td className="px-4 py-2 text-right font-medium tabular-nums text-green-600">{fmtBRL(r.valor)}</td>

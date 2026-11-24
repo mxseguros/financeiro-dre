@@ -1,6 +1,5 @@
 """Centros de custo em grupos e subgrupos (0044)."""
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -8,71 +7,17 @@ from fastapi import HTTPException
 from app.auth import UsuarioAtual
 from app.models.schemas import CentroCustoCreate, CentroCustoUpdate
 from app.services import financeiro_service as fs
-
-def _u(n):
-    return f"00000000-0000-0000-0000-{n:012d}"
-
+from tests import fake_supabase
+from tests.fake_supabase import uid as _u
 
 G1, S1, S2, M, X = (_u(n) for n in range(1, 6))
 ADMIN = UsuarioAtual(user_id="u-admin", email="a@x", role="admin", tenant_id="t1")
+_PADRAO = {"centros_custo": {"ativo": True, "parent_id": None, "numero": None, "ordem": 0}}
 
 
-class _Q:
-    """Consulta mínima do supabase-py sobre listas em memória."""
+def Db(**tabelas):
+    return fake_supabase.Db(_PADRAO, **tabelas)
 
-    def __init__(self, db, tabela):
-        self.db, self.tabela, self.filtros, self.op, self.dados = db, tabela, [], "select", None
-
-    def select(self, *_a, **_k):
-        return self
-
-    def eq(self, col, val):
-        self.filtros.append(lambda r: r.get(col) == val)
-        return self
-
-    def in_(self, col, vals):
-        self.filtros.append(lambda r: r.get(col) in vals)
-        return self
-
-    def limit(self, _n):
-        return self
-
-    def insert(self, dados):
-        self.op, self.dados = "insert", dados
-        return self
-
-    def update(self, dados):
-        self.op, self.dados = "update", dados
-        return self
-
-    def delete(self):
-        self.op = "delete"
-        return self
-
-    def execute(self):
-        linhas = self.db.tabelas.setdefault(self.tabela, [])
-        alvo = [r for r in linhas if all(f(r) for f in self.filtros)]
-        if self.op == "insert":
-            nova = {"id": _u(len(linhas) + 6), "ativo": True, "parent_id": None, "numero": None,
-                    "ordem": 0, **self.dados}
-            linhas.append(nova)
-            return SimpleNamespace(data=[nova])
-        if self.op == "update":
-            for r in alvo:
-                r.update(self.dados)
-            return SimpleNamespace(data=alvo)
-        if self.op == "delete":
-            self.db.tabelas[self.tabela] = [r for r in linhas if r not in alvo]
-            return SimpleNamespace(data=alvo)
-        return SimpleNamespace(data=alvo)
-
-
-class Db:
-    def __init__(self, **tabelas):
-        self.tabelas = tabelas
-
-    def table(self, nome):
-        return _Q(self, nome)
 
 
 def centro(id_, codigo, nome, parent=None, numero=None, tenant="t1"):

@@ -1,6 +1,7 @@
 'use client'
 import { nomeCentro } from '@/lib/centros'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { MarcaAnexos, useContagemAnexos } from '@/components/anexos/CampoAnexos'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
@@ -63,6 +64,7 @@ function AcoesEdicao({ ocupado, onEditar, onExcluir }: {
 interface CardProps {
   despesa: Despesa
   centros: CentroCusto[]
+  anexos?: number
   processandoId: string | null
   onAprovar?: (id: string) => void
   onIniciarRejeicao?: (id: string) => void
@@ -71,7 +73,7 @@ interface CardProps {
   onExcluir?: () => void
 }
 
-function DespesaCard({ despesa, centros, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: CardProps) {
+function DespesaCard({ despesa, centros, anexos, processandoId, onAprovar, onIniciarRejeicao, onDragStart, onEditar, onExcluir }: CardProps) {
   const ocupado = processandoId === despesa.id
   const arrastavel = !ocupado
 
@@ -94,7 +96,7 @@ function DespesaCard({ despesa, centros, processandoId, onAprovar, onIniciarReje
       </div>
 
       <p className="mt-2 text-xs font-medium text-gray-800 line-clamp-2 leading-snug">
-        {despesa.descricao}
+        {despesa.descricao}<MarcaAnexos n={anexos} />
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
@@ -319,6 +321,7 @@ export default function AprovacoesPage() {
   const [excluindoBusy, setExcluindoBusy] = useState(false)
   const [despesas, setDespesas] = useState<Despesa[]>([])
   const [ordens, setOrdens] = useState<OrdemCompra[]>([])
+  const anexosDesp = useContagemAnexos(token, 'despesa', useMemo(() => despesas.map(d => d.id), [despesas]))
   const [loading, setLoading] = useState(true)
   const [processandoId, setProcessandoId] = useState<string | null>(null)
   const [rejeitando, setRejeitando] = useState<DragRef | null>(null)
@@ -471,7 +474,7 @@ export default function AprovacoesPage() {
     const excluir = () => setExcluindo(i)
     if (i.tipo === 'despesa') {
       return (
-        <DespesaCard key={`d-${i.dado.id}`} despesa={i.dado} centros={centros} processandoId={processandoId}
+        <DespesaCard key={`d-${i.dado.id}`} despesa={i.dado} centros={centros} anexos={anexosDesp[i.dado.id]} processandoId={processandoId}
           onAprovar={comAcoes ? (id) => handleAprovar(id, 'despesa') : undefined}
           onIniciarRejeicao={comAcoes ? (id) => setRejeitando({ id, tipo: 'despesa' }) : undefined}
           onDragStart={(id) => { dragId.current = { id, tipo: 'despesa' } }}

@@ -1,4 +1,5 @@
 import { OpcoesCentro } from '@/lib/centros'
+import { CampoAnexos, enviarAnexos, type AnexoPendente } from '@/components/anexos/CampoAnexos'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { mesAtual } from '@/lib/utils'
@@ -131,6 +132,9 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   const [sugestao, setSugestao] = useState<SugestaoIA | null>(null)
   const [sugerindo, setSugerindo] = useState(false)
   const [sugestaoErro, setSugestaoErro] = useState<string | null>(null)
+  const [anexosPendentes, setAnexosPendentes] = useState<AnexoPendente[]>([])
+  // Salvou, mas algum anexo falhou: não deixa salvar de novo (duplicaria a despesa).
+  const [falhaAnexos, setFalhaAnexos] = useState<string | null>(null)
 
   // Se o modal abriu antes de a taxonomia terminar de carregar, a categoria
   // nasceu vazia — o useState acima só calcula o valor inicial uma vez — e o
@@ -251,6 +255,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     const subcategoria = descricao.slice(0, SUBCATEGORIA_MAX)
 
     try {
+      let criadaId: string | undefined
       if (editando) {
         const payload: Record<string, unknown> = {
           tipo_lancamento_id: form.tipo_lancamento_id || null,
@@ -285,6 +290,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
         }
         if (form.paga_em) payload.paga_em = form.paga_em
         const criada = await api.post<Despesa>('/lancamentos/despesas', token, payload)
+        criadaId = criada?.id
         // Guarda de compatibilidade: um backend desatualizado ignora
         // `num_parcelas` e cria apenas 1 registro, sem marcar as parcelas.
         if (criada?.parcela_total !== numParcelas) {
@@ -310,7 +316,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           repetir_ate:        `${ey}-${em}-01`,
         }
         if (form.paga_em) payload.paga_em = form.paga_em
-        await api.post('/lancamentos/despesas', token, payload)
+        criadaId = (await api.post<Despesa>('/lancamentos/despesas', token, payload))?.id
         // Guarda de compatibilidade: um backend desatualizado ignora
         // `repetir_ate` e cria apenas o 1º mês. Confere se o último mês existe.
         if (form.repetir_ate > form.competencia) {
@@ -340,7 +346,17 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           recorrente:         form.recorrente,
         }
         if (form.paga_em) payload.paga_em = form.paga_em
-        await api.post('/lancamentos/despesas', token, payload)
+        criadaId = (await api.post<Despesa>('/lancamentos/despesas', token, payload))?.id
+      }
+      // Anexos de despesa nova: vão para a 1ª parcela/ocorrência.
+      if (criadaId && anexosPendentes.length) {
+        const falhas = await enviarAnexos(token, 'despesa', criadaId, anexosPendentes)
+        if (falhas.length) {
+          onSaved()
+          setFalhaAnexos(`A despesa foi salva, mas: ${falhas.join(' ')} Abra a despesa para anexar de novo.`)
+          setSalvando(false)
+          return
+        }
       }
       onSaved()
       onClose()
@@ -555,14 +571,27 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           </div>
         )}
 
+        <CampoAnexos token={token} entidade="despesa" entidadeId={despesa?.id}
+          pendentes={anexosPendentes} onPendentes={setAnexosPendentes} />
+        {!editando && anexosPendentes.length > 0 && (parcelado || form.recorrente) && (
+          <p className="-mt-1 text-xs text-gray-400">Os anexos ficam na {parcelado ? '1ª parcela' : 'despesa do 1º mês'}.</p>
+        )}
+
         {/* Erro de submissão (servidor). Erros de preenchimento ficam nos campos. */}
         {erro && <p role="alert" className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-600">{erro}</p>}
+        {falhaAnexos && <p role="alert" className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-700">{falhaAnexos}</p>}
 
         <div className="flex justify-end gap-3 pt-1">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={salvando}>Cancelar</Button>
-          <Button type="submit" loading={salvando}>
-            {salvando ? 'Salvando…' : editando ? 'Salvar alterações' : parcelado ? `Criar ${numParcelas} parcelas` : 'Salvar'}
-          </Button>
+          {falhaAnexos ? (
+            <Button type="button" onClick={onClose}>Fechar</Button>
+          ) : (
+            <>
+              <Button type="button" variant="secondary" onClick={onClose} disabled={salvando}>Cancelar</Button>
+              <Button type="submit" loading={salvando}>
+                {salvando ? 'Salvando…' : editando ? 'Salvar alterações' : parcelado ? `Criar ${numParcelas} parcelas` : 'Salvar'}
+              </Button>
+            </>
+          )}
         </div>
       </form>
     </Modal>
