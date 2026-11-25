@@ -27,7 +27,7 @@ from supabase import Client
 from app.auth import UsuarioAtual
 from app.cnab import dias_uteis
 from app.cnab.barcode import mod10
-from app.cnab.builders import santander
+from app.cnab.builders import itau, santander
 from app.cnab.modelo import Empresa, Favorecido, ItemPagamento
 from app.permissions import permissao_pagamentos
 from app.services import contas_pagadoras_service, fornecedores_service
@@ -36,7 +36,7 @@ from app.services.confidencial import ids_confidenciais
 logger = structlog.get_logger()
 
 BUCKET = "cnab"
-BUILDERS = {"033": santander}
+BUILDERS = {"033": santander, "341": itau}
 LIVRES = (None, "rejeitada", "devolvida")          # podem entrar numa remessa
 EM_ANDAMENTO = ("em_remessa", "agendada", "bloqueada_banco")
 _COLS_DESPESA = ("id, tenant_id, status, paga_em, valor, descricao, data_vencimento, competencia, "
@@ -168,6 +168,10 @@ def a_pagar(usuario: UsuarioAtual, db: Client, situacao: str = "a_pagar",
         linhas = [d for d in linhas if d.get("status_pagamento") in EM_ANDAMENTO]
 
     forns = _fornecedores({str(d["fornecedor_id"]) for d in linhas if d.get("fornecedor_id")}, usuario, db)
+    ids_item = [str(d["remessa_item_id"]) for d in linhas
+                if d.get("remessa_item_id") and d.get("status_pagamento") in ("rejeitada", "devolvida")]
+    motivos = {str(r["id"]): r.get("motivo") for r in (db.table("remessa_itens").select("id, motivo")
+               .in_("id", ids_item).execute().data or [])} if ids_item else {}
     hoje = date.today()
     itens = []
     for d in linhas:
@@ -181,6 +185,7 @@ def a_pagar(usuario: UsuarioAtual, db: Client, situacao: str = "a_pagar",
             "forma_pagamento": d.get("forma_pagamento"), "status_pagamento": d.get("status_pagamento"),
             "favorecido": ({"id": f["id"], "nome": f.get("nome"), "funcionario": bool(f.get("funcionario_id"))} if f else None),
             "salario": str(d.get("tipo_lancamento_id")) in confid,
+            "motivo": motivos.get(str(d.get("remessa_item_id"))),
             "pendencias": pend,
         })
     itens.sort(key=lambda i: (str(i.get("vencimento_documento") or i.get("data_vencimento") or ""), i["descricao"] or ""))
@@ -199,7 +204,7 @@ def _preparar(conta_id: str, data_pagamento: date, despesa_ids: list[str], usuar
         raise _erro(422, "Esta conta pagadora está desativada.")
     builder = BUILDERS.get(conta["codigo_banco"])
     if not builder:
-        raise _erro(422, "Remessa do Itaú ainda não está disponível: por enquanto, use a conta do Santander.")
+        raise _erro(422, "Banco sem leiaute de remessa.")
     despesas = {str(d["id"]): d for d in _despesas(despesa_ids, usuario, db)}
     forns = _fornecedores({str(d["fornecedor_id"]) for d in despesas.values() if d.get("fornecedor_id")}, usuario, db)
     return conta, builder, despesas, forns
@@ -276,6 +281,9 @@ def validar(conta_id: str, data_pagamento: date, despesa_ids: list[str], usuario
         next(r for r in resultado if r["despesa_id"] == did).setdefault("avisos", []).append(msg)
 
     avisos = []
+    formas_validas = {despesas[r["despesa_id"]].get("forma_pagamento") for r in validos}
+    if hasattr(builder, "separar") and formas_validas & {"pix", "pix_qr"} and formas_validas - {"pix", "pix_qr"}:
+        avisos.append("O Itaú exige os Pix num arquivo separado: serão gerados 2 arquivos, importe os dois.")
     so_pix = all((despesas[r["despesa_id"]].get("forma_pagamento") in ("pix", "pix_qr")) for r in validos) if validos else False
     sugerida = data_pagamento
     if data_pagamento < hoje:
@@ -353,45 +361,53 @@ def gerar(conta_id: str, data_pagamento: date, despesa_ids: list[str], usuario: 
         raise _erro(409, "Alguma despesa entrou em outra remessa agora há pouco. Atualize a lista e tente de novo.")
 
     try:
-        nsa = _reservar_nsa(conta, db)
         confid = ids_confidenciais(db)
-        itens = [_item(despesas[did], forns.get(str(despesas[did].get("fornecedor_id"))), data_pagamento,
-                       seu_numero(conta["codigo_banco"], nsa, n), confid) for n, did in enumerate(ids, start=1)]
-        arq = builder.gerar(_empresa(conta), itens, nsa)
-        conteudo = arq.texto.encode("ascii")
-        sha = hashlib.sha256(conteudo).hexdigest()
         tenant = _tenant(usuario)
-
+        base = [_item(despesas[did], forns.get(str(despesas[did].get("fornecedor_id"))), data_pagamento, "", confid)
+                for did in ids]
+        grupos = builder.separar(base) if hasattr(builder, "separar") else [("geral", base)]
         remessa = db.table("remessas").insert({
             "tenant_id": tenant, "conta_id": conta["id"], "data_pagamento": data_pagamento.isoformat(),
-            "status": "gerada", "ambiente": conta.get("ambiente") or "homologacao", "qtd_itens": len(itens),
-            "valor_total": str(arq.valor_total), "criado_por": usuario.user_id,
+            "status": "gerada", "ambiente": conta.get("ambiente") or "homologacao", "qtd_itens": len(base),
+            "valor_total": str(sum((i.valor for i in base), Decimal(0))), "criado_por": usuario.user_id,
         }).execute().data[0]
-        nome = f"PAG{conta['codigo_banco']}_{data_pagamento:%Y%m%d}_{nsa:06d}.REM"
-        path = f"{tenant or 'geral'}/remessas/{remessa['id']}/{nome}"
-        db.storage.from_(BUCKET).upload(path, conteudo, {"content-type": "text/plain", "upsert": "false"})
-        arquivo = db.table("remessa_arquivos").insert({
-            "remessa_id": remessa["id"], "tenant_id": tenant, "tipo": "geral", "nsa": nsa, "layout": builder.LAYOUT,
-            "path": path, "nome_arquivo": nome, "sha256": sha, "qtd_itens": len(itens), "valor_total": str(arq.valor_total),
-        }).execute().data[0]
-        linhas_itens = db.table("remessa_itens").insert([{
-            "remessa_id": remessa["id"], "arquivo_id": arquivo["id"], "tenant_id": tenant, "despesa_id": it.ref,
-            "fornecedor_id": despesas[it.ref].get("fornecedor_id"), "forma_pagamento": it.forma,
-            "lote": arq.posicoes[it.ref][0], "sequencial": arq.posicoes[it.ref][1], "seu_numero": it.seu_numero,
-            "valor": str(it.valor), "status": "em_remessa",
-        } for it in itens]).execute().data or []
-        por_despesa = {str(r["despesa_id"]): r for r in linhas_itens}
+        por_despesa: dict[str, dict] = {}
+        nsas = []
+        for tipo, itens in grupos:
+            nsa = _reservar_nsa(conta, db)
+            nsas.append(nsa)
+            for n, it in enumerate(itens, start=1):
+                it.seu_numero = seu_numero(conta["codigo_banco"], nsa, n)
+            arq = builder.gerar(_empresa(conta), itens, nsa)
+            conteudo = arq.texto.encode("ascii")
+            sufixo = "_PIX" if tipo == "pix" else ""
+            nome = f"PAG{conta['codigo_banco']}_{data_pagamento:%Y%m%d}_{nsa:06d}{sufixo}.REM"
+            path = f"{tenant or 'geral'}/remessas/{remessa['id']}/{nome}"
+            db.storage.from_(BUCKET).upload(path, conteudo, {"content-type": "text/plain", "upsert": "false"})
+            arquivo = db.table("remessa_arquivos").insert({
+                "remessa_id": remessa["id"], "tenant_id": tenant, "tipo": tipo, "nsa": nsa, "layout": builder.LAYOUT,
+                "path": path, "nome_arquivo": nome, "sha256": hashlib.sha256(conteudo).hexdigest(),
+                "qtd_itens": len(itens), "valor_total": str(arq.valor_total),
+            }).execute().data[0]
+            linhas_itens = db.table("remessa_itens").insert([{
+                "remessa_id": remessa["id"], "arquivo_id": arquivo["id"], "tenant_id": tenant, "despesa_id": it.ref,
+                "fornecedor_id": despesas[it.ref].get("fornecedor_id"), "forma_pagamento": it.forma,
+                "lote": arq.posicoes[it.ref][0], "sequencial": arq.posicoes[it.ref][1], "seu_numero": it.seu_numero,
+                "valor": str(it.valor), "status": "em_remessa",
+            } for it in itens]).execute().data or []
+            for r in linhas_itens:
+                por_despesa[str(r["despesa_id"])] = {**r, "nsa": nsa}
         for did, r in por_despesa.items():
             _q(usuario, db.table("despesas").update({"remessa_item_id": r["id"]}).eq("id", did)).execute()
         db.table("despesa_pagamento_eventos").insert([{
             "tenant_id": tenant, "despesa_id": did, "item_id": r["id"], "evento": "incluida_remessa",
-            "detalhe": {"remessa_id": remessa["id"], "nsa": nsa, "seu_numero": r["seu_numero"]},
+            "detalhe": {"remessa_id": remessa["id"], "nsa": r["nsa"], "seu_numero": r["seu_numero"]},
             "usuario_id": usuario.user_id,
         } for did, r in por_despesa.items()]).execute()
     except Exception:
         _desfazer(anteriores, usuario, db)
         raise
-    logger.info("remessa_gerada", remessa_id=remessa["id"], nsa=nsa, itens=len(itens))
+    logger.info("remessa_gerada", remessa_id=remessa["id"], nsa=nsas, itens=len(base))
     return detalhe(remessa["id"], usuario, db)
 
 
@@ -502,3 +518,44 @@ def dia_util(data: date) -> dict:
     return {"data": data.isoformat(), "dia_util": dias_uteis.eh_dia_util(data),
             "proximo": dias_uteis.proximo_dia_util(data).isoformat(),
             "sugestao_hoje": dias_uteis.proximo_dia_util(date.today() + timedelta(days=0)).isoformat()}
+
+
+def resumo(usuario: UsuarioAtual, db: Client) -> dict:
+    """Quadros do dashboard: a pagar até hoje, com o banco (por banco) e
+    rejeitados/devolvidos. Salário confidencial só entra para o Admin."""
+    _exigir(usuario, "visualizar")
+    try:
+        linhas = _q(usuario, db.table("despesas").select(
+            "id, valor, valor_pagamento, data_vencimento, vencimento_boleto, tipo_lancamento_id, status_pagamento, "
+            "remessa_item_id").eq("status", "aprovada").is_("paga_em", "null")).execute().data or []
+    except Exception as e:  # noqa: BLE001
+        if _sem_estrutura(e):
+            return {"habilitado": False}
+        raise
+    if not _ve_salario(usuario):
+        confid = ids_confidenciais(db)
+        linhas = [d for d in linhas if str(d.get("tipo_lancamento_id")) not in confid]
+    hoje = date.today().isoformat()
+
+    def soma(ds):
+        return {"qtd": len(ds), "valor": str(sum((_valor(d) for d in ds), Decimal(0)))}
+
+    vencendo = [d for d in linhas if d.get("status_pagamento") in LIVRES and d.get("status_pagamento") is None
+                and str(d.get("vencimento_boleto") or d.get("data_vencimento") or "9999")[:10] <= hoje]
+    rejeitados = [d for d in linhas if d.get("status_pagamento") in ("rejeitada", "devolvida")]
+    andamento = [d for d in linhas if d.get("status_pagamento") in EM_ANDAMENTO and d.get("remessa_item_id")]
+    por_banco: dict[str, list] = {}
+    if andamento:
+        itens = {str(i["id"]): i for i in (db.table("remessa_itens").select("id, remessa_id")
+                 .in_("id", [str(d["remessa_item_id"]) for d in andamento]).execute().data or [])}
+        rems = {r["id"]: r for r in (db.table("remessas").select("id, conta_id")
+                .in_("id", list({i["remessa_id"] for i in itens.values()})).execute().data or [])} if itens else {}
+        contas = {c["id"]: c["codigo_banco"] for c in (db.table("contas_pagadoras").select("id, codigo_banco")
+                  .in_("id", list({r["conta_id"] for r in rems.values()})).execute().data or [])} if rems else {}
+        for d in andamento:
+            it = itens.get(str(d["remessa_item_id"]), {})
+            banco = contas.get(rems.get(it.get("remessa_id"), {}).get("conta_id"), "?")
+            por_banco.setdefault({"033": "Santander", "341": "Itaú"}.get(banco, "Outro"), []).append(d)
+    return {"habilitado": True, "a_pagar_hoje": soma(vencendo), "rejeitados": soma(rejeitados),
+            "com_o_banco": {b: soma(ds) for b, ds in por_banco.items()},
+            "autorizar": soma([d for d in andamento if d.get("status_pagamento") == "bloqueada_banco"])}

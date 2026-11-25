@@ -131,10 +131,18 @@ def test_cancelar_devolve_despesas():
         rs.cancelar(r["id"], GESTOR, db)
 
 
-def test_itau_ainda_nao_e_comercial_nao_gera():
-    with pytest.raises(HTTPException) as e:
-        rs.validar(ITAU, DIA, [D1], ADMIN, banco())
-    assert "Itaú" in e.value.detail
+def test_itau_separa_pix_e_comercial_nao_gera():
+    db = banco()
+    db.tabelas["despesas"].append(_desp(uid(5), forma_pagamento="concessionaria", fornecedor_id=None,
+                                        codigo_barras="83600000001234500001111111111111111111111111"))
+    v = rs.validar(ITAU, DIA, [D1, uid(5)], ADMIN, db)
+    assert v["validos"] == 2 and any("2 arquivos" in a for a in v["avisos"])
+    r = rs.gerar(ITAU, DIA, [D1, uid(5)], ADMIN, db)
+    assert sorted(a["tipo"] for a in r["arquivos"]) == ["geral", "pix"]
+    assert len({a["nsa"] for a in r["arquivos"]}) == 2
+    for texto in db.arquivos.values():
+        linhas = texto.decode("ascii").splitlines()
+        assert all(len(l) == 240 and l.startswith("341") for l in linhas)
     with pytest.raises(HTTPException) as e:
         rs.gerar(CONTA, DIA, [D1], COMERCIAL, banco())
     assert e.value.status_code == 403
@@ -165,3 +173,14 @@ def test_despesa_em_remessa_nao_muda_valor_nem_some():
         g(db, D1, "excluir")
     db.tabelas["despesas"][0]["status_pagamento"] = None
     g(db, D1, "excluir")
+
+
+def test_resumo_dashboard():
+    db = banco()
+    for d in db.tabelas["despesas"]:
+        d["data_vencimento"] = date.today().isoformat()
+    rs.gerar(CONTA, DIA, [D1], ADMIN, db)
+    r = rs.resumo(GESTOR, db)
+    assert r["com_o_banco"]["Santander"]["qtd"] == 1
+    assert r["a_pagar_hoje"]["qtd"] == 2        # D2 e D3 (D4 é salário, oculto do gestor)
+    assert rs.resumo(ADMIN, db)["a_pagar_hoje"]["qtd"] == 3

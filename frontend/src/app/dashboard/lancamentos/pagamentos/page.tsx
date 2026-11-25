@@ -13,12 +13,14 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Tabs } from '@/components/ui/Tabs'
 import { useToast } from '@/components/ui/Toast'
 import { permissaoPagamentos } from '@/types'
+import { Retornos } from '@/components/pagamentos/Retornos'
+import { ModalBaixaManual } from '@/components/pagamentos/ModalBaixaManual'
 import {
   NOME_LANCAMENTO, STATUS_PAGAMENTO, STATUS_REMESSA, nomeForma,
   type APagarResp, type ContaPagadora, type ItemAPagar, type Remessa, type ValidacaoRemessa,
 } from '@/lib/pagamentos'
 
-type Aba = 'a_pagar' | 'em_andamento' | 'remessas'
+type Aba = 'a_pagar' | 'em_andamento' | 'remessas' | 'retornos'
 const inputCls = 'rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-navy focus-ring focus:outline-none'
 
 function Cartao({ titulo, valor, cor }: { titulo: string; valor?: string; cor: string }) {
@@ -291,6 +293,8 @@ export default function PagamentosPage() {
   const { token } = useAuth()
   const { role, permissions } = useUser()
   const podeGerar = permissaoPagamentos(permissions, role, 'remessa')
+  const podeRetorno = permissaoPagamentos(permissions, role, 'retorno')
+  const [baixa, setBaixa] = useState<ItemAPagar | null>(null)
   const toast = useToast()
   const [aba, setAba] = useState<Aba>('a_pagar')
   const [dados, setDados] = useState<APagarResp | null>(null)
@@ -303,6 +307,7 @@ export default function PagamentosPage() {
 
   const carregar = useCallback(() => {
     if (!token) return
+    if (aba === 'retornos') return
     if (aba === 'remessas') {
       api.get<Remessa[]>('/pagamentos/remessas', token).then(setRemessas)
         .catch(e => setErro(e instanceof Error ? e.message : 'Erro ao carregar.'))
@@ -345,11 +350,15 @@ export default function PagamentosPage() {
       )}
 
       <Tabs<Aba> items={[{ key: 'a_pagar', label: 'A pagar' }, { key: 'em_andamento', label: 'Em andamento' },
-        { key: 'remessas', label: 'Remessas' }]} ativa={aba} onChange={setAba} idPrefix="pag" />
+        { key: 'remessas', label: 'Remessas' }, { key: 'retornos', label: 'Retornos' }]} ativa={aba} onChange={setAba} idPrefix="pag" />
 
       {erro && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{erro}</p>}
 
-      {aba !== 'remessas' && (
+      {aba === 'retornos' && (
+        <Retornos token={token} podeImportar={podeRetorno} onImportado={() => {}} />
+      )}
+
+      {(aba === 'a_pagar' || aba === 'em_andamento') && (
         !dados ? <div className="flex h-40 items-center justify-center"><Spinner className="text-navy" /></div>
         : !dados.habilitado ? <p className="text-sm text-gray-500">Pagamentos ainda não habilitados (migration 0050).</p>
         : (
@@ -385,6 +394,7 @@ export default function PagamentosPage() {
                     <th className="px-3 py-3">Forma</th>
                     <th className="px-3 py-3 text-right">Valor a pagar</th>
                     <th className="px-3 py-3">Situação</th>
+                    {podeRetorno && <th className="px-3 py-3" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -402,6 +412,7 @@ export default function PagamentosPage() {
                         <td className="px-3 py-2.5 text-gray-600">{fmtData(i.vencimento_documento ?? i.data_vencimento)}</td>
                         <td className="px-3 py-2.5 text-gray-800">
                           {i.descricao}
+                          {i.motivo && <span className="block text-[11px] text-red-600">Banco: {i.motivo}</span>}
                           {!pronto && aba === 'a_pagar' && (
                             <span className="block text-[11px] text-amber-700">{i.pendencias[0]}</span>
                           )}
@@ -410,11 +421,19 @@ export default function PagamentosPage() {
                         <td className="px-3 py-2.5 text-gray-600">{nomeForma(i.forma_pagamento)}</td>
                         <td className="px-3 py-2.5 text-right font-medium text-gray-800">{fmtBRL(i.valor_pagar)}</td>
                         <td className="px-3 py-2.5"><Status s={i.status_pagamento} /></td>
+                        {podeRetorno && (
+                          <td className="px-3 py-2.5 text-right">
+                            {(!i.status_pagamento || ['rejeitada', 'devolvida', 'agendada'].includes(i.status_pagamento)) && (
+                              <button type="button" onClick={() => setBaixa(i)}
+                                className="whitespace-nowrap text-xs text-blue-600 hover:underline">Baixa manual</button>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
                   {itens.length === 0 && (
-                    <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-400">
+                    <tr><td colSpan={8} className="py-10 text-center text-sm text-gray-400">
                       {aba === 'a_pagar' ? 'Nenhuma despesa aprovada a pagar.' : 'Nenhum pagamento em andamento.'}
                     </td></tr>
                   )}
@@ -474,6 +493,10 @@ export default function PagamentosPage() {
             setCriando(false); setSel(new Set()); carregar(); setAberta(r.id)
             toast.sucesso('Remessa gerada. Baixe o arquivo e importe no banco.')
           }} />
+      )}
+      {baixa && (
+        <ModalBaixaManual token={token} item={baixa} onClose={() => setBaixa(null)}
+          onFeito={() => { toast.sucesso('Pagamento baixado.'); carregar() }} />
       )}
       {aberta && (
         <ModalRemessa token={token} remessaId={aberta} podeGerar={podeGerar} onClose={() => setAberta(null)} onMudou={carregar} />

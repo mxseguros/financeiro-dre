@@ -153,6 +153,7 @@ export interface ItemAPagar {
   status_pagamento: StatusPagamento | null
   favorecido: { id: string; nome: string; funcionario: boolean } | null
   salario: boolean
+  motivo: string | null
   pendencias: string[]
 }
 
@@ -207,4 +208,24 @@ export const NOME_LANCAMENTO: Record<string, string> = {
   '01': 'Crédito em conta', '03': 'TED', '05': 'Crédito em poupança', '11': 'Contas e tributos com código',
   '16': 'DARF', '17': 'GPS', '30': 'Boletos Santander', '31': 'Boletos de outros bancos',
   '45': 'Pix', '47': 'Pix QR Code',
+}
+
+// ── Fase 3: retorno ───────────────────────────────────────────
+export interface LinhaRetorno { despesa_id: string; descricao: string | null; valor: string; ocorrencias: string[]; motivo: string }
+export interface ResultadoRetorno {
+  banco: string
+  tipo: 'critica' | 'movimento'
+  nsa: number | null
+  contagem: Record<string, number>
+  pagos: LinhaRetorno[]
+  agendados: LinhaRetorno[]
+  bloqueados: LinhaRetorno[]
+  rejeitados: LinhaRetorno[]
+  devolvidos: LinhaRetorno[]
+  nao_encontrados: { seu_numero: string; ocorrencias: string[]; valor: string | null }[]
+  ocorrencias_lote: Record<string, string>
+}
+export interface RetornoImportado {
+  id: string; codigo_banco: string; tipo: 'critica' | 'movimento'; nsa: number | null
+  nome_arquivo: string; resumo: Record<string, number>; importado_em: string
 }

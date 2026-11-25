@@ -1,7 +1,7 @@
 // Contas pagadoras (0050, só Admin): conta da MX de onde sai o pagamento por
 // CNAB, com o convênio e as opções que o banco contratou com a MX.
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '@/lib/api'
+import { API_BASE, api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -179,7 +179,67 @@ function ModalConta({ token, item, onClose, onSaved }: { token: string; item: Co
   )
 }
 
+// Fase 6: arquivo com pagamentos fictícios para o banco criticar o leiaute.
+// Santander: só com o sequencial de teste (NSA 1 a 10). Itaú: para o Validador do 30 horas.
+async function baixarTeste(token: string, c: ContaPagadora, parte: 'geral' | 'pix', nsa?: number) {
+  const q = new URLSearchParams({ parte, ...(nsa ? { nsa: String(nsa) } : {}) })
+  const res = await fetch(`${API_BASE}/pagamentos/contas/${c.id}/arquivo-teste?${q}`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${res.status}`)
+  }
+  const nome = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'teste.REM'
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove()
+  URL.revokeObjectURL(url)
+}
+
+function ModalTeste({ token, conta, onClose }: { token: string; conta: ContaPagadora; onClose: () => void }) {
+  const [nsa, setNsa] = useState('1')
+  const [erro, setErro] = useState<string | null>(null)
+  const [ocupado, setOcupado] = useState(false)
+  const santander = conta.codigo_banco === '033'
+  async function baixar(parte: 'geral' | 'pix') {
+    setOcupado(true); setErro(null)
+    try { await baixarTeste(token, conta, parte, santander ? parseInt(nsa) || 1 : undefined) }
+    catch (e) { setErro(e instanceof Error ? e.message : 'Erro ao gerar.') }
+    finally { setOcupado(false) }
+  }
+  return (
+    <Modal open onClose={onClose} title="Arquivo de teste (homologação)" maxWidth="sm:max-w-lg">
+      <div className="space-y-3 text-sm text-gray-700">
+        <p>Arquivo com 6 pagamentos fictícios (Pix por chave, Pix QR Code, TED, boleto, conta de consumo e DARF) para o banco conferir o leiaute.</p>
+        {santander ? (
+          <>
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Só funciona com o <strong>sequencial de teste</strong> contratado: arquivos de número 1 a 10 são criticados, mas não pagos.
+              Envie pelo Internet Banking e confira o relatório de crítica.
+            </p>
+            <label className="block max-w-[160px]">
+              <span className="mb-0.5 block text-xs font-medium text-gray-600">Número do arquivo (1 a 10)</span>
+              <input type="number" min={1} max={10} value={nsa} onChange={e => setNsa(e.target.value)} className={inputCls} />
+            </label>
+          </>
+        ) : (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Use <strong>somente no Validador</strong> do Itaú 30 horas (Transmissão de arquivos → Validação). Não envie como remessa.
+            O Itaú exige o Pix num arquivo separado: valide os dois.
+          </p>
+        )}
+        {erro && <p role="alert" className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-600">{erro}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Fechar</Button>
+          <Button type="button" onClick={() => baixar('geral')} loading={ocupado}>{santander ? 'Baixar arquivo' : 'Baixar arquivo geral'}</Button>
+          {!santander && <Button type="button" onClick={() => baixar('pix')} loading={ocupado}>Baixar arquivo Pix</Button>}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 export function SecaoContasPagadoras({ token }: { token: string }) {
+  const [teste, setTeste] = useState<ContaPagadora | null>(null)
   const [items, setItems] = useState<ContaPagadora[]>([])
   const [loading, setLoading] = useState(true)
   const [editando, setEditando] = useState<ContaPagadora | null | 'nova'>(null)
@@ -203,6 +263,7 @@ export function SecaoContasPagadoras({ token }: { token: string }) {
 
   return (
     <div className="space-y-4">
+      {teste && <ModalTeste token={token} conta={teste} onClose={() => setTeste(null)} />}
       {editando && <ModalConta token={token} item={editando === 'nova' ? null : editando} onClose={() => setEditando(null)} onSaved={carregar} />}
       <ConfirmDialog open={!!excluir} titulo="Excluir conta pagadora?" mensagem={<>{excluir?.descricao} será excluída.</>}
         loading={excluindo} onCancelar={() => setExcluir(null)} onConfirmar={() => excluir && confirmarExclusao(excluir)} />
@@ -237,6 +298,7 @@ export function SecaoContasPagadoras({ token }: { token: string }) {
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <span className="inline-flex gap-3">
+                      <button onClick={() => setTeste(c)} className="text-xs text-gray-500 hover:underline">Arquivo de teste</button>
                       <button onClick={() => setEditando(c)} className="text-xs text-blue-500 hover:underline">Editar</button>
                       <BtnExcluir onClick={() => setExcluir(c)} />
                     </span>

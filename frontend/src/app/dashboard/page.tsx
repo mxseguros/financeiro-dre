@@ -11,6 +11,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { ShareButton } from '@/components/ui/ShareButton'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { useUser } from '@/contexts/UserContext'
+import { QuadroPagamentos } from '@/components/pagamentos/QuadroPagamentos'
+import { permissaoPagamentos } from '@/types'
 import type { DashboardResponse } from '@/types'
 import type { CentroCusto, DespesasResp, ReceitasResp } from './lancamentos/_components/shared'
 import { ModalDetalheValor, ValorClicavel, type AbrirDetalhe, type PedidoDetalhe } from './_components/DetalheValor'
@@ -424,7 +426,7 @@ export default function DashboardPage() {
   // Periodo compartilhado entre telas (ver contexts/PeriodoContext.tsx).
   // Todos os modos filtram pela Data de Pagamento (em aberto, pelo vencimento).
   const filtro = filtroDoPeriodo(usePeriodo())
-  const { permissions } = useUser()
+  const { permissions, role } = useUser()
   const [pedido, setPedido] = useState<PedidoDetalhe | null>(null)
   // A modal lista lançamentos um a um: só para quem tem acesso à tela de Lançamentos.
   const abrir: AbrirDetalhe | undefined = permissions?.lancamentos?.visualizar ? setPedido : undefined
@@ -556,6 +558,8 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {token && permissaoPagamentos(permissions, role, 'visualizar') && <QuadroPagamentos token={token} />}
 
       {erro ? (
         <div className="rounded-xl bg-red-50 p-4 text-sm text-red-600">{erro}</div>

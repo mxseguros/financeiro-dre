@@ -11,7 +11,7 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.auth import UsuarioAtual, obter_usuario_atual
@@ -21,7 +21,8 @@ from app.models.pagamentos import (
     ContaPagadoraPayload, FavorecidoFuncionarioPayload, FornecedorPayload, PagamentoDespesaPayload,
 )
 from app.services import (
-    contas_pagadoras_service, folha_service, fornecedores_service, pagamento_despesa_service, remessa_service,
+    arquivo_teste_service, contas_pagadoras_service, folha_service, fornecedores_service, pagamento_despesa_service, remessa_service,
+    retorno_service,
 )
 from app.services.dre_service import registrar_auditoria
 
@@ -144,6 +145,11 @@ async def listar_a_pagar(usuario: Usuario, situacao: str = "a_pagar", inicio: da
     return remessa_service.a_pagar(usuario, get_supabase_admin(), situacao, inicio, fim)
 
 
+@router.get("/resumo", summary="Quadros de pagamentos do dashboard")
+async def resumo_pagamentos(usuario: Usuario):
+    return remessa_service.resumo(usuario, get_supabase_admin())
+
+
 @router.get("/dia-util", summary="Confere se a data é dia útil bancário")
 async def dia_util(data: date, usuario: Usuario):
     return remessa_service.dia_util(data)
@@ -196,3 +202,42 @@ async def cancelar_remessa(request: Request, remessa_id: UUID, usuario: Usuario)
     r = remessa_service.cancelar(remessa_id, usuario, get_supabase_admin())
     await registrar_auditoria(usuario, "remessa_cancelada", {"remessa_id": str(remessa_id)}, _ip(request), get_supabase_admin())
     return r
+
+
+# ── Retorno e baixa manual (fase 3 / 5) ───────────────────────
+@router.post("/retornos", summary="Importa o arquivo de retorno do banco e dá a baixa")
+@limiter.limit("20/minute")
+async def importar_retorno(request: Request, usuario: Usuario, arquivo: UploadFile = File(...)):
+    conteudo = await arquivo.read()
+    r = retorno_service.importar(arquivo.filename or "retorno.ret", conteudo, usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "importar_retorno_cnab", {"banco": r["banco"], "tipo": r["tipo"], **r["contagem"]},
+                              _ip(request), get_supabase_admin())
+    return r
+
+
+@router.get("/retornos", summary="Retornos importados")
+async def listar_retornos(usuario: Usuario):
+    return retorno_service.listar(usuario, get_supabase_admin())
+
+
+class _BaixaPayload(BaseModel):
+    data_pagamento: date
+
+
+@router.post("/despesas/{despesa_id}/baixa", summary="Baixa manual do pagamento (comprovante como anexo)")
+async def baixa_manual(request: Request, despesa_id: UUID, payload: _BaixaPayload, usuario: Usuario):
+    r = retorno_service.baixa_manual(str(despesa_id), payload.data_pagamento, usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "baixa_manual_pagamento", {"despesa_id": str(despesa_id),
+                              "data": payload.data_pagamento.isoformat()}, _ip(request), get_supabase_admin())
+    return r
+
+
+# ── Homologação (fase 6) ──────────────────────────────────────
+@router.get("/contas/{conta_id}/arquivo-teste", summary="Arquivo de teste para a homologação com o banco (Admin)")
+async def arquivo_teste(request: Request, conta_id: UUID, usuario: Usuario, nsa: int | None = None, parte: str = "geral"):
+    from fastapi.responses import Response
+    nome, texto = arquivo_teste_service.gerar(str(conta_id), nsa, parte, usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "gerar_arquivo_teste_cnab", {"conta_id": str(conta_id), "arquivo": nome},
+                              _ip(request), get_supabase_admin())
+    return Response(content=texto.encode("ascii"), media_type="text/plain",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
