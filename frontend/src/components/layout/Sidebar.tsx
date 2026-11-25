@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { permissaoRelatorios, type Role, type Permissions } from '@/types'
+import { permissaoPagamentos, permissaoRelatorios, type Role, type Permissions } from '@/types'
 import Image from 'next/image'
 import { iniciarTour } from '@/components/tour/tour'
 
@@ -17,6 +17,7 @@ const Icon = {
   faq:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>,
   compass: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>,
   table:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>,
+  bank:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3z"/></svg>,
   users:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
 }
 
@@ -32,6 +33,8 @@ const NAV: NavItem[] = [
   { href: '/dashboard/dre',                    label: 'DRE',           icon: Icon.chart,    permissaoTela: 'dre'          },
   { href: '/dashboard/lancamentos',            label: 'Lançamentos',   icon: Icon.book,     permissaoTela: 'lancamentos'  },
   { href: '/dashboard/lancamentos/aprovacoes', label: 'Aprovações',    icon: Icon.kanban,   permissaoTela: 'aprovacoes'   },
+  // Pagamentos por arquivo CNAB (0050).
+  { href: '/dashboard/lancamentos/pagamentos', label: 'Pagamentos',    icon: Icon.bank,     permissaoTela: 'pagamentos'   },
   { href: '/dashboard/exports',                label: 'Exportações',   icon: Icon.download                                },
   // Relatórios substituiu o Monitoramento IA (26/10/2026).
   { href: '/dashboard/relatorios',             label: 'Relatórios',    icon: Icon.table,    permissaoTela: 'relatorios'   },
@@ -68,6 +71,7 @@ export function Sidebar({ role, permissions, email, nome, onSignOut, aberta = fa
   const visible = (item: NavItem) => {
     if (!item.permissaoTela) return true
     if (item.permissaoTela === 'relatorios') return permissaoRelatorios(permissions, role, 'visualizar')
+    if (item.permissaoTela === 'pagamentos') return permissaoPagamentos(permissions, role, 'visualizar')
     return permissions[item.permissaoTela]?.visualizar === true
   }
 

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
+import { permissaoPagamentos } from '@/types'
 import { SecaoUsuarios } from './_components/SecaoUsuarios'
 import { SecaoCategoriasSubitens } from './_components/SecaoCategoriasSubitens'
 import { SecaoBancos } from './_components/SecaoBancos'
@@ -38,8 +39,7 @@ export default function ConfiguracoesPage() {
     { id: 'contas_pagadoras', label: 'Contas pagadoras', desc: 'Contas da empresa de onde saem os pagamentos por arquivo (CNAB), com convênio e opções do banco (só Admin)' },
   ]
   // Pagamentos (0050): quem gera remessa gerencia fornecedores; contas, só o Admin.
-  const pagamentos = permissions?.pagamentos
-  const podePagamentos = role === 'admin' || role === 'gestor' || !!pagamentos?.remessa
+  const podePagamentos = permissaoPagamentos(permissions, role, 'remessa')
   // Folha (0049): salário é confidencial — a aba só existe para o Admin.
   const ABAS = ABAS_TODAS.filter(a =>
     (a.id !== 'folha' && a.id !== 'contas_pagadoras') || role === 'admin')

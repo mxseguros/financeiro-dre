@@ -125,8 +125,12 @@ class _Bucket:
     def create_signed_upload_url(self, path):
         return {"signed_url": f"https://s/{path}?token=t", "token": "t", "path": path}
 
-    def create_signed_url(self, path, _exp):
+    def create_signed_url(self, path, _exp, *_a):
         return {"signedURL": f"https://s/download/{path}"}
+
+    def upload(self, path, conteudo, *_a):
+        self.db.arquivos[path] = conteudo
+        return {"path": path}
 
     def remove(self, paths):
         self.db.removidos.extend(paths)
@@ -139,7 +143,13 @@ class Db:
         self.padroes = padroes or {}
         self.seq = 0
         self.removidos: list[str] = []
+        self.arquivos: dict[str, bytes] = {}
+        self.funcoes: dict = {}
         self.storage = SimpleNamespace(from_=lambda nome: _Bucket(self, nome))
 
     def table(self, nome):
         return _Q(self, nome)
+
+    def rpc(self, nome, params):
+        resultado = self.funcoes[nome](self, params)
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=resultado))

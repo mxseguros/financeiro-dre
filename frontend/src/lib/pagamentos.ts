@@ -138,3 +138,73 @@ export interface DocumentoLido {
 }
 
 export const somenteDigitos = (s: string) => s.replace(/\D/g, '')
+
+// ── Fase 2: contas a pagar e remessas ─────────────────────────
+export interface ItemAPagar {
+  id: string
+  descricao: string
+  valor: string
+  valor_pagar: string
+  data_vencimento: string | null
+  vencimento_documento: string | null
+  competencia: string | null
+  centro_custo: string | null
+  forma_pagamento: FormaPagamento | null
+  status_pagamento: StatusPagamento | null
+  favorecido: { id: string; nome: string; funcionario: boolean } | null
+  salario: boolean
+  pendencias: string[]
+}
+
+export interface APagarResp {
+  habilitado: boolean
+  itens: ItemAPagar[]
+  ocultos: number
+  totais: { a_pagar?: string; em_remessa?: string; agendado?: string; rejeitado?: string }
+}
+
+export interface ValidacaoRemessa {
+  itens: { despesa_id: string; descricao: string | null; valor: string | null; forma_pagamento: string | null
+           ok: boolean; erros: string[]; avisos?: string[]; lote: string | null }[]
+  validos: number
+  invalidos: number
+  valor_total: string
+  data_pagamento: string
+  data_sugerida: string
+  lotes: { forma_lancamento: string; tipo_servico: string; qtd: number; valor: string }[]
+  avisos: string[]
+  conta: { id: string; codigo_banco: string; ambiente: string; proximo_nsa: number }
+}
+
+export type StatusRemessa = 'gerada' | 'enviada' | 'parcial' | 'processada' | 'cancelada'
+export const STATUS_REMESSA: Record<StatusRemessa, { nome: string; cor: string }> = {
+  gerada:     { nome: 'Gerada — baixar e enviar', cor: 'bg-blue-50 text-blue-700' },
+  enviada:    { nome: 'Enviada ao banco', cor: 'bg-indigo-50 text-indigo-700' },
+  parcial:    { nome: 'Retorno parcial', cor: 'bg-amber-50 text-amber-700' },
+  processada: { nome: 'Processada', cor: 'bg-green-50 text-green-700' },
+  cancelada:  { nome: 'Cancelada', cor: 'bg-gray-100 text-gray-500' },
+}
+
+export interface ArquivoRemessa { id: string; tipo: 'geral' | 'pix'; nsa: number; nome_arquivo: string }
+
+export interface Remessa {
+  id: string
+  conta_id: string
+  conta: string | null
+  data_pagamento: string
+  status: StatusRemessa
+  ambiente: 'homologacao' | 'producao'
+  qtd_itens: number
+  valor_total: string
+  criado_em: string
+  enviada_em: string | null
+  arquivos: ArquivoRemessa[]
+  itens?: { id: string; despesa_id: string; seu_numero: string; descricao: string | null; favorecido: string | null
+            forma_pagamento: FormaPagamento; valor: string; status: string; ocorrencias: string[]; motivo: string | null }[]
+}
+
+export const NOME_LANCAMENTO: Record<string, string> = {
+  '01': 'Crédito em conta', '03': 'TED', '05': 'Crédito em poupança', '11': 'Contas e tributos com código',
+  '16': 'DARF', '17': 'GPS', '30': 'Boletos Santander', '31': 'Boletos de outros bancos',
+  '45': 'Pix', '47': 'Pix QR Code',
+}

@@ -3,21 +3,26 @@ MX Seguros — DRE-IA | Pagamentos por CNAB 240 (migration 0050).
 
 Fase 1: favorecidos (fornecedores e funcionários), contas pagadoras e o
 bloco "Pagamento" da despesa.
-Remessa e retorno entram nas fases seguintes.
+Fase 2: contas a pagar e remessa (Santander V11.7). Retorno na fase 3.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
+from pydantic import BaseModel, Field
 
 from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_admin
+from app.middleware.rate_limit import limiter
 from app.models.pagamentos import (
     ContaPagadoraPayload, FavorecidoFuncionarioPayload, FornecedorPayload, PagamentoDespesaPayload,
 )
-from app.services import contas_pagadoras_service, folha_service, fornecedores_service, pagamento_despesa_service
+from app.services import (
+    contas_pagadoras_service, folha_service, fornecedores_service, pagamento_despesa_service, remessa_service,
+)
 from app.services.dre_service import registrar_auditoria
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
@@ -125,3 +130,69 @@ async def salvar_pagamento_despesa(despesa_id: UUID, payload: PagamentoDespesaPa
 @router.post("/documento", summary="Lê linha digitável, código de barras ou Pix copia-e-cola")
 async def interpretar_documento(payload: dict, usuario: Usuario):
     return pagamento_despesa_service.interpretar_documento(str(payload.get("texto") or ""))
+
+
+# ── Contas a pagar e remessas (fase 2) ────────────────────────
+class _RemessaPayload(BaseModel):
+    conta_id: UUID
+    data_pagamento: date
+    despesa_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+@router.get("/a-pagar", summary="Despesas aprovadas a pagar e pagamentos em andamento")
+async def listar_a_pagar(usuario: Usuario, situacao: str = "a_pagar", inicio: date | None = None, fim: date | None = None):
+    return remessa_service.a_pagar(usuario, get_supabase_admin(), situacao, inicio, fim)
+
+
+@router.get("/dia-util", summary="Confere se a data é dia útil bancário")
+async def dia_util(data: date, usuario: Usuario):
+    return remessa_service.dia_util(data)
+
+
+@router.post("/remessas/validar", summary="Valida os pagamentos antes de gerar a remessa")
+async def validar_remessa(payload: _RemessaPayload, usuario: Usuario):
+    return remessa_service.validar(str(payload.conta_id), payload.data_pagamento,
+                                   [str(i) for i in payload.despesa_ids], usuario, get_supabase_admin())
+
+
+@router.post("/remessas", status_code=status.HTTP_201_CREATED, summary="Gera a remessa CNAB")
+@limiter.limit("10/minute")
+async def gerar_remessa(request: Request, payload: _RemessaPayload, usuario: Usuario):
+    r = remessa_service.gerar(str(payload.conta_id), payload.data_pagamento,
+                              [str(i) for i in payload.despesa_ids], usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "gerar_remessa_cnab",
+                              {"remessa_id": str(r["id"]), "qtd": r["qtd_itens"], "valor_total": str(r["valor_total"]),
+                               "nsa": [a["nsa"] for a in r["arquivos"]]}, _ip(request), get_supabase_admin())
+    return r
+
+
+@router.get("/remessas", summary="Remessas geradas")
+async def listar_remessas(usuario: Usuario):
+    return remessa_service.listar(usuario, get_supabase_admin())
+
+
+@router.get("/remessas/{remessa_id}", summary="Detalhe da remessa")
+async def detalhe_remessa(remessa_id: UUID, usuario: Usuario):
+    return remessa_service.detalhe(remessa_id, usuario, get_supabase_admin())
+
+
+@router.get("/remessas/{remessa_id}/arquivos/{arquivo_id}/download", summary="URL de download (5 min)")
+async def baixar_arquivo(request: Request, remessa_id: UUID, arquivo_id: UUID, usuario: Usuario):
+    r = remessa_service.url_arquivo(remessa_id, arquivo_id, usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "baixar_remessa_cnab", {"remessa_id": str(remessa_id), "arquivo": r["nome"]},
+                              _ip(request), get_supabase_admin())
+    return r
+
+
+@router.post("/remessas/{remessa_id}/enviada", summary="Marca a remessa como enviada ao banco")
+async def marcar_enviada(request: Request, remessa_id: UUID, usuario: Usuario):
+    r = remessa_service.marcar_enviada(remessa_id, usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "remessa_enviada", {"remessa_id": str(remessa_id)}, _ip(request), get_supabase_admin())
+    return r
+
+
+@router.post("/remessas/{remessa_id}/cancelar", summary="Cancela a remessa e devolve as despesas para a pagar")
+async def cancelar_remessa(request: Request, remessa_id: UUID, usuario: Usuario):
+    r = remessa_service.cancelar(remessa_id, usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "remessa_cancelada", {"remessa_id": str(remessa_id)}, _ip(request), get_supabase_admin())
+    return r

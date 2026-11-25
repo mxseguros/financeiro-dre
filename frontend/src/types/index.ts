@@ -80,6 +80,15 @@ export function permissaoRelatorios(
   return p.assistente?.visualizar === true
 }
 
+/** Pagamentos (0050): sem a chave nas permissões, Admin e Gestor veem, geram e importam. */
+export function permissaoPagamentos(
+  p: Permissions | null | undefined, role: Role | null | undefined, acao: 'visualizar' | 'remessa' | 'retorno' | 'config',
+): boolean {
+  if (role === 'admin') return true
+  if (p?.pagamentos) return p.pagamentos[acao] === true
+  return role === 'gestor' && acao !== 'config'
+}
+
 export function getDefaultPermissions(role: Role): Permissions {
   return DEFAULT_PERMISSIONS[role]
 }

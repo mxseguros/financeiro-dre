@@ -983,12 +983,47 @@ async def aprovar_despesa(despesa_id: UUID, usuario: UsuarioAtual, db: Client) -
     return _row_para_despesa_item(row)
 
 
+
+_PAGAMENTO_COM_BANCO = ("em_remessa", "agendada", "bloqueada_banco")
+
+
+def garantir_sem_pagamento_no_banco(db: Client, despesa_id: UUID | str, acao: str,
+                                    mudancas: dict | None = None) -> None:
+    """Pagamento por CNAB (0050) em andamento: a despesa não pode mudar de valor,
+    ser rejeitada nem excluída até o retorno do banco ou o cancelamento da remessa.
+    Com `mudancas`, só barra se algum desses campos realmente mudar."""
+    try:
+        linhas = db.table("despesas").select("status_pagamento, valor, paga_em, parcela_total, recorrente")             .eq("id", str(despesa_id)).execute().data or []
+    except Exception:  # noqa: BLE001 — sem a 0050, não há pagamento por arquivo
+        return
+    if mudancas is not None and linhas:
+        atual = linhas[0]
+        def _igual(campo, novo):
+            velho = atual.get(campo)
+            if campo == "valor":
+                from decimal import Decimal
+                return novo is None or Decimal(str(velho or 0)) == Decimal(str(novo))
+            if campo == "parcela_total":
+                return (velho or 1) == (novo or 1)
+            return (velho or None) == (novo or None)
+        if all(_igual(c, v) for c, v in mudancas.items()):
+            return
+    if linhas and linhas[0].get("status_pagamento") in _PAGAMENTO_COM_BANCO:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=409,
+            detail=f"Esta despesa está numa remessa de pagamento: não dá para {acao} agora. "
+                   "Cancele a remessa em Pagamentos ou aguarde o retorno do banco.",
+        )
+
+
 async def rejeitar_despesa(
     despesa_id: UUID,
     motivo: str,
     usuario: UsuarioAtual,
     db: Client,
 ) -> DespesaItem:
+    garantir_sem_pagamento_no_banco(db, despesa_id, "rejeitar")
     resp = (
         db.table("despesas")
         .update({
@@ -1234,6 +1269,17 @@ async def atualizar_despesa(
         campos["custo_tipo"] = payload.custo_tipo or None
     if "banco_id" in set_fields:
         campos["banco_id"] = str(payload.banco_id) if payload.banco_id else None
+    if set_fields & {"valor", "paga_em", "num_parcelas", "recorrente"}:
+        mud: dict = {}
+        if "valor" in set_fields:
+            mud["valor"] = payload.valor
+        if "paga_em" in set_fields:
+            mud["paga_em"] = payload.paga_em.isoformat() if payload.paga_em else None
+        if "num_parcelas" in set_fields:
+            mud["parcela_total"] = payload.num_parcelas
+        if "recorrente" in set_fields and payload.recorrente is not None:
+            mud["recorrente"] = payload.recorrente
+        garantir_sem_pagamento_no_banco(db, despesa_id, "mudar valor, data de pagamento ou parcelas", mud)
 
     from fastapi import HTTPException
 
@@ -1377,6 +1423,8 @@ async def deletar_despesa(
     aprovação — aprovada, só admin/gestor remove (ver deletar_despesa no
     router).
     """
+    garantir_sem_pagamento_no_banco(db, despesa_id, "excluir")
+
     def _irmas(q):
         q = q.neq("status", "excluida")
         return q.neq("status", "aprovada") if preservar_aprovadas else q
