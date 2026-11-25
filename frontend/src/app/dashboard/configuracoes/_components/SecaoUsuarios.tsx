@@ -146,6 +146,7 @@ export function SecaoUsuarios({
               ) : (
                 <PermissoesSelector
                   permissions={form.permissions}
+                  role={form.role}
                   onChange={p => setForm(f => ({ ...f, permissions: p }))}
                 />
               )}

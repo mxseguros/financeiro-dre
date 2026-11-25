@@ -1,8 +1,15 @@
-import type { Permissions } from '@/types'
+import { permissaoPagamentos, type Permissions, type Role } from '@/types'
 
 /** Permissões antigas sem "relatorios" mostram o que valia antes (o "Ver" do Monitor). */
 const relatoriosDe = (p: Permissions) =>
   p.relatorios ?? { visualizar: !!p.assistente?.visualizar, criar: !!p.assistente?.visualizar, compartilhar: false }
+
+/** Pagamentos (0050): sem a chave gravada, vale o padrão do perfil (Admin e Gestor têm acesso). */
+const pagamentosDe = (p: Permissions, role?: Role | null) => p.pagamentos ?? {
+  visualizar: permissaoPagamentos(p, role, 'visualizar'),
+  remessa: permissaoPagamentos(p, role, 'remessa'),
+  retorno: permissaoPagamentos(p, role, 'retorno'),
+}
 
 // ── Configuração de telas e ações para os checkboxes ──────────
 const TELAS_CONFIG: Array<{
@@ -43,12 +50,20 @@ const TELAS_CONFIG: Array<{
 export function PermissoesSelector({
   permissions,
   onChange,
+  role,
 }: {
   permissions: Permissions
   onChange: (p: Permissions) => void
+  role?: Role | null
 }) {
+  // O Admin sempre tem Pagamentos (o backend não consulta as caixas para ele).
+  const travado = (tela: keyof Permissions) => tela === 'pagamentos' && role === 'admin'
+  const valoresDe = (tela: keyof Permissions) =>
+    tela === 'relatorios' ? relatoriosDe(permissions) : tela === 'pagamentos' ? pagamentosDe(permissions, role) : permissions[tela]
+
   function toggle(tela: keyof Permissions, acao: string) {
-    const atual = tela === 'relatorios' ? relatoriosDe(permissions) : permissions[tela]
+    if (travado(tela)) return
+    const atual = valoresDe(tela)
     const current = (atual as Record<string, boolean>)[acao] ?? false
     onChange({
       ...permissions,
@@ -67,7 +82,7 @@ export function PermissoesSelector({
             <span className="w-28 shrink-0 text-xs font-medium text-gray-700">{tela.label}</span>
             <div className="flex flex-wrap gap-3">
               {tela.acoes.map(acao => {
-                const valores = tela.id === 'relatorios' ? relatoriosDe(permissions) : permissions[tela.id]
+                const valores = valoresDe(tela.id)
                 const checked = (valores as Record<string, boolean>)?.[acao.key] ?? false
                 return (
                   <label key={acao.key} className="flex cursor-pointer items-center gap-1.5">
@@ -75,6 +90,8 @@ export function PermissoesSelector({
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggle(tela.id, acao.key)}
+                      disabled={travado(tela.id)}
+                      title={travado(tela.id) ? 'O Admin sempre tem acesso a Pagamentos' : undefined}
                       className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-navy focus:ring-navy"
                     />
                     <span className="text-xs text-gray-600">{acao.label}</span>

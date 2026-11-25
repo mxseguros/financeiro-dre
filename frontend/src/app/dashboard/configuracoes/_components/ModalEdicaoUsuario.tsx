@@ -78,7 +78,7 @@ export function ModalEdicaoUsuario({
         ) : (
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">Permissões de Acesso</label>
-            <PermissoesSelector permissions={form.permissions} onChange={p => setForm(f => ({ ...f, permissions: p }))} />
+            <PermissoesSelector permissions={form.permissions} role={form.role} onChange={p => setForm(f => ({ ...f, permissions: p }))} />
           </div>
         )}
         {erro && <p role="alert" className="rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-600">{erro}</p>}

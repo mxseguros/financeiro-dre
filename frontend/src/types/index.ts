@@ -25,6 +25,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {
     assistente:    { visualizar: true },
     relatorios:    { visualizar: true, criar: true, compartilhar: true },
     configuracoes: { visualizar: true, criar: true, editar: true, deletar: true },
+    pagamentos:    { visualizar: true, remessa: true, retorno: true, config: true },
   },
   gestor: {
     visao_geral:   { visualizar: true },
@@ -34,6 +35,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {
     assistente:    { visualizar: true },
     relatorios:    { visualizar: true, criar: true, compartilhar: true },
     configuracoes: { visualizar: true, criar: true, editar: true, deletar: true },
+    pagamentos:    { visualizar: true, remessa: true, retorno: true, config: false },
   },
   comercial: {
     visao_geral:   { visualizar: true },
