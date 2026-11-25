@@ -3,7 +3,7 @@ MX Seguros — DRE-IA | Permissões granulares por tela e ação.
 
 Estrutura: {"tela": {"acao": bool}}
 Telas: visao_geral, dre, lancamentos, aprovacoes, relatorios, configuracoes,
-ordem_compra (perfil Colaborador)
+pagamentos (CNAB, 0050), ordem_compra (perfil Colaborador)
 ("assistente" é a chave do antigo Monitoramento IA; fica só para compatibilidade
 com permissões personalizadas gravadas antes da tela Relatórios.)
 """
@@ -18,6 +18,7 @@ DEFAULT_PERMISSIONS: dict[str, dict] = {
         "assistente":    {"visualizar": True},
         "relatorios":    {"visualizar": True, "criar": True, "compartilhar": True},
         "configuracoes": {"visualizar": True, "criar": True, "editar": True, "deletar": True},
+        "pagamentos":    {"visualizar": True, "remessa": True, "retorno": True, "config": True},
     },
     "gestor": {
         "visao_geral":   {"visualizar": True},
@@ -27,6 +28,7 @@ DEFAULT_PERMISSIONS: dict[str, dict] = {
         "assistente":    {"visualizar": True},
         "relatorios":    {"visualizar": True, "criar": True, "compartilhar": True},
         "configuracoes": {"visualizar": True, "criar": True, "editar": True, "deletar": True},
+        "pagamentos":    {"visualizar": True, "remessa": True, "retorno": True, "config": False},
     },
     "comercial": {
         "visao_geral":   {"visualizar": True},
@@ -85,3 +87,20 @@ def permissao_relatorios(role: str, permissions: dict, acao: str) -> bool:
     if acao == "compartilhar":
         return role in ("admin", "gestor")
     return tem_permissao(permissions, "assistente", "visualizar")
+
+
+# Pagamentos por CNAB (0050). Permissões personalizadas gravadas antes da tela
+# existir não têm a chave "pagamentos": aí vale o padrão do perfil.
+_PAGAMENTOS_PADRAO = {
+    "admin": {"visualizar", "remessa", "retorno", "config"},
+    "super_admin": {"visualizar", "remessa", "retorno", "config"},
+    "gestor": {"visualizar", "remessa", "retorno"},
+}
+
+
+def permissao_pagamentos(role: str, permissions: dict | None, acao: str) -> bool:
+    if role in ("admin", "super_admin"):
+        return True
+    if permissions and "pagamentos" in permissions:
+        return tem_permissao(permissions, "pagamentos", acao)
+    return acao in _PAGAMENTOS_PADRAO.get(role, set())

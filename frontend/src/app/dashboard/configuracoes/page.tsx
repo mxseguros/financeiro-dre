@@ -10,8 +10,10 @@ import { SecaoCentros } from './_components/SecaoCentros'
 import { SecaoFuncionarios } from './_components/SecaoFuncionarios'
 import { SecaoFolha } from './_components/SecaoFolha'
 import { SecaoClassificacoes } from './_components/SecaoClassificacoes'
+import { SecaoFornecedores } from './_components/SecaoFornecedores'
+import { SecaoContasPagadoras } from './_components/SecaoContasPagadoras'
 
-type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios' | 'folha'
+type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios' | 'folha' | 'fornecedores' | 'contas_pagadoras'
 
 export default function ConfiguracoesPage() {
   const { token, session, signOut } = useAuth()
@@ -32,9 +34,15 @@ export default function ConfiguracoesPage() {
     { id: 'centros',    label: 'Centros de Custo',      desc: 'Unidades e filiais' },
     { id: 'funcionarios', label: 'Funcionários',        desc: 'Quem lança Ordem de Compra pelo link /oc, com o centro de custo de cada um' },
     { id: 'folha',      label: 'Folha',                 desc: 'Tabelas de INSS/IRRF, encargos, vencimentos e subitens da folha (só Admin)' },
+    { id: 'fornecedores', label: 'Fornecedores',        desc: 'Favorecidos dos pagamentos: CPF/CNPJ, chave Pix e conta. Os funcionários são editados no contrato.' },
+    { id: 'contas_pagadoras', label: 'Contas pagadoras', desc: 'Contas da empresa de onde saem os pagamentos por arquivo (CNAB), com convênio e opções do banco (só Admin)' },
   ]
+  // Pagamentos (0050): quem gera remessa gerencia fornecedores; contas, só o Admin.
+  const pagamentos = permissions?.pagamentos
+  const podePagamentos = role === 'admin' || role === 'gestor' || !!pagamentos?.remessa
   // Folha (0049): salário é confidencial — a aba só existe para o Admin.
-  const ABAS = ABAS_TODAS.filter(a => a.id !== 'folha' || role === 'admin')
+  const ABAS = ABAS_TODAS.filter(a =>
+    (a.id !== 'folha' && a.id !== 'contas_pagadoras') || role === 'admin')
 
   const [aba, setAba] = useState<Aba>('usuarios')
 
@@ -55,7 +63,7 @@ export default function ConfiguracoesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="grid grid-cols-2 gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:flex">
+      <div className="grid grid-cols-2 gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:grid-cols-3 lg:flex">
         {ABAS.map(a => (
           <button key={a.id} onClick={() => setAba(a.id)}
             className={`rounded-lg px-2 py-2.5 text-xs font-medium transition-colors sm:flex-1 sm:px-3 sm:text-sm ${
@@ -91,6 +99,8 @@ export default function ConfiguracoesPage() {
           ehAdmin={role === 'admin'} />
       )}
       {aba === 'folha' && role === 'admin' && <SecaoFolha token={token} />}
+      {aba === 'fornecedores' && <SecaoFornecedores token={token} podeGerenciar={podePagamentos} />}
+      {aba === 'contas_pagadoras' && role === 'admin' && <SecaoContasPagadoras token={token} />}
     </div>
   )
 }

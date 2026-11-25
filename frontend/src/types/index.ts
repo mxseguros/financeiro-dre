@@ -12,6 +12,8 @@ export interface Permissions {
   configuracoes: { visualizar: boolean; criar: boolean; editar: boolean; deletar: boolean }
   /** Perfil Colaborador (0047): só a página /oc. */
   ordem_compra?: { visualizar: boolean; criar: boolean }
+  /** Pagamentos por CNAB (0050). Sem a chave, vale o padrão do perfil (Admin e Gestor). */
+  pagamentos?:   { visualizar: boolean; remessa: boolean; retorno: boolean; config?: boolean }
 }
 
 export const DEFAULT_PERMISSIONS: Record<Role, Permissions> = {

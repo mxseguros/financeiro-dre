@@ -27,6 +27,11 @@ const TELAS_CONFIG: Array<{
     { key: 'criar',        label: 'Salvar' },
     { key: 'compartilhar', label: 'Compartilhar' },
   ]},
+  { id: 'pagamentos',    label: 'Pagamentos',     acoes: [
+    { key: 'visualizar', label: 'Ver' },
+    { key: 'remessa',    label: 'Gerar remessa' },
+    { key: 'retorno',    label: 'Importar retorno' },
+  ]},
   { id: 'configuracoes', label: 'Configurações',  acoes: [
     { key: 'visualizar', label: 'Ver' },
     { key: 'criar',      label: 'Criar' },

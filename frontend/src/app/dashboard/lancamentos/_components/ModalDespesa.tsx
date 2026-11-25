@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { AvisoRecorrencia, type SerieRecorrencia } from './AvisoRecorrencia'
+import { BlocoPagamento, estadoPagamentoVazio, pagamentoPreenchido, salvarPagamento, type EstadoPagamento } from '@/components/pagamentos/BlocoPagamento'
 import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type Classificacao, classificacoesDe } from './shared'
 
 // Limites espelhados de DespesaCreate/DespesaUpdate (app/models/schemas.py).
@@ -133,6 +134,8 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   const [anexosPendentes, setAnexosPendentes] = useState<AnexoPendente[]>([])
   // Salvou, mas algum anexo falhou: não deixa salvar de novo (duplicaria a despesa).
   const [falhaAnexos, setFalhaAnexos] = useState<string | null>(null)
+  // Bloco "Pagamento" (CNAB, 0050): gravado depois da despesa.
+  const [pagamento, setPagamento] = useState<EstadoPagamento>(estadoPagamentoVazio())
 
   // Se o modal abriu antes de a taxonomia terminar de carregar, a categoria
   // nasceu vazia — o useState acima só calcula o valor inicial uma vez — e o
@@ -338,15 +341,34 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
         if (form.paga_em) payload.paga_em = form.paga_em
         criadaId = (await api.post<Despesa>('/lancamentos/despesas', token, payload))?.id
       }
+      // Pagamento: na despesa editada, se mudou; na nova, na 1ª parcela/ocorrência.
+      const alvoPagamento = editando ? (pagamento.alterado ? despesa!.id : undefined)
+        : (criadaId && pagamentoPreenchido(pagamento) ? criadaId : undefined)
+      let falhaPagamento: string | null = null
+      if (alvoPagamento) {
+        try {
+          const avisos = await salvarPagamento(token, alvoPagamento, pagamento)
+          if (avisos.length) falhaPagamento = `Despesa salva. Atenção: ${avisos.join(' ')}`
+        } catch (e) {
+          if (editando) throw e
+          falhaPagamento = `A despesa foi salva, mas os dados de pagamento não: ${e instanceof Error ? e.message : 'erro'}. Abra a despesa para corrigir.`
+        }
+      }
       // Anexos de despesa nova: vão para a 1ª parcela/ocorrência.
       if (criadaId && anexosPendentes.length) {
         const falhas = await enviarAnexos(token, 'despesa', criadaId, anexosPendentes)
         if (falhas.length) {
           onSaved()
-          setFalhaAnexos(`A despesa foi salva, mas: ${falhas.join(' ')} Abra a despesa para anexar de novo.`)
+          setFalhaAnexos(`A despesa foi salva, mas: ${falhas.join(' ')} Abra a despesa para anexar de novo.${falhaPagamento ? ` ${falhaPagamento}` : ''}`)
           setSalvando(false)
           return
         }
+      }
+      if (falhaPagamento) {
+        onSaved()
+        setFalhaAnexos(falhaPagamento)
+        setSalvando(false)
+        return
       }
       onSaved()
       onClose()
@@ -528,6 +550,12 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
             )}
             {editando && serie && <AvisoRecorrencia serie={serie} recorrente={form.recorrente} ate={form.repetir_ate} competencia={form.competencia} />}
           </div>
+        )}
+
+        <BlocoPagamento token={token} despesaId={despesa?.id} valorDespesa={valorParcela}
+          valor={pagamento} onChange={setPagamento} />
+        {!editando && pagamentoPreenchido(pagamento) && (parcelado || form.recorrente) && (
+          <p className="-mt-1 text-xs text-gray-400">O pagamento fica na {parcelado ? '1ª parcela' : 'despesa do 1º mês'}.</p>
         )}
 
         <CampoAnexos token={token} entidade="despesa" entidadeId={despesa?.id}

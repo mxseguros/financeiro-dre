@@ -11,6 +11,8 @@ import { useToast } from '@/components/ui/Toast'
 import type { Funcionario } from '@/lib/funcionarios'
 import { ROTULOS, TIPOS_CONTRATO, type CalculoFolha, type Contrato, type ContratoResp, type TipoContrato } from '@/lib/folha'
 import { inputCls } from './shared'
+import { CamposBancarios, paraFormBancario, paraPayloadBancario, type FormBancario } from '@/components/pagamentos/CamposBancarios'
+import type { Fornecedor } from '@/lib/pagamentos'
 
 type Form = {
   tipo_contrato: TipoContrato; cargo: string; data_admissao: string; data_desligamento: string
@@ -141,12 +143,22 @@ export function ModalContrato({ token, funcionario, onClose, onSaved }: {
   const [calculando, setCalculando] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // Dados de pagamento (0050): o funcionário vira favorecido das remessas CNAB.
+  const [banc, setBanc] = useState<FormBancario>(paraFormBancario(null))
+  const [cpf, setCpf] = useState('')
+  const [pagHabilitado, setPagHabilitado] = useState(true)
   const toast = useToast()
 
   useEffect(() => {
     api.get<ContratoResp>(`/configuracoes/funcionarios/${funcionario.id}/contrato`, token)
       .then(r => { setForm(paraForm(r)); setCalculo(r.calculo) })
       .catch(e => setErro(e instanceof Error ? e.message : 'Não foi possível abrir o contrato.'))
+    api.get<Fornecedor | null>(`/pagamentos/funcionarios/${funcionario.id}/favorecido`, token)
+      .then(f => {
+        if (f) { setBanc(paraFormBancario(f)); setCpf(f.cpf_cnpj ?? '') }
+        else setBanc(b => ({ ...b, pix_tipo_chave: 'cpf_cnpj' }))
+      })
+      .catch(() => setPagHabilitado(false))
   }, [funcionario.id, token])
 
   // Prévia ao vivo: recalcula meio segundo depois da última digitação.
@@ -167,6 +179,14 @@ export function ModalContrato({ token, funcionario, onClose, onSaved }: {
     setSalvando(true); setErro(null)
     try {
       await api.put(`/configuracoes/funcionarios/${funcionario.id}/contrato`, token, paraContrato(form))
+      if (pagHabilitado) {
+        const dados = paraPayloadBancario(banc)
+        // Chave do tipo CPF sem chave digitada: usa o próprio CPF.
+        if (banc.pix_tipo_chave === 'cpf_cnpj' && !banc.pix_chave.trim() && cpf.trim()) {
+          dados.pix_tipo_chave = 'cpf_cnpj'; dados.pix_chave = cpf.trim()
+        }
+        await api.put(`/pagamentos/funcionarios/${funcionario.id}/favorecido`, token, { cpf: cpf.trim() || null, ...dados })
+      }
       toast.sucesso(`Contrato de ${funcionario.nome} salvo.`)
       onSaved(); onClose()
     } catch (e) {
@@ -262,9 +282,21 @@ export function ModalContrato({ token, funcionario, onClose, onSaved }: {
             </Secao>
 
             <Secao titulo="Pagamento">
-              <Campo rotulo="Conta / chave PIX" dica="Aparece na despesa do salário líquido">
-                <input value={form.banco_pagamento} onChange={e => set('banco_pagamento', e.target.value)} className={inputCls} />
-              </Campo>
+              {pagHabilitado ? (
+                <>
+                  <Campo rotulo="CPF" dica="O banco exige o CPF para pagar por Pix ou TED">
+                    <input value={cpf} onChange={e => setCpf(e.target.value)} className={`${inputCls} sm:max-w-xs`} autoComplete="off" />
+                  </Campo>
+                  <CamposBancarios form={banc} onChange={setBanc} />
+                  {form.banco_pagamento && (
+                    <p className="text-[11px] text-gray-400">Anotação antiga: {form.banco_pagamento}</p>
+                  )}
+                </>
+              ) : (
+                <Campo rotulo="Conta / chave PIX" dica="Aparece na despesa do salário líquido">
+                  <input value={form.banco_pagamento} onChange={e => set('banco_pagamento', e.target.value)} className={inputCls} />
+                </Campo>
+              )}
             </Secao>
           </div>
 
