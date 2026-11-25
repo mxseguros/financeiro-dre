@@ -5,6 +5,9 @@ import { useToast } from '@/components/ui/Toast'
 import { OpcoesCentro, nomeCentro, type CentroCusto } from '@/lib/centros'
 import type { Funcionario } from '@/lib/funcionarios'
 import { inputCls, BtnExcluir } from './shared'
+import { ModalContrato } from './ModalContrato'
+import { fmtBRL } from '@/lib/utils'
+import type { CustosFolha } from '@/lib/folha'
 
 // Funcionários (24/11/2026): nome completo e centro de custo. Aparecem no
 // "Quem é você?" do link /oc — a Ordem de Compra fica no nome do funcionário
@@ -12,8 +15,10 @@ import { inputCls, BtnExcluir } from './shared'
 
 const VAZIO = { nome: '', centro_custo: '' }
 
-export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir }: {
+export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, ehAdmin = false }: {
   token: string; podeCriar: boolean; podeEditar: boolean; podeExcluir: boolean
+  /** Salário e custo (0049) só aparecem para o Admin. */
+  ehAdmin?: boolean
 }) {
   const [items, setItems] = useState<Funcionario[]>([])
   const [centros, setCentros] = useState<CentroCusto[]>([])
@@ -27,11 +32,14 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir }:
   const [erroExclusao, setErroExclusao] = useState<string | null>(null)
   const [excluindo, setExcluindo] = useState(false)
   const toast = useToast()
+  const [contratoDe, setContratoDe] = useState<Funcionario | null>(null)
+  const [custos, setCustos] = useState<CustosFolha | null>(null)
 
   const carregar = useCallback(() => {
     api.get<Funcionario[]>('/configuracoes/funcionarios', token)
       .then(setItems).catch(() => {}).finally(() => setLoading(false))
-  }, [token])
+    if (ehAdmin) api.get<CustosFolha>('/configuracoes/funcionarios/custos', token).then(setCustos).catch(() => setCustos(null))
+  }, [token, ehAdmin])
 
   useEffect(() => {
     carregar()
@@ -79,6 +87,9 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir }:
 
   return (
     <div className="space-y-5">
+      {contratoDe && (
+        <ModalContrato token={token} funcionario={contratoDe} onClose={() => setContratoDe(null)} onSaved={carregar} />
+      )}
       <ConfirmDialog
         open={!!confirmExcluir}
         titulo="Excluir funcionário?"
@@ -120,7 +131,8 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir }:
                 <th className="px-4 py-3">Nome completo</th>
                 <th className="px-4 py-3">Centro de custo</th>
                 <th className="px-4 py-3">Situação</th>
-                {(podeEditar || podeExcluir) && <th className="px-4 py-3 text-right">Ações</th>}
+                {ehAdmin && <th className="px-4 py-3 text-right" title="Salário + FGTS + benefícios">Custo/mês</th>}
+                {(podeEditar || podeExcluir || ehAdmin) && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody>
@@ -146,6 +158,7 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir }:
                           Ativo
                         </label>
                       </td>
+                      {ehAdmin && <td />}
                       <td className="px-4 py-1.5 text-right">
                         <span className="inline-flex gap-2">
                           <button onClick={() => salvar(f)} className="text-xs font-medium text-green-600 hover:underline">Salvar</button>
@@ -158,9 +171,19 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir }:
                       <td className="px-4 py-2.5 font-medium text-gray-800">{f.nome}</td>
                       <td className="px-4 py-2.5 text-gray-600">{f.centro_custo ? nomeCentro(f.centro_custo, centros) : '—'}</td>
                       <td className="px-4 py-2.5 text-xs text-gray-500">{f.ativo ? 'Ativo' : 'Inativo'}</td>
-                      {(podeEditar || podeExcluir) && (
+                      {ehAdmin && (
+                        <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
+                          {custos?.por_funcionario[f.id] ? fmtBRL(custos.por_funcionario[f.id].custo_mes) : <span className="text-xs text-gray-300">—</span>}
+                        </td>
+                      )}
+                      {(podeEditar || podeExcluir || ehAdmin) && (
                         <td className="px-4 py-2.5 text-right">
                           <span className="inline-flex gap-3">
+                            {ehAdmin && (
+                              <button onClick={() => setContratoDe(f)} className="text-xs font-medium text-navy hover:underline">
+                                Contrato e salário
+                              </button>
+                            )}
                             {podeEditar && (
                               <button onClick={() => { setEditId(f.id); setEdit({ nome: f.nome, centro_custo: f.centro_custo ?? '', ativo: f.ativo }) }}
                                 className="text-xs text-blue-500 hover:underline">Editar</button>
@@ -174,12 +197,43 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir }:
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={4} className="py-8 text-center text-sm text-gray-400">Nenhum funcionário cadastrado</td></tr>
+                <tr><td colSpan={5} className="py-8 text-center text-sm text-gray-400">Nenhum funcionário cadastrado</td></tr>
               )}
             </tbody>
           </table>
         )}
       </div>
+
+      {ehAdmin && custos && Object.keys(custos.por_centro).length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-navy">Custo de pessoal por centro (mês)</h3>
+            <p className="text-sm font-semibold tabular-nums text-navy">Total {fmtBRL(custos.total_mes)}</p>
+          </div>
+          {!custos.parametros_conferidos && (
+            <p className="mt-1 text-xs text-amber-600">Tabelas de INSS/IRRF ainda não conferidas (Configurações → Folha).</p>
+          )}
+          <table className="mt-2 w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500">
+                <th className="py-1">Centro</th><th className="py-1 text-right">Pessoas</th>
+                <th className="py-1 text-right">Custo do mês</th><th className="py-1 text-right" title="Com provisões de 13º e férias">Custo real</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(custos.por_centro).sort((a, b) => b[1].custo_mes - a[1].custo_mes).map(([cod, v]) => (
+                <tr key={cod} className="border-t border-gray-50">
+                  <td className="py-1.5 text-gray-700">{cod === 'sem_centro' ? 'Sem centro' : nomeCentro(cod, centros)}</td>
+                  <td className="py-1.5 text-right tabular-nums text-gray-600">{v.pessoas}</td>
+                  <td className="py-1.5 text-right tabular-nums text-gray-800">{fmtBRL(v.custo_mes)}</td>
+                  <td className="py-1.5 text-right tabular-nums text-gray-500">{fmtBRL(v.custo_com_provisoes)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-[11px] text-gray-400">Só quem tem contrato cadastrado. Custo real = custo do mês + provisões de 13º e férias.</p>
+        </div>
+      )}
     </div>
   )
 }

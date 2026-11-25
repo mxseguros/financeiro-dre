@@ -8,9 +8,10 @@ import { SecaoCategoriasSubitens } from './_components/SecaoCategoriasSubitens'
 import { SecaoBancos } from './_components/SecaoBancos'
 import { SecaoCentros } from './_components/SecaoCentros'
 import { SecaoFuncionarios } from './_components/SecaoFuncionarios'
+import { SecaoFolha } from './_components/SecaoFolha'
 import { SecaoClassificacoes } from './_components/SecaoClassificacoes'
 
-type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios'
+type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios' | 'folha'
 
 export default function ConfiguracoesPage() {
   const { token, session, signOut } = useAuth()
@@ -23,14 +24,17 @@ export default function ConfiguracoesPage() {
 
   const currentUserId = session?.user?.id ?? null
 
-  const ABAS: { id: Aba; label: string; desc: string }[] = [
+  const ABAS_TODAS: { id: Aba; label: string; desc: string }[] = [
     { id: 'usuarios',   label: 'Usuários',              desc: 'Gerencie os acessos ao sistema' },
     { id: 'categorias', label: 'Categorias de Lançamento', desc: 'Categorias e subitens de despesas e receitas' },
     { id: 'classificacoes', label: 'Classificações', desc: 'Opções do campo Classificação dos subitens de despesas e receitas' },
     { id: 'bancos',     label: 'Bancos',                desc: 'Contas bancárias da corretora' },
     { id: 'centros',    label: 'Centros de Custo',      desc: 'Unidades e filiais' },
     { id: 'funcionarios', label: 'Funcionários',        desc: 'Quem lança Ordem de Compra pelo link /oc, com o centro de custo de cada um' },
+    { id: 'folha',      label: 'Folha',                 desc: 'Tabelas de INSS/IRRF, encargos, vencimentos e subitens da folha (só Admin)' },
   ]
+  // Folha (0049): salário é confidencial — a aba só existe para o Admin.
+  const ABAS = ABAS_TODAS.filter(a => a.id !== 'folha' || role === 'admin')
 
   const [aba, setAba] = useState<Aba>('usuarios')
 
@@ -83,8 +87,10 @@ export default function ConfiguracoesPage() {
         <SecaoCentros token={token} podeCriar={podeCriar} podeEditar={podeEditar} podeExcluir={podeExcluir} />
       )}
       {aba === 'funcionarios' && (
-        <SecaoFuncionarios token={token} podeCriar={podeCriar} podeEditar={podeEditar} podeExcluir={podeExcluir} />
+        <SecaoFuncionarios token={token} podeCriar={podeCriar} podeEditar={podeEditar} podeExcluir={podeExcluir}
+          ehAdmin={role === 'admin'} />
       )}
+      {aba === 'folha' && role === 'admin' && <SecaoFolha token={token} />}
     </div>
   )
 }

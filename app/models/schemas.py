@@ -172,6 +172,45 @@ class FuncionarioUpdate(RespostaBase):
     ativo:        bool | None = None
 
 
+# ── FOLHA CLT (0049) — só Admin ──────────────────────────────
+
+class FuncionarioContrato(RespostaBase):
+    tipo_contrato:          Literal["clt", "estagio", "pj", "pro_labore"] = "clt"
+    cargo:                  str | None = Field(default=None, max_length=120)
+    data_admissao:          date | None = None
+    data_desligamento:      date | None = None
+    salario_base:           Decimal = Field(default=Decimal(0), ge=0, le=9_999_999)
+    adicionais:             dict = Field(default_factory=dict)
+    dependentes_ir:         int = Field(default=0, ge=0, le=20)
+    filhos_salario_familia: int = Field(default=0, ge=0, le=20)
+    pensao_alimenticia:     Decimal = Field(default=Decimal(0), ge=0)
+    vt_custo_mensal:        Decimal = Field(default=Decimal(0), ge=0)
+    vt_descontar:           bool = True
+    va_valor:               Decimal = Field(default=Decimal(0), ge=0)
+    plano_saude_empresa:    Decimal = Field(default=Decimal(0), ge=0)
+    plano_saude_desconto:   Decimal = Field(default=Decimal(0), ge=0)
+    seguro_vida:            Decimal = Field(default=Decimal(0), ge=0)
+    outros_beneficios:      list[dict] = Field(default_factory=list)
+    sindical:               dict = Field(default_factory=dict)
+    banco_pagamento:        str | None = Field(default=None, max_length=200)
+
+
+class FolhaSimulacao(RespostaBase):
+    contrato:  FuncionarioContrato
+    variaveis: dict | None = None
+    ano:       int | None = None
+
+
+class FolhaParametrosPayload(RespostaBase):
+    ano:       int = Field(ge=2020, le=2100)
+    dados:     dict
+    conferido: bool = False
+
+
+class FolhaRubricasPayload(RespostaBase):
+    mapa: dict[str, UUID | None]
+
+
 # ── CONFIGURAÇÕES: CATEGORIAS DE LANÇAMENTO ───────────────────
 
 class CategoriaLancamentoItem(RespostaBase):
