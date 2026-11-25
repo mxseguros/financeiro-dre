@@ -28,7 +28,7 @@ export function QuadroPagamentos({ token }: { token: string }) {
   const vazio = !r.a_pagar_hoje?.qtd && !r.rejeitados?.qtd && bancos.length === 0
   if (vazio) return null
   return (
-    <div aria-label="Pagamentos" className="space-y-2">
+    <div aria-label="Pagamentos" data-tour="pagamentos-resumo" className="space-y-2">
       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pagamentos</p>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Bloco titulo="A pagar até hoje" s={r.a_pagar_hoje} cor="text-navy" />

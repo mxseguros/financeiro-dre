@@ -341,7 +341,7 @@ export default function PagamentosPage() {
       </div>
 
       {dados?.habilitado && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div data-tour="pag-cartoes" className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Cartao titulo="A pagar" valor={dados.totais.a_pagar} cor="text-navy" />
           <Cartao titulo="Em remessa / autorizar no banco" valor={dados.totais.em_remessa} cor="text-blue-700" />
           <Cartao titulo="Agendado no banco" valor={dados.totais.agendado} cor="text-indigo-700" />
@@ -349,8 +349,10 @@ export default function PagamentosPage() {
         </div>
       )}
 
+      <div data-tour="pag-abas">
       <Tabs<Aba> items={[{ key: 'a_pagar', label: 'A pagar' }, { key: 'em_andamento', label: 'Em andamento' },
         { key: 'remessas', label: 'Remessas' }, { key: 'retornos', label: 'Retornos' }]} ativa={aba} onChange={setAba} idPrefix="pag" />
+      </div>
 
       {erro && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{erro}</p>}
 
@@ -368,7 +370,7 @@ export default function PagamentosPage() {
                 className={`${inputCls} sm:w-72`} />
               <div className="flex-1" />
               {aba === 'a_pagar' && podeGerar && (
-                <Button type="button" disabled={sel.size === 0} onClick={() => setCriando(true)}>
+                <Button type="button" data-tour="pag-criar" disabled={sel.size === 0} onClick={() => setCriando(true)}>
                   Criar remessa{sel.size > 0 ? ` (${sel.size} · ${fmtBRL(totalSel)})` : ''}
                 </Button>
               )}
@@ -376,7 +378,7 @@ export default function PagamentosPage() {
             {dados.ocultos > 0 && (
               <p className="text-xs text-gray-400">{dados.ocultos} pagamento(s) de salário — visíveis só para o Admin.</p>
             )}
-            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+            <div data-tour="pag-tabela" className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">

@@ -215,6 +215,44 @@ const FAQ: FaqItem[] = [
     pergunta: 'O que aconteceu com o Monitoramento IA?',
     resposta: 'Foi substituído por Relatórios em outubro de 2026. O alerta de duplicidades virou o modelo pronto "Possíveis duplicidades".',
   },
+
+  // ── Pagamentos por arquivo (CNAB, 25/11/2026) ─────────────────
+  {
+    id: 'pg1',
+    categoria: 'Pagamentos',
+    pergunta: 'Como pago uma despesa pelo arquivo do banco?',
+    resposta: 'Preencha o bloco Pagamento da despesa (favorecido, forma e documento) e aprove-a como sempre. Depois, em Pagamentos → A pagar, marque as despesas, clique em Criar remessa, baixe o arquivo, importe e autorize no Internet Banking e clique em Marcar como enviada.',
+  },
+  {
+    id: 'pg2',
+    categoria: 'Pagamentos',
+    pergunta: 'Quais formas de pagamento o arquivo aceita?',
+    resposta: 'Pix (chave ou conta), Pix QR Code (inclusive a guia do FGTS Digital), TED, crédito em conta no mesmo banco, boleto, contas e tributos com código de barras, e DARF/GPS sem código. No boleto, informe também o CPF/CNPJ do beneficiário: os bancos exigem.',
+  },
+  {
+    id: 'pg3',
+    categoria: 'Pagamentos',
+    pergunta: 'Por que não consigo marcar uma despesa em A pagar?',
+    resposta: 'Ela tem uma pendência, mostrada em amarelo na linha (ex.: favorecido sem CPF/CNPJ ou sem forma de pagamento). Abra a despesa em Lançamentos, corrija o bloco Pagamento e ela fica pronta.',
+  },
+  {
+    id: 'pg4',
+    categoria: 'Pagamentos',
+    pergunta: 'Como dou baixa nos pagamentos feitos pelo banco?',
+    resposta: 'Importe o arquivo de retorno em Pagamentos → Retornos. Os pagos recebem a data de pagamento sozinhos; os rejeitados ou devolvidos voltam para A pagar com o motivo do banco. Pagamento feito fora do arquivo: use Baixa manual, com o comprovante.',
+  },
+  {
+    id: 'pg5',
+    categoria: 'Pagamentos',
+    pergunta: 'Por que não consigo mudar o valor ou excluir uma despesa?',
+    resposta: 'Ela está numa remessa enviada ao banco. Cancele a remessa em Pagamentos → Remessas (e o agendamento no banco, se já importou o arquivo) ou aguarde o retorno.',
+  },
+  {
+    id: 'pg6',
+    categoria: 'Pagamentos',
+    pergunta: 'Onde cadastro fornecedores e contas pagadoras?',
+    resposta: 'Em Configurações → Fornecedores (CPF/CNPJ, chave Pix e conta). As contas da empresa de onde saem os pagamentos ficam em Configurações → Contas pagadoras, só para o Admin. Os dados bancários dos funcionários ficam no contrato, em Configurações → Funcionários.',
+  },
 ]
 
 const CATEGORIAS = Array.from(new Set(FAQ.map(f => f.categoria)))

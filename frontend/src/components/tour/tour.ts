@@ -33,10 +33,11 @@ const MENU: Passo[] = [
   { el: 'menu-dre',           lado: 'right', titulo: 'DRE',              texto: 'Demonstração de Resultados: previsto x realizado, com as metas do ano.' },
   { el: 'menu-lancamentos',   lado: 'right', titulo: 'Lançamentos',      texto: 'Onde se registram despesas, receitas e ordens de compra, e se importa o extrato do banco.' },
   { el: 'menu-aprovacoes',    lado: 'right', titulo: 'Aprovações',       texto: 'Quadro para aprovar ou rejeitar o que foi lançado.' },
+  { el: 'menu-pagamentos',    lado: 'right', titulo: 'Pagamentos',       texto: 'Pague as despesas aprovadas por arquivo do banco (Santander e Itaú): gere a remessa, importe no banco e, com o retorno, a baixa é feita sozinha.' },
   { el: 'menu-exports',       lado: 'right', titulo: 'Exportações',      texto: 'Baixe os relatórios em planilha.' },
   { el: 'menu-relatorios',    lado: 'right', titulo: 'Relatórios',       texto: 'Monte o seu relatório como na tabela dinâmica do Excel: escolha o que vai nas linhas, nas colunas e o que somar.' },
   { el: 'menu-ajuda',         lado: 'right', titulo: 'FAQ',              texto: 'Respostas para as dúvidas mais comuns.' },
-  { el: 'menu-configuracoes', lado: 'right', titulo: 'Configurações',    texto: 'Cadastros (categorias, subitens, bancos e centros de custo) e usuários.' },
+  { el: 'menu-configuracoes', lado: 'right', titulo: 'Configurações',    texto: 'Cadastros (categorias, subitens, bancos, centros de custo, funcionários, fornecedores e contas pagadoras) e usuários.' },
   { el: 'menu-tour',          lado: 'right', titulo: 'Tour guiado',      texto: 'Clique aqui quando quiser rever o passo a passo da tela em que estiver.' },
 ]
 
@@ -45,10 +46,11 @@ const TELAS: Record<string, Passo[]> = {
     PERIODO('Escolha o mês que quer analisar.'),
     { el: 'kpis',      titulo: 'Indicadores do mês', texto: 'Saldo do período do Itaú e do Santander: saldo inicial, empréstimo, saldo de aplicação, saldo do banco e o resultado. O saldo inicial soma o saldo do banco dos meses anteriores, desde outubro/2026. Empréstimo e aplicação também acumulam; o saldo do banco é só do período. Só contam lançamentos com data de pagamento ou recebimento. Clique em um valor para ver os lançamentos que o formam.' },
     { el: 'por-banco', titulo: 'Por Banco',          texto: 'Receitas e despesas por conta bancária — pela data de pagamento ou de recebimento no período. Despesas: só Fixo e Variável; receitas só de Receitas de vendas.' },
+    { el: 'pagamentos-resumo', titulo: 'Pagamentos', texto: 'O que vence até hoje, o que está com cada banco aguardando retorno, o que espera autorização no banco e o que voltou rejeitado. Clique num quadro para abrir a tela Pagamentos.' },
   ],
   '/dashboard/lancamentos': [
     PERIODO('Defina o intervalo De/Até dos lançamentos listados.'),
-    { el: 'novos-lancamentos', titulo: 'Novo lançamento',  texto: 'Registre uma despesa, uma receita ou uma ordem de compra.' },
+    { el: 'novos-lancamentos', titulo: 'Novo lançamento',  texto: 'Registre uma despesa, uma receita ou uma ordem de compra. Na despesa, o bloco Pagamento guarda o favorecido, a forma (Pix, TED, boleto, guia…) e o documento usados na remessa do banco.' },
     { el: 'importar',          titulo: 'Importar extrato', texto: 'Envie o extrato do banco (OFX ou CSV) para lançar várias movimentações de uma vez.' },
     { el: 'resumo',            titulo: 'Totais',           texto: 'Somatório do período selecionado.' },
     { el: 'filtros',           titulo: 'Filtros', texto: 'Abra pelo ícone: Categoria e Subitem (tipo), banco, centro de custo e status. O número no botão mostra quantos filtros estão ativos.' },
@@ -57,6 +59,16 @@ const TELAS: Record<string, Passo[]> = {
   '/dashboard/lancamentos/aprovacoes': [
     PERIODO('Escolha o mês a aprovar.'),
     { el: 'kanban', titulo: 'Quadro de aprovação', texto: 'Despesas e ordens de compra a aprovar. Arraste os cards entre as colunas para aprovar ou rejeitar. Receitas não passam por aqui: já nascem aprovadas.', lado: 'top' },
+  ],
+  '/dashboard/lancamentos/pagamentos': [
+    { el: 'pag-cartoes', titulo: 'Resumo dos pagamentos', texto: 'Quanto há a pagar, o que está em remessa ou aguardando autorização no banco, o que já foi agendado e o que voltou rejeitado ou devolvido.' },
+    { el: 'pag-abas',    titulo: 'Abas', texto: 'A pagar: despesas aprovadas sem pagamento. Em andamento: o que está com o banco. Remessas: arquivos gerados, para baixar, marcar como enviados ou cancelar. Retornos: importe o arquivo que o banco devolve.' },
+    { el: 'pag-tabela',  titulo: 'Despesas a pagar', texto: 'Marque as despesas prontas. Se uma não pode ser marcada, o motivo aparece em amarelo: abra a despesa em Lançamentos e preencha o bloco Pagamento. Rejeições do banco aparecem em vermelho.', lado: 'top' },
+    { el: 'pag-criar',   titulo: 'Criar remessa', texto: 'Escolha a conta e a data do débito; o sistema confere cada pagamento e gera o arquivo. Baixe, importe e autorize no Internet Banking, depois clique em Marcar como enviada.' },
+    { el: 'pag-retorno', titulo: 'Importar retorno', texto: 'Arraste o retorno do banco (crítica ou movimento): pagos recebem a data de pagamento sozinhos e rejeitados voltam para A pagar com o motivo.' },
+  ],
+  '/dashboard/configuracoes': [
+    { el: 'cfg-abas', titulo: 'Cadastros', texto: 'Fornecedores: favorecidos dos pagamentos, com CPF/CNPJ, chave Pix e conta. Contas pagadoras (só Admin): contas da empresa de onde saem os pagamentos por arquivo, com convênio, opções do banco e o arquivo de teste para homologação. Os dados bancários dos funcionários ficam no contrato, em Funcionários.' },
   ],
   '/dashboard/dre': [
     PERIODO('Escolha o ano e o mês de referência.'),
@@ -115,7 +127,8 @@ export function iniciarTour(pathname: string, { completo = false } = {}) {
   }).drive()
 }
 
-const CHAVE_VISTO = 'dre.tour.v1.'
+// v2 (25/11/2026): Pagamentos por arquivo — o tour completo roda de novo uma vez para todos.
+const CHAVE_VISTO = 'dre.tour.v2.'
 
 /** Primeiro acesso do usuário neste navegador: roda o tour completo uma vez. */
 export function tourInicialPendente(userId: string): boolean {

@@ -68,6 +68,7 @@ export function Retornos({ token, podeImportar, onImportado }: { token: string; 
     <div className="space-y-4">
       {podeImportar && (
         <div
+          data-tour="pag-retorno"
           onDragOver={e => { e.preventDefault(); setArrastando(true) }}
           onDragLeave={() => setArrastando(false)}
           onDrop={e => { e.preventDefault(); setArrastando(false); processar(e.dataTransfer.files) }}
