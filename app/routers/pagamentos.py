@@ -21,8 +21,8 @@ from app.models.pagamentos import (
     ContaPagadoraPayload, FavorecidoFuncionarioPayload, FornecedorPayload, PagamentoDespesaPayload,
 )
 from app.services import (
-    arquivo_teste_service, contas_pagadoras_service, folha_service, fornecedores_service, pagamento_despesa_service, remessa_service,
-    retorno_service,
+    arquivo_teste_service, contas_pagadoras_service, fornecedores_service, pagamento_despesa_service, remessa_service,
+    remuneracao_service, retorno_service,
 )
 from app.services.dre_service import registrar_auditoria
 
@@ -72,14 +72,14 @@ async def excluir_fornecedor(request: Request, fornecedor_id: UUID, usuario: Usu
 
 @router.get("/funcionarios/{funcionario_id}/favorecido", summary="Dados de pagamento do funcionário (Admin)")
 async def obter_favorecido_funcionario(funcionario_id: UUID, usuario: Usuario):
-    folha_service.exigir_admin(usuario)
+    remuneracao_service.exigir_admin(usuario)
     return fornecedores_service.do_funcionario(funcionario_id, usuario, get_supabase_admin())
 
 
 @router.put("/funcionarios/{funcionario_id}/favorecido", summary="Salvar dados de pagamento do funcionário (Admin)")
 async def salvar_favorecido_funcionario(request: Request, funcionario_id: UUID,
                                         payload: FavorecidoFuncionarioPayload, usuario: Usuario):
-    folha_service.exigir_admin(usuario)
+    remuneracao_service.exigir_admin(usuario)
     item = fornecedores_service.salvar_do_funcionario(funcionario_id, payload, usuario, get_supabase_admin())
     await registrar_auditoria(usuario, "salvar_favorecido_funcionario", {"funcionario_id": str(funcionario_id)},
                               _ip(request), get_supabase_admin())

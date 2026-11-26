@@ -68,7 +68,7 @@ const TELAS: Record<string, Passo[]> = {
     { el: 'pag-retorno', titulo: 'Importar retorno', texto: 'Arraste o retorno do banco (crítica ou movimento): pagos recebem a data de pagamento sozinhos e rejeitados voltam para A pagar com o motivo.' },
   ],
   '/dashboard/configuracoes': [
-    { el: 'cfg-abas', titulo: 'Seções', texto: 'As configurações em quatro grupos: Acesso (usuários), Estrutura (categorias e subitens, classificações, centros e bancos), Pessoas (funcionários, fornecedores e folha) e Pagamentos (contas pagadoras). Editar abre um painel ao lado. Cada seção tem endereço próprio, para voltar ou compartilhar.' },
+    { el: 'cfg-abas', titulo: 'Seções', texto: 'As configurações em cinco grupos: Acesso (usuários), Estrutura (categorias e subitens, classificações, centros e bancos), Pessoas (funcionários, com o pagamento de cada um, e fornecedores), Pagamentos (contas pagadoras) e Integrações (Assistente de IA). Editar abre um painel ao lado. Cada seção tem endereço próprio, para voltar ou compartilhar.' },
   ],
   '/dashboard/dre': [
     { el: 'periodo',       titulo: 'Mês de referência',         texto: 'Use as setas ‹ › ou clique no mês para escolher. A DRE segue por competência.' },
