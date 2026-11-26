@@ -15,7 +15,7 @@ export function SeloRecibo({ status, className = '' }: { status?: string | null;
   const r = status ? RECIBO[status as ReciboStatus] : undefined
   if (!r) return null
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${r.cls} ${className}`}>
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[13px] font-medium ring-1 ring-inset ${r.cls} ${className}`}>
       🧾 {r.rotulo}
     </span>
   )

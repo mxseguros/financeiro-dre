@@ -23,7 +23,7 @@ function Dica({ active, payload }: { active?: boolean; payload?: { payload: Pont
   const p = payload[0].payload
   const d = p.realizado != null && p.previsto ? (p.realizado - p.previsto) / Math.abs(p.previsto) : null
   return (
-    <div className="rounded-lg bg-navy px-3 py-2 text-xs leading-relaxed text-white shadow-lg tabular-nums">
+    <div className="rounded-lg bg-navy px-3 py-2 text-[13px] leading-relaxed text-white shadow-lg tabular-nums">
       <p className="font-semibold">{MESES[p.mes - 1]}</p>
       <p>Realizado: {brl(p.realizado)}</p>
       <p>Meta: {brl(p.previsto)}</p>
@@ -40,7 +40,7 @@ export function ResultadoMensalChart({ mensal, mesRef, aoEscolherMes }: {
   const dados: Ponto[] = mensal.map(m => ({ mes: m.mes, nome: MESES[m.mes - 1], realizado: m.resultado_liquido, previsto: m.rl_previsto }))
   return (
     <div>
-      <div className="mb-2 flex gap-4 text-[11px] text-gray-500">
+      <div className="mb-2 flex gap-4 text-[13px] text-slate-600">
         <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-3 rounded-sm" style={{ background: COR }} />Realizado</span>
         <span className="inline-flex items-center gap-1.5"><i className="inline-block h-0.5 w-3" style={{ background: COR_META }} />Previsto (meta)</span>
       </div>
@@ -64,7 +64,7 @@ export function ResultadoMensalChart({ mensal, mesRef, aoEscolherMes }: {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <p className="mt-1 text-[11px] text-gray-400">Clique num mês para torná-lo o mês de referência.</p>
+      <p className="mt-1 text-[13px] text-slate-600">Clique num mês para torná-lo o mês de referência.</p>
     </div>
   )
 }

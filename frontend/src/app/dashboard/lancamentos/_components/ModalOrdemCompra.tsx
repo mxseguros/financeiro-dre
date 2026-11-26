@@ -36,6 +36,8 @@ interface ModalOrdemCompraProps {
   centros?: CentroCusto[]
   onClose: () => void
   onSaved: () => void
+  /** Editando: mostra Excluir no rodapé (o botão saiu da linha da tabela, redesenho UX). */
+  onExcluir?: () => void
 }
 
 function hojeISO() {
@@ -43,7 +45,7 @@ function hojeISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function ModalOrdemCompra({ token, ordem, centros = [], onClose, onSaved }: ModalOrdemCompraProps) {
+export function ModalOrdemCompra({ token, ordem, centros = [], onClose, onSaved, onExcluir }: ModalOrdemCompraProps) {
   const editando = !!ordem
   const [form, setForm] = useState({
     solicitante:   ordem?.solicitante ?? '',
@@ -229,7 +231,11 @@ export function ModalOrdemCompra({ token, ordem, centros = [], onClose, onSaved 
         {erro && <p role="alert" className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-600">{erro}</p>}
         {falhaAnexos && <p role="alert" className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-700">{falhaAnexos}</p>}
 
-        <div className="flex justify-end gap-3 pt-1">
+        <div className="flex items-center justify-end gap-3 pt-1">
+          {onExcluir && !falhaAnexos && (
+            <Button type="button" variant="ghost" tone="danger" onClick={onExcluir} disabled={salvando}
+              className="mr-auto">Excluir</Button>
+          )}
           {falhaAnexos ? (
             <Button type="button" onClick={onClose}>Fechar</Button>
           ) : (
