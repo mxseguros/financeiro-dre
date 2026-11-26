@@ -45,13 +45,14 @@ export function Sidebar({ role, permissions, email, nome, contadores, onSignOut 
         <Image src="/logo_beige.png" alt="MX Corretora de Seguros" width={150} height={50} className="object-contain" />
       </div>
 
-      <nav aria-label="Menu principal" className="flex-1 overflow-y-auto px-3 py-4">
-        {GRUPOS.map(grupo => {
+      <nav aria-label="Menu principal" className="min-h-0 flex-1 px-3 py-3">
+        {/* "Ajustar" (Configurações e Ajuda) vira ícones lado a lado no rodapé: o menu cabe sem rolagem. */}
+        {GRUPOS.filter(g => g.titulo !== 'Ajustar').map(grupo => {
           const itens = grupo.itens.filter(i => itemVisivel(i, permissions, role))
           if (!itens.length) return null
           return (
-            <div key={grupo.titulo} className="mb-5 last:mb-0">
-              <p className="mb-1.5 px-3 text-[13px] font-medium text-white/55">{grupo.titulo}</p>
+            <div key={grupo.titulo} className="mb-3 last:mb-0">
+              <p className="mb-1 px-3 text-[13px] font-medium text-white/55">{grupo.titulo}</p>
               <ul className="space-y-0.5">
                 {itens.map(item => {
                   const ativo = itemAtivo(item.href, pathname)
@@ -94,6 +95,21 @@ export function Sidebar({ role, permissions, email, nome, contadores, onSignOut 
       </nav>
 
       {/* Perfil: abre o menu com o tour desta tela e Sair. */}
+      {/* Configurações e Ajuda: só ícones, um ao lado do outro (com nome no rótulo e na dica). */}
+      <div className="flex items-center gap-1 border-t border-white/10 px-3 py-2">
+        {(GRUPOS.find(g => g.titulo === 'Ajustar')?.itens ?? []).filter(i => itemVisivel(i, permissions, role)).map(item => {
+          const ativo = itemAtivo(item.href, pathname)
+          return (
+            <Link key={item.href} href={item.href} data-tour={ancoraTour(item.href)} aria-label={item.label} title={item.label}
+              aria-current={ativo ? 'page' : undefined}
+              className={cn('focus-ring flex h-11 w-11 items-center justify-center rounded-lg transition-colors',
+                ativo ? 'bg-white text-sel-text' : 'text-white/70 hover:bg-white/10 hover:text-white')}>
+              {item.icon}
+            </Link>
+          )
+        })}
+      </div>
+
       <div ref={caixaPerfil} className="relative border-t border-white/10 p-3">
         {menuPerfil && (
           <div role="menu" className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
