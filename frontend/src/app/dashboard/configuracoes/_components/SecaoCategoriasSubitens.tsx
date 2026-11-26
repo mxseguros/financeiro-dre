@@ -1,8 +1,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
+import { Interruptor } from '@/components/ui/Interruptor'
+import { FILTRO_GRUPO, filtroSegmento } from '@/components/ui/filtros'
 import { useToast } from '@/components/ui/Toast'
-import { inputCls, BtnExcluir } from './shared'
+import { inputCls } from './shared'
 import { useUser } from '@/contexts/UserContext'
 
 interface CategoriaItem { id: string; nome: string; natureza: string; ordem: number; ativo: boolean }
@@ -14,6 +19,17 @@ interface SubitemItem {
   confidencial?: boolean
 }
 
+type PainelCat = { modo: 'nova' } | { modo: 'editar'; c: CategoriaItem }
+type PainelSub = { modo: 'novo' } | { modo: 'editar'; s: SubitemItem }
+
+const rotulo = 'block text-sm font-semibold text-slate-700'
+
+/**
+ * Categorias e subitens (redesenho UX, fase 7): categorias à esquerda com o
+ * alternador Despesas / Receitas, subitens da categoria escolhida à direita.
+ * Criar e editar abrem um painel lateral (tela cheia no celular). No celular,
+ * a lista de categorias leva à tela dos subitens, com Voltar.
+ */
 export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcluir }: {
   token: string; podeCriar: boolean; podeEditar: boolean; podeExcluir: boolean
 }) {
@@ -22,28 +38,23 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
   const [subitens, setSubitens] = useState<SubitemItem[]>([])
   const [loading, setLoading] = useState(true)
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<string | null>(null)
-  const [excluindo, setExcluindo] = useState(false)
+  const [verSubitensCelular, setVerSubitensCelular] = useState(false)
   const toast = useToast()
   // Salários confidenciais (0046): só o Admin vê e define.
   const { role } = useUser()
   const ehAdmin = role === 'admin'
-  const colConfidencial = natureza === 'despesa' && ehAdmin
 
-  const [formCategoria, setFormCategoria] = useState({ nome: '', ordem: 0 })
-  const [criandoCategoria, setCriandoCategoria] = useState(false)
-  const [erroCategoria, setErroCategoria] = useState<string | null>(null)
-  const [editCategoriaId, setEditCategoriaId] = useState<string | null>(null)
-  const [editCategoriaForm, setEditCategoriaForm] = useState({ nome: '', ordem: 0 })
+  const [painelCat, setPainelCat] = useState<PainelCat | null>(null)
+  const [formCat, setFormCat] = useState({ nome: '', ordem: 0 })
+  const [painelSub, setPainelSub] = useState<PainelSub | null>(null)
+  const [formSub, setFormSub] = useState({ nome: '', categoria_id: '', somente_dre: false, confidencial: false })
+  const [salvando, setSalvando] = useState(false)
+  const [erroPainel, setErroPainel] = useState<string | null>(null)
+
   const [confirmExcluirCategoria, setConfirmExcluirCategoria] = useState<CategoriaItem | null>(null)
-  const [erroExclusaoCategoria, setErroExclusaoCategoria] = useState<string | null>(null)
-
-  const [formSubitem, setFormSubitem] = useState({ nome: '' })
-  const [criandoSubitem, setCriandoSubitem] = useState(false)
-  const [erroSubitem, setErroSubitem] = useState<string | null>(null)
-  const [editSubitemId, setEditSubitemId] = useState<string | null>(null)
-  const [editSubitemForm, setEditSubitemForm] = useState({ nome: '', categoria_id: '' })
   const [confirmExcluirSubitem, setConfirmExcluirSubitem] = useState<SubitemItem | null>(null)
-  const [erroExclusaoSubitem, setErroExclusaoSubitem] = useState<string | null>(null)
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null)
+  const [excluindo, setExcluindo] = useState(false)
 
   const carregar = useCallback(() => {
     setLoading(true)
@@ -54,366 +65,268 @@ export function SecaoCategoriasSubitens({ token, podeCriar, podeEditar, podeExcl
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [token])
-
   useEffect(() => { carregar() }, [carregar])
 
-  // Ao trocar de natureza, a categoria selecionada de outra natureza deixa de fazer sentido
-  useEffect(() => { setCategoriaSelecionada(null) }, [natureza])
-
   const categoriasDaNatureza = categorias.filter(c => c.natureza === natureza).sort((a, b) => a.ordem - b.ordem)
-  const subitensDaNatureza = subitens.filter(s => s.natureza === natureza)
-  const subitensExibidos = categoriaSelecionada
-    ? subitensDaNatureza.filter(s => s.categoria_id === categoriaSelecionada)
-    : subitensDaNatureza
+  // Começa na primeira categoria da natureza (a lista da direita nunca fica vazia à toa).
+  useEffect(() => {
+    if (!categoriasDaNatureza.some(c => c.id === categoriaSelecionada)) setCategoriaSelecionada(categoriasDaNatureza[0]?.id ?? null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [natureza, categorias])
+  const categoriaAtual = categoriasDaNatureza.find(c => c.id === categoriaSelecionada) ?? null
+  const subitensExibidos = subitens.filter(s => s.natureza === natureza && s.categoria_id === categoriaSelecionada)
+  const qtdSub = (catId: string) => subitens.filter(s => s.categoria_id === catId).length
 
-  async function criarCategoria(e: React.FormEvent) {
+  // ── Categoria ──
+  function abrirCategoria(p: PainelCat) {
+    setErroPainel(null)
+    setFormCat(p.modo === 'editar' ? { nome: p.c.nome, ordem: p.c.ordem } : { nome: '', ordem: (categoriasDaNatureza[categoriasDaNatureza.length - 1]?.ordem ?? 0) + 1 })
+    setPainelCat(p)
+  }
+  async function salvarCategoria(e: React.FormEvent) {
     e.preventDefault()
-    setCriandoCategoria(true); setErroCategoria(null)
+    if (!painelCat) return
+    if (!formCat.nome.trim()) { setErroPainel('Informe o nome da categoria.'); return }
+    setSalvando(true); setErroPainel(null)
     try {
-      await api.post('/configuracoes/categorias', token, {
-        nome: formCategoria.nome, natureza, ordem: formCategoria.ordem,
-      })
-      setFormCategoria({ nome: '', ordem: 0 })
-      carregar()
-    } catch (err) { setErroCategoria(err instanceof Error ? err.message : 'Erro ao criar categoria') }
-    finally { setCriandoCategoria(false) }
+      if (painelCat.modo === 'nova') {
+        await api.post('/configuracoes/categorias', token, { nome: formCat.nome.trim(), natureza, ordem: formCat.ordem })
+        toast.sucesso('Categoria criada.')
+      } else {
+        await api.put(`/configuracoes/categorias/${painelCat.c.id}`, token, { nome: formCat.nome.trim(), ordem: formCat.ordem })
+        toast.sucesso('Categoria atualizada.')
+      }
+      setPainelCat(null); carregar()
+    } catch (err) { setErroPainel(err instanceof Error ? err.message : 'Erro ao salvar a categoria.') }
+    finally { setSalvando(false) }
   }
-
-  function iniciarEdicaoCategoria(c: CategoriaItem) {
-    setEditCategoriaId(c.id)
-    setEditCategoriaForm({ nome: c.nome, ordem: c.ordem })
-  }
-
-  async function salvarEdicaoCategoria(id: string) {
-    try {
-      await api.put(`/configuracoes/categorias/${id}`, token, {
-        nome: editCategoriaForm.nome, ordem: editCategoriaForm.ordem,
-      })
-      setEditCategoriaId(null); carregar()
-      toast.sucesso('Categoria atualizada.')
-    } catch (err) {
-      toast.erro(err instanceof Error ? err.message : 'Erro ao atualizar categoria.')
-    }
-  }
-
   async function excluirCategoria(c: CategoriaItem) {
-    // O erro fica NO diálogo, não em toast: "categoria em uso" é a resposta
-    // esperada aqui e o usuário precisa lê-la antes de decidir o que fazer.
-    setErroExclusaoCategoria(null); setExcluindo(true)
+    // O erro fica NO diálogo: "categoria em uso" é a resposta esperada e precisa ser lida.
+    setErroExclusao(null); setExcluindo(true)
     try {
       await api.delete(`/configuracoes/categorias/${c.id}`, token)
-      setConfirmExcluirCategoria(null)
-      if (categoriaSelecionada === c.id) setCategoriaSelecionada(null)
+      setConfirmExcluirCategoria(null); setPainelCat(null)
       carregar()
       toast.sucesso(`Categoria "${c.nome}" excluída.`)
     } catch (err) {
-      setErroExclusaoCategoria(err instanceof Error ? err.message : 'Erro ao excluir categoria')
-    } finally {
-      setExcluindo(false)
-    }
+      setErroExclusao(err instanceof Error ? err.message : 'Erro ao excluir categoria')
+    } finally { setExcluindo(false) }
   }
 
-  async function criarSubitem(e: React.FormEvent) {
+  // ── Subitem ──
+  function abrirSubitem(p: PainelSub) {
+    setErroPainel(null)
+    setFormSub(p.modo === 'editar'
+      ? { nome: p.s.nome, categoria_id: p.s.categoria_id ?? '', somente_dre: !!p.s.somente_dre, confidencial: !!p.s.confidencial }
+      : { nome: '', categoria_id: categoriaSelecionada ?? '', somente_dre: false, confidencial: false })
+    setPainelSub(p)
+  }
+  async function salvarSubitem(e: React.FormEvent) {
     e.preventDefault()
-    if (!categoriaSelecionada) {
-      setErroSubitem('Selecione uma categoria à esquerda antes de criar o subitem.')
-      return
-    }
-    setCriandoSubitem(true); setErroSubitem(null)
+    if (!painelSub) return
+    if (!formSub.nome.trim()) { setErroPainel('Informe o nome do subitem.'); return }
+    if (!formSub.categoria_id) { setErroPainel('Escolha a categoria.'); return }
+    setSalvando(true); setErroPainel(null)
     try {
-      await api.post('/configuracoes/tipos', token, {
-        nome: formSubitem.nome, natureza, categoria_id: categoriaSelecionada,
-      })
-      setFormSubitem({ nome: '' })
-      carregar()
-    } catch (err) { setErroSubitem(err instanceof Error ? err.message : 'Erro ao criar subitem') }
-    finally { setCriandoSubitem(false) }
+      if (painelSub.modo === 'novo') {
+        const criado = await api.post<SubitemItem>('/configuracoes/tipos', token, { nome: formSub.nome.trim(), natureza, categoria_id: formSub.categoria_id })
+        // Marcações especiais vão numa segunda chamada (o cadastro não as recebe).
+        const extras: Record<string, boolean> = {}
+        if (natureza === 'receita' && formSub.somente_dre) extras.somente_dre = true
+        if (natureza === 'despesa' && ehAdmin && formSub.confidencial) extras.confidencial = true
+        if (criado?.id && Object.keys(extras).length) await api.put(`/configuracoes/tipos/${criado.id}`, token, extras)
+        toast.sucesso('Subitem criado.')
+      } else {
+        const s = painelSub.s
+        const corpo: Record<string, unknown> = { nome: formSub.nome.trim(), categoria_id: formSub.categoria_id }
+        if (natureza === 'receita' && formSub.somente_dre !== !!s.somente_dre) corpo.somente_dre = formSub.somente_dre
+        if (natureza === 'despesa' && ehAdmin && formSub.confidencial !== !!s.confidencial) corpo.confidencial = formSub.confidencial
+        await api.put(`/configuracoes/tipos/${s.id}`, token, corpo)
+        toast.sucesso('Subitem atualizado.')
+      }
+      setPainelSub(null); carregar()
+    } catch (err) { setErroPainel(err instanceof Error ? err.message : 'Erro ao salvar o subitem.') }
+    finally { setSalvando(false) }
   }
-
-  function iniciarEdicaoSubitem(s: SubitemItem) {
-    setEditSubitemId(s.id)
-    setEditSubitemForm({ nome: s.nome, categoria_id: s.categoria_id ?? '' })
-  }
-
-  async function salvarEdicaoSubitem(id: string) {
-    try {
-      await api.put(`/configuracoes/tipos/${id}`, token, {
-        nome: editSubitemForm.nome,
-        categoria_id: editSubitemForm.categoria_id,
-      })
-      setEditSubitemId(null); carregar()
-      toast.sucesso('Subitem atualizado.')
-    } catch (err) {
-      toast.erro(err instanceof Error ? err.message : 'Erro ao atualizar subitem.')
-    }
-  }
-
-  // "Constar apenas na DRE" (22/10/2026): grava na hora, sem entrar em edição.
-  async function alternarSomenteDre(s: SubitemItem) {
-    const novo = !s.somente_dre
-    setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, somente_dre: novo } : x))
-    try {
-      await api.put(`/configuracoes/tipos/${s.id}`, token, { somente_dre: novo })
-      toast.sucesso(novo ? `"${s.nome}" passa a constar apenas na DRE.` : `"${s.nome}" volta a constar em todo o sistema.`)
-    } catch (err) {
-      setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, somente_dre: !novo } : x))
-      toast.erro(err instanceof Error ? err.message : 'Erro ao atualizar subitem.')
-    }
-  }
-
-  async function alternarConfidencial(s: SubitemItem) {
-    const novo = !s.confidencial
-    setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, confidencial: novo } : x))
-    try {
-      await api.put(`/configuracoes/tipos/${s.id}`, token, { confidencial: novo })
-      toast.sucesso(novo
-        ? `"${s.nome}": quem não é Admin passa a ver só o total ("Total Salários Funcionários").`
-        : `"${s.nome}" volta a mostrar cada lançamento para todos.`)
-    } catch (err) {
-      setSubitens(prev => prev.map(x => x.id === s.id ? { ...x, confidencial: !novo } : x))
-      toast.erro(err instanceof Error ? err.message : 'Erro ao atualizar subitem.')
-    }
-  }
-
   async function excluirSubitem(s: SubitemItem) {
-    setErroExclusaoSubitem(null); setExcluindo(true)
+    setErroExclusao(null); setExcluindo(true)
     try {
       await api.delete(`/configuracoes/tipos/${s.id}`, token)
-      setConfirmExcluirSubitem(null)
+      setConfirmExcluirSubitem(null); setPainelSub(null)
       carregar()
       toast.sucesso(`Subitem "${s.nome}" excluído.`)
     } catch (err) {
-      setErroExclusaoSubitem(err instanceof Error ? err.message : 'Erro ao excluir subitem')
-    } finally {
-      setExcluindo(false)
-    }
+      setErroExclusao(err instanceof Error ? err.message : 'Erro ao excluir subitem')
+    } finally { setExcluindo(false) }
   }
 
+  const botaoPrimario = 'focus-ring inline-flex h-12 items-center gap-1.5 whitespace-nowrap rounded-lg bg-navy px-4 text-sm font-semibold text-white hover:bg-navy-light md:h-11'
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <ConfirmDialog
         open={!!confirmExcluirCategoria}
         titulo="Excluir categoria?"
         mensagem={<><strong>{confirmExcluirCategoria?.nome}</strong> será excluída permanentemente.</>}
-        erro={erroExclusaoCategoria}
-        loading={excluindo}
-        onCancelar={() => { setConfirmExcluirCategoria(null); setErroExclusaoCategoria(null) }}
+        erro={erroExclusao} loading={excluindo}
+        onCancelar={() => { setConfirmExcluirCategoria(null); setErroExclusao(null) }}
         onConfirmar={() => confirmExcluirCategoria && excluirCategoria(confirmExcluirCategoria)}
       />
-
       <ConfirmDialog
         open={!!confirmExcluirSubitem}
         titulo="Excluir subitem?"
-        mensagem={<><strong>{confirmExcluirSubitem?.nome}</strong> será excluído permanentemente.</>}
-        erro={erroExclusaoSubitem}
-        loading={excluindo}
-        onCancelar={() => { setConfirmExcluirSubitem(null); setErroExclusaoSubitem(null) }}
+        mensagem={<><strong>{confirmExcluirSubitem?.nome}</strong> será excluído permanentemente. Se já houver lançamentos nele, o sistema não deixa excluir.</>}
+        erro={erroExclusao} loading={excluindo}
+        onCancelar={() => { setConfirmExcluirSubitem(null); setErroExclusao(null) }}
         onConfirmar={() => confirmExcluirSubitem && excluirSubitem(confirmExcluirSubitem)}
       />
 
-      {/* Tabs despesa/receita */}
-      <div className="flex gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-sm w-fit">
+      {/* Painel: categoria */}
+      <Modal open={!!painelCat} onClose={() => setPainelCat(null)} variant="painel" dismissable={!salvando}
+        title={painelCat?.modo === 'nova' ? `Nova categoria de ${natureza === 'despesa' ? 'despesa' : 'receita'}` : 'Editar categoria'}
+        footer={
+          <div className="flex items-center gap-2">
+            {painelCat?.modo === 'editar' && podeExcluir && (
+              <Button variant="ghost" tone="danger" className="mr-auto" disabled={salvando}
+                onClick={() => painelCat.modo === 'editar' && setConfirmExcluirCategoria(painelCat.c)}>Excluir</Button>
+            )}
+            <span className="flex-1" />
+            <Button variant="secondary" onClick={() => setPainelCat(null)} disabled={salvando}>Cancelar</Button>
+            <Button type="submit" form="form-categoria" loading={salvando}>Salvar</Button>
+          </div>
+        }>
+        <form id="form-categoria" onSubmit={salvarCategoria} noValidate className="space-y-4">
+          <div>
+            <label htmlFor="cat-nome" className={rotulo}>Nome</label>
+            <input id="cat-nome" value={formCat.nome} onChange={e => setFormCat(f => ({ ...f, nome: e.target.value }))} className={cn(inputCls, 'mt-1.5')} autoFocus />
+          </div>
+          <div>
+            <label htmlFor="cat-ordem" className={rotulo}>Ordem na lista</label>
+            <input id="cat-ordem" type="number" value={formCat.ordem} onChange={e => setFormCat(f => ({ ...f, ordem: Number(e.target.value) }))} className={cn(inputCls, 'mt-1.5 w-32')} />
+          </div>
+          {erroPainel && <p role="alert" className="text-[13px] text-red-800">{erroPainel}</p>}
+        </form>
+      </Modal>
+
+      {/* Painel: subitem */}
+      <Modal open={!!painelSub} onClose={() => setPainelSub(null)} variant="painel" dismissable={!salvando}
+        title={painelSub?.modo === 'novo' ? 'Novo subitem' : 'Editar subitem'}
+        subtitle={categoriaAtual ? `${natureza === 'despesa' ? 'Despesa' : 'Receita'} · ${categoriaAtual.nome}` : undefined}
+        footer={
+          <div className="flex items-center gap-2">
+            {painelSub?.modo === 'editar' && podeExcluir && (
+              <Button variant="ghost" tone="danger" className="mr-auto" disabled={salvando}
+                onClick={() => painelSub.modo === 'editar' && setConfirmExcluirSubitem(painelSub.s)}>Excluir</Button>
+            )}
+            <span className="flex-1" />
+            <Button variant="secondary" onClick={() => setPainelSub(null)} disabled={salvando}>Cancelar</Button>
+            <Button type="submit" form="form-subitem" loading={salvando}>Salvar</Button>
+          </div>
+        }>
+        <form id="form-subitem" onSubmit={salvarSubitem} noValidate className="space-y-4">
+          <div>
+            <label htmlFor="sub-nome" className={rotulo}>Nome</label>
+            <input id="sub-nome" value={formSub.nome} onChange={e => setFormSub(f => ({ ...f, nome: e.target.value }))} className={cn(inputCls, 'mt-1.5')} autoFocus />
+          </div>
+          <div>
+            <label htmlFor="sub-cat" className={rotulo}>Categoria</label>
+            <select id="sub-cat" value={formSub.categoria_id} onChange={e => setFormSub(f => ({ ...f, categoria_id: e.target.value }))} className={cn(inputCls, 'mt-1.5')}>
+              <option value="">Escolha…</option>
+              {categoriasDaNatureza.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+          {natureza === 'receita' && (
+            <Interruptor id="sub-so-dre" rotulo="Só na DRE" ligado={formSub.somente_dre} disabled={!podeEditar}
+              onChange={v => setFormSub(f => ({ ...f, somente_dre: v }))}
+              dica="As receitas deste subitem contam na DRE, mas ficam fora da Visão Geral e dos totais de Lançamentos." />
+          )}
+          {natureza === 'despesa' && ehAdmin && (
+            <Interruptor id="sub-confidencial" rotulo="Confidencial" ligado={formSub.confidencial}
+              onChange={v => setFormSub(f => ({ ...f, confidencial: v }))}
+              dica={'Quem não é Admin vê só o total ("Total Salários Funcionários"), sem nome nem valor de cada um.'} />
+          )}
+          {erroPainel && <p role="alert" className="text-[13px] text-red-800">{erroPainel}</p>}
+        </form>
+      </Modal>
+
+      <div role="group" aria-label="Natureza" className={FILTRO_GRUPO}>
         {(['despesa', 'receita'] as const).map(n => (
-          <button key={n} onClick={() => setNatureza(n)}
-            className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-              natureza === n ? 'bg-navy text-white' : 'text-gray-500 hover:bg-gray-50'
-            }`}>
+          <button key={n} type="button" aria-pressed={natureza === n} onClick={() => { setNatureza(n); setVerSubitensCelular(false) }} className={filtroSegmento(natureza === n)}>
             {n === 'despesa' ? 'Despesas' : 'Receitas'}
           </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[320px_1fr]">
-        {/* ── Coluna: Categorias ── */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Categorias</h3>
-
-          {podeCriar && (
-            <form onSubmit={criarCategoria} className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
-              <input required value={formCategoria.nome}
-                onChange={e => setFormCategoria(f => ({ ...f, nome: e.target.value }))}
-                placeholder="Nova categoria" className={inputCls} />
-              <div className="flex items-center gap-2">
-                <input type="number" value={formCategoria.ordem}
-                  onChange={e => setFormCategoria(f => ({ ...f, ordem: Number(e.target.value) }))}
-                  placeholder="Ordem" className={`${inputCls} w-20`} />
-                <button type="submit" disabled={criandoCategoria}
-                  className="ml-auto rounded-lg bg-navy px-4 py-2 text-xs font-medium text-white hover:bg-navy-light disabled:opacity-50">
-                  {criandoCategoria ? 'Criando…' : '+ Categoria'}
-                </button>
-              </div>
-              {erroCategoria && <p className="text-xs text-red-600">{erroCategoria}</p>}
-            </form>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr]">
+        {/* Categorias */}
+        <section aria-labelledby="titulo-categorias" className={cn('overflow-hidden rounded-2xl border border-gray-200 bg-white lg:block', verSubitensCelular ? 'hidden' : 'block')}>
+          <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-4 py-3">
+            <h3 id="titulo-categorias" className="text-[15px] font-bold text-slate-900">Categorias</h3>
+            {podeCriar && <button type="button" onClick={() => abrirCategoria({ modo: 'nova' })} className="focus-ring h-11 rounded-lg px-2 text-sm font-semibold text-sel hover:underline">+ Nova</button>}
+          </div>
+          {loading ? <p className="py-8 text-center text-sm text-slate-600">Carregando…</p> : (
+            <ul>
+              {categoriasDaNatureza.map(c => {
+                const sel = c.id === categoriaSelecionada
+                return (
+                  <li key={c.id} className="border-t border-slate-100 first:border-t-0">
+                    <div className={cn('flex items-center', sel && 'bg-sel-bg')}>
+                      <button type="button" onClick={() => { setCategoriaSelecionada(c.id); setVerSubitensCelular(true) }} aria-current={sel ? 'true' : undefined}
+                        className={cn('focus-ring flex min-h-12 flex-1 items-center justify-between gap-2 px-4 text-left text-[15px] md:min-h-11 md:text-sm',
+                          sel ? 'font-semibold text-sel-text' : 'text-slate-800', !c.ativo && 'opacity-60')}>
+                        <span className="flex items-center gap-2">
+                          {c.nome}
+                          {!c.ativo && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[13px] font-medium text-slate-600">inativa</span>}
+                        </span>
+                        <span className="text-[13px] tabular-nums text-slate-500">{qtdSub(c.id)}</span>
+                      </button>
+                      {podeEditar && (
+                        <button type="button" onClick={() => abrirCategoria({ modo: 'editar', c })} aria-label={`Editar categoria ${c.nome}`}
+                          className="focus-ring mr-1 flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-800">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4" aria-hidden="true">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+              {categoriasDaNatureza.length === 0 && <li className="py-6 text-center text-sm text-slate-600">Nenhuma categoria.</li>}
+            </ul>
           )}
+        </section>
 
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-            {loading ? (
-              <div className="py-8 text-center text-sm text-gray-400">Carregando…</div>
-            ) : (
-              <ul className="divide-y divide-gray-50">
-                <li>
-                  <button onClick={() => setCategoriaSelecionada(null)}
-                    className={`w-full px-3 py-2.5 text-left text-sm ${categoriaSelecionada === null ? 'bg-gray-50 font-medium text-gray-800' : 'text-gray-500 hover:bg-gray-50'}`}>
-                    Todas
+        {/* Subitens da categoria escolhida */}
+        <section aria-labelledby="titulo-subitens" className={cn('overflow-hidden rounded-2xl border border-gray-200 bg-white lg:block', verSubitensCelular ? 'block' : 'hidden')}>
+          <div className="flex items-center gap-2 border-b border-gray-200 px-2 py-2 md:px-4">
+            <button type="button" onClick={() => setVerSubitensCelular(false)} aria-label="Voltar para as categorias"
+              className="focus-ring flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-xl text-slate-700 hover:bg-slate-100 lg:hidden">‹</button>
+            <h3 id="titulo-subitens" className="flex-1 text-[15px] font-bold text-slate-900">
+              {categoriaAtual ? <>Subitens de {categoriaAtual.nome} <span className="font-normal text-slate-500">({subitensExibidos.length})</span></> : 'Subitens'}
+            </h3>
+            {podeCriar && categoriaAtual && <button type="button" onClick={() => abrirSubitem({ modo: 'novo' })} className={botaoPrimario}>+ Novo subitem</button>}
+          </div>
+          {loading ? <p className="py-10 text-center text-sm text-slate-600">Carregando…</p> : (
+            <ul>
+              {subitensExibidos.map(s => (
+                <li key={s.id} className="border-t border-slate-100 first:border-t-0">
+                  <button type="button" disabled={!podeEditar} onClick={() => abrirSubitem({ modo: 'editar', s })}
+                    className={cn('focus-ring flex min-h-[56px] w-full flex-wrap items-center gap-2 px-4 text-left hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent', !s.ativo && 'opacity-60')}>
+                    <span className="flex-1 text-[15px] font-medium text-slate-900 md:text-sm">{s.nome}</span>
+                    {s.somente_dre && <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[13px] font-semibold text-slate-700" title="Conta só na DRE">Só DRE</span>}
+                    {s.confidencial && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[13px] font-semibold text-amber-900" title="Quem não é Admin vê só o total">Confidencial</span>}
+                    {!s.ativo && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[13px] font-medium text-slate-600">inativo</span>}
+                    {podeEditar && <span aria-hidden="true" className="text-slate-400">›</span>}
                   </button>
                 </li>
-                {categoriasDaNatureza.map(c => (
-                  <li key={c.id} className={categoriaSelecionada === c.id ? 'bg-gray-50' : ''}>
-                    {editCategoriaId === c.id ? (
-                      <div className="flex items-center gap-2 px-3 py-2">
-                        <input value={editCategoriaForm.nome}
-                          onChange={e => setEditCategoriaForm(f => ({ ...f, nome: e.target.value }))}
-                          className="w-full rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none" />
-                        <input type="number" value={editCategoriaForm.ordem}
-                          onChange={e => setEditCategoriaForm(f => ({ ...f, ordem: Number(e.target.value) }))}
-                          className="w-14 rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none" />
-                        <button onClick={() => salvarEdicaoCategoria(c.id)} className="text-xs font-medium text-green-600 hover:underline whitespace-nowrap">Salvar</button>
-                        <button onClick={() => setEditCategoriaId(null)} className="text-xs text-gray-400 hover:underline whitespace-nowrap">Cancelar</button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 px-3 py-2.5">
-                        <button onClick={() => setCategoriaSelecionada(c.id)}
-                          className={`flex-1 text-left text-sm ${categoriaSelecionada === c.id ? 'font-medium text-gray-800' : 'text-gray-600'}`}>
-                          {c.nome}
-                        </button>
-                        {(podeEditar || podeExcluir) && (
-                          <span className="flex shrink-0 gap-2">
-                            {podeEditar && (
-                              <button onClick={() => iniciarEdicaoCategoria(c)} className="text-xs text-blue-500 hover:underline">Editar</button>
-                            )}
-                            {podeExcluir && <BtnExcluir onClick={() => setConfirmExcluirCategoria(c)} />}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                ))}
-                {categoriasDaNatureza.length === 0 && (
-                  <li className="py-6 text-center text-sm text-gray-400">Nenhuma categoria</li>
-                )}
-              </ul>
-            )}
-          </div>
-        </div>
-
-        {/* ── Coluna: Subitens ── */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Subitens {categoriaSelecionada && `— ${categoriasDaNatureza.find(c => c.id === categoriaSelecionada)?.nome ?? ''}`}
-          </h3>
-
-          {podeCriar && (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <form onSubmit={criarSubitem} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <input required value={formSubitem.nome}
-                  onChange={e => setFormSubitem(f => ({ ...f, nome: e.target.value }))}
-                  placeholder="Nome do subitem" className={`${inputCls} sm:col-span-3`} />
-                <div className="col-span-1 flex items-center gap-3 sm:col-span-3">
-                  {erroSubitem && <p className="text-xs text-red-600">{erroSubitem}</p>}
-                  <button type="submit" disabled={criandoSubitem || !categoriaSelecionada}
-                    className="ml-auto rounded-lg bg-navy px-5 py-2 text-sm font-medium text-white hover:bg-navy-light disabled:opacity-50">
-                    {criandoSubitem ? 'Criando…' : '+ Criar Subitem'}
-                  </button>
-                </div>
-                {!categoriaSelecionada && (
-                  <p className="col-span-1 text-xs text-gray-400 sm:col-span-3">
-                    Selecione uma categoria à esquerda para criar um subitem nela.
-                  </p>
-                )}
-              </form>
-            </div>
+              ))}
+              {subitensExibidos.length === 0 && (
+                <li className="py-8 text-center text-sm text-slate-600">{categoriaAtual ? 'Nenhum subitem nesta categoria.' : 'Escolha uma categoria.'}</li>
+              )}
+            </ul>
           )}
-
-          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-            {loading ? (
-              <div className="py-10 text-center text-sm text-gray-400">Carregando…</div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">
-                    <th className="px-4 py-3">Nome</th>
-                    <th className="px-4 py-3">Categoria</th>
-                    {natureza === 'receita' && (
-                      <th className="px-4 py-3" title="Receitas deste subitem aparecem só na DRE: fora da Visão Geral e dos totais de Lançamentos.">
-                        Constar apenas na DRE
-                      </th>
-                    )}
-                    {colConfidencial && (
-                      <th className="px-4 py-3" title="Quem não é Admin vê só a linha &quot;Total Salários Funcionários&quot;, sem nome nem valor de cada funcionário.">
-                        Confidencial (só Admin)
-                      </th>
-                    )}
-                    {(podeEditar || podeExcluir) && <th className="px-4 py-3 text-right">Ações</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {subitensExibidos.map(s => (
-                    <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50">
-                      {editSubitemId === s.id ? (
-                        <>
-                          <td className="px-4 py-1.5">
-                            <input value={editSubitemForm.nome}
-                              onChange={e => setEditSubitemForm(f => ({ ...f, nome: e.target.value }))}
-                              className="w-full rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none" />
-                          </td>
-                          <td className="px-4 py-1.5">
-                            <select value={editSubitemForm.categoria_id}
-                              onChange={e => setEditSubitemForm(f => ({ ...f, categoria_id: e.target.value }))}
-                              className="w-full rounded border border-gray-200 px-2 py-1 text-sm focus-ring focus:outline-none">
-                              {categoriasDaNatureza.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                            </select>
-                          </td>
-                          {natureza === 'receita' && <td className="px-4 py-1.5" />}
-                          {colConfidencial && <td className="px-4 py-1.5" />}
-                          <td className="px-4 py-1.5 text-right">
-                            <span className="inline-flex gap-2">
-                              <button onClick={() => salvarEdicaoSubitem(s.id)} className="text-xs font-medium text-green-600 hover:underline">Salvar</button>
-                              <button onClick={() => setEditSubitemId(null)} className="text-xs text-gray-400 hover:underline">Cancelar</button>
-                            </span>
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-4 py-2.5 font-medium text-gray-800">{s.nome}</td>
-                          <td className="px-4 py-2.5 text-gray-500">{s.categoria_nome ?? '—'}</td>
-                          {natureza === 'receita' && (
-                            <td className="px-4 py-2.5">
-                              <input type="checkbox" checked={!!s.somente_dre} disabled={!podeEditar}
-                                onChange={() => alternarSomenteDre(s)}
-                                aria-label={`Constar apenas na DRE: ${s.nome}`}
-                                className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy disabled:opacity-50" />
-                            </td>
-                          )}
-                          {colConfidencial && (
-                            <td className="px-4 py-2.5">
-                              <input type="checkbox" checked={!!s.confidencial}
-                                onChange={() => alternarConfidencial(s)}
-                                aria-label={`Confidencial, detalhe só para o Admin: ${s.nome}`}
-                                className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
-                            </td>
-                          )}
-                          {(podeEditar || podeExcluir) && (
-                            <td className="px-4 py-2.5 text-right">
-                              <span className="inline-flex gap-3">
-                                {podeEditar && (
-                                  <button onClick={() => iniciarEdicaoSubitem(s)} className="text-xs text-blue-500 hover:underline">Editar</button>
-                                )}
-                                {podeExcluir && <BtnExcluir onClick={() => setConfirmExcluirSubitem(s)} />}
-                              </span>
-                            </td>
-                          )}
-                        </>
-                      )}
-                    </tr>
-                  ))}
-                  {subitensExibidos.length === 0 && (
-                    <tr><td colSpan={5} className="py-8 text-center text-sm text-gray-400">Nenhum subitem cadastrado</td></tr>
-                  )}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
+        </section>
       </div>
     </div>
   )

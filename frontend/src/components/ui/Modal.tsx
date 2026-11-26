@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
-export type ModalVariant = 'center' | 'sheet' | 'fullscreen'
+export type ModalVariant = 'center' | 'sheet' | 'fullscreen' | 'painel'
 
 const FOCAVEIS = [
   'a[href]', 'button:not([disabled])', 'input:not([disabled])',
@@ -21,6 +21,7 @@ interface ModalProps {
   /**
    * `center`  — diálogo centrado (padrão).
    * `sheet`   — bottom-sheet no mobile, centrado a partir de `sm`.
+   * `painel`  — painel lateral à direita (440 px) no desktop; tela cheia no celular (redesenho UX).
    * `fullscreen` — ocupa a tela inteira (wizards, como a importação de extrato).
    */
   variant?: ModalVariant
@@ -108,12 +109,16 @@ export function Modal({
   const ehFullscreen = variant === 'fullscreen'
   const posicaoOverlay = ehFullscreen
     ? 'flex'
+    : variant === 'painel'
+    ? 'flex justify-end'
     : variant === 'sheet'
     ? 'flex items-end sm:items-center sm:justify-center'
     : 'flex items-center justify-center p-4'
 
   const formaPainel = ehFullscreen
     ? 'h-full w-full'
+    : variant === 'painel'
+    ? 'h-full w-full md:w-[440px]'
     : variant === 'sheet'
     ? cn('max-h-[92vh] w-full rounded-t-2xl sm:rounded-2xl', maxWidth)
     : cn('max-h-[92vh] w-full rounded-2xl', maxWidth)
@@ -134,14 +139,14 @@ export function Modal({
         <div className={cn('flex shrink-0 items-start justify-between gap-3 px-5 py-4', hideHeader && 'sr-only')}>
           <div className="min-w-0">
             <h2 id={tituloId} className="text-base font-semibold text-navy">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>}
+            {subtitle && <p className="mt-0.5 text-[13px] text-slate-600">{subtitle}</p>}
           </div>
           {dismissable && !hideHeader && (
             <button
               type="button"
               onClick={onClose}
               aria-label="Fechar"
-              className="focus-ring -mr-1 rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              className="focus-ring -mr-2 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-gray-100 hover:text-slate-700"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5" aria-hidden="true">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />

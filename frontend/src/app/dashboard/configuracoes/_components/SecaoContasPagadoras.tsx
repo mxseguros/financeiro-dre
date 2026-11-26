@@ -33,9 +33,9 @@ function paraForm(c: ContaPagadora | null): Form {
 function Campo({ rotulo, dica, children, className = '' }: { rotulo: string; dica?: string; children: React.ReactNode; className?: string }) {
   return (
     <label className={`block ${className}`}>
-      <span className="mb-0.5 block text-xs font-medium text-gray-600">{rotulo}</span>
+      <span className="mb-0.5 block text-[13px] font-medium text-gray-600">{rotulo}</span>
       {children}
-      {dica && <span className="mt-0.5 block text-[11px] text-gray-400">{dica}</span>}
+      {dica && <span className="mt-0.5 block text-[13px] text-slate-500">{dica}</span>}
     </label>
   )
 }
@@ -47,7 +47,7 @@ function Opcao({ checked, onChange, titulo, children }: { checked: boolean; onCh
         className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-navy focus:ring-navy" />
       <span>
         <span className="block text-sm font-medium text-gray-700">{titulo}</span>
-        <span className="block text-xs text-gray-500">{children}</span>
+        <span className="block text-[13px] text-gray-500">{children}</span>
       </span>
     </label>
   )
@@ -115,7 +115,7 @@ function ModalConta({ token, item, onClose, onSaved }: { token: string; item: Co
           <Campo rotulo="Razão social"><input required value={f.razao_social} onChange={e => set('razao_social', e.target.value)} className={inputCls} /></Campo>
         </div>
         <details className="rounded-lg border border-gray-100 p-2.5">
-          <summary className="cursor-pointer text-xs font-medium text-gray-600">Endereço (opcional, vai no cabeçalho do lote)</summary>
+          <summary className="cursor-pointer text-[13px] font-medium text-gray-600">Endereço (opcional, vai no cabeçalho do lote)</summary>
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-6">
             <Campo rotulo="Logradouro" className="col-span-2 sm:col-span-3"><input value={f.logradouro} onChange={e => set('logradouro', e.target.value)} className={inputCls} /></Campo>
             <Campo rotulo="Número"><input value={f.numero} onChange={e => set('numero', e.target.value.replace(/\D/g, ''))} className={inputCls} /></Campo>
@@ -127,7 +127,7 @@ function ModalConta({ token, item, onClose, onSaved }: { token: string; item: Co
         </details>
 
         <fieldset className="space-y-2">
-          <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Arquivo e convênio</legend>
+          <legend className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500">Arquivo e convênio</legend>
           <div className="grid grid-cols-2 gap-2">
             <Campo rotulo="Ambiente" dica="Em homologação, a tela avisa que o arquivo é de teste">
               <select value={f.ambiente} onChange={e => set('ambiente', e.target.value as Form['ambiente'])} className={inputCls}>
@@ -162,7 +162,7 @@ function ModalConta({ token, item, onClose, onSaved }: { token: string; item: Co
             </>
           )}
           {item && (
-            <label className="inline-flex items-center gap-2 text-xs text-gray-600">
+            <label className="inline-flex items-center gap-2 text-[13px] text-gray-600">
               <input type="checkbox" checked={f.ativa} onChange={e => set('ativa', e.target.checked)}
                 className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
               Conta ativa
@@ -212,17 +212,17 @@ function ModalTeste({ token, conta, onClose }: { token: string; conta: ContaPaga
         <p>Arquivo com 6 pagamentos fictícios (Pix por chave, Pix QR Code, TED, boleto, conta de consumo e DARF) para o banco conferir o leiaute.</p>
         {santander ? (
           <>
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
               Só funciona com o <strong>sequencial de teste</strong> contratado: arquivos de número 1 a 10 são criticados, mas não pagos.
               Envie pelo Internet Banking e confira o relatório de crítica.
             </p>
             <label className="block max-w-[160px]">
-              <span className="mb-0.5 block text-xs font-medium text-gray-600">Número do arquivo (1 a 10)</span>
+              <span className="mb-0.5 block text-[13px] font-medium text-gray-600">Número do arquivo (1 a 10)</span>
               <input type="number" min={1} max={10} value={nsa} onChange={e => setNsa(e.target.value)} className={inputCls} />
             </label>
           </>
         ) : (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
             Use <strong>somente no Validador</strong> do Itaú 30 horas (Transmissão de arquivos → Validação). Não envie como remessa.
             O Itaú exige o Pix num arquivo separado: valide os dois.
           </p>
@@ -271,10 +271,10 @@ export function SecaoContasPagadoras({ token }: { token: string }) {
         <Button type="button" onClick={() => setEditando('nova')}>+ Nova conta pagadora</Button>
       </div>
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        {loading ? <div className="py-10 text-center text-sm text-gray-400">Carregando…</div> : (
+        {loading ? <div className="py-10 text-center text-sm text-slate-500">Carregando…</div> : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">
+              <tr className="border-b border-gray-100 text-left text-[13px] font-medium text-gray-500">
                 <th className="px-4 py-3">Conta</th>
                 <th className="px-4 py-3">Ambiente</th>
                 <th className="px-4 py-3">Próximo NSA</th>
@@ -292,21 +292,21 @@ export function SecaoContasPagadoras({ token }: { token: string }) {
                       : <Chip label="Homologação" cor="bg-amber-50 text-amber-700" />}
                   </td>
                   <td className="px-4 py-2.5 text-gray-600">{c.proximo_nsa}</td>
-                  <td className="px-4 py-2.5 text-xs text-gray-500">
+                  <td className="px-4 py-2.5 text-[13px] text-gray-500">
                     {[c.opcoes.enviar_bloqueado && 'envia bloqueado', c.opcoes.sequencial_teste && 'sequencial de teste',
                       c.opcoes.seu_numero_obrigatorio && 'seu número obrigatório'].filter(Boolean).join(' · ') || '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <span className="inline-flex gap-3">
-                      <button onClick={() => setTeste(c)} className="text-xs text-gray-500 hover:underline">Arquivo de teste</button>
-                      <button onClick={() => setEditando(c)} className="text-xs text-blue-500 hover:underline">Editar</button>
+                      <button onClick={() => setTeste(c)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-gray-500 hover:underline">Arquivo de teste</button>
+                      <button onClick={() => setEditando(c)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-sel hover:underline">Editar</button>
                       <BtnExcluir onClick={() => setExcluir(c)} />
                     </span>
                   </td>
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-sm text-gray-400">Nenhuma conta pagadora cadastrada</td></tr>
+                <tr><td colSpan={5} className="py-8 text-center text-sm text-slate-500">Nenhuma conta pagadora cadastrada</td></tr>
               )}
             </tbody>
           </table>

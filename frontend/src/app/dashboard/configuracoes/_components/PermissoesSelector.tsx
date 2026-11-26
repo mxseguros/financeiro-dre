@@ -74,12 +74,12 @@ export function PermissoesSelector({
   return (
     <div className="col-span-1 sm:col-span-2 lg:col-span-4 rounded-lg border border-gray-200 bg-white overflow-hidden">
       <div className="border-b border-gray-100 px-3 py-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Permissões de Acesso</p>
+        <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">Permissões de Acesso</p>
       </div>
       <div className="divide-y divide-gray-50">
         {TELAS_CONFIG.map(tela => (
           <div key={tela.id} className="flex items-center gap-3 px-3 py-2">
-            <span className="w-28 shrink-0 text-xs font-medium text-gray-700">{tela.label}</span>
+            <span className="w-28 shrink-0 text-[13px] font-medium text-gray-700">{tela.label}</span>
             <div className="flex flex-wrap gap-3">
               {tela.acoes.map(acao => {
                 const valores = valoresDe(tela.id)
@@ -94,7 +94,7 @@ export function PermissoesSelector({
                       title={travado(tela.id) ? 'O Admin sempre tem acesso a Pagamentos' : undefined}
                       className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-navy focus:ring-navy"
                     />
-                    <span className="text-xs text-gray-600">{acao.label}</span>
+                    <span className="text-[13px] text-gray-600">{acao.label}</span>
                   </label>
                 )
               })}

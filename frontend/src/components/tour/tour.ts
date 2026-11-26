@@ -67,7 +67,7 @@ const TELAS: Record<string, Passo[]> = {
     { el: 'pag-retorno', titulo: 'Importar retorno', texto: 'Arraste o retorno do banco (crítica ou movimento): pagos recebem a data de pagamento sozinhos e rejeitados voltam para A pagar com o motivo.' },
   ],
   '/dashboard/configuracoes': [
-    { el: 'cfg-abas', titulo: 'Cadastros', texto: 'Fornecedores: favorecidos dos pagamentos, com CPF/CNPJ, chave Pix e conta. Contas pagadoras (só Admin): contas da empresa de onde saem os pagamentos por arquivo, com convênio, opções do banco e o arquivo de teste para homologação. Os dados bancários dos funcionários ficam no contrato, em Funcionários.' },
+    { el: 'cfg-abas', titulo: 'Seções', texto: 'As configurações em quatro grupos: Acesso (usuários), Estrutura (categorias e subitens, classificações, centros e bancos), Pessoas (funcionários, fornecedores e folha) e Pagamentos (contas pagadoras). Editar abre um painel ao lado. Cada seção tem endereço próprio, para voltar ou compartilhar.' },
   ],
   '/dashboard/dre': [
     { el: 'periodo',       titulo: 'Mês de referência',         texto: 'Use as setas ‹ › ou clique no mês para escolher. A DRE segue por competência.' },

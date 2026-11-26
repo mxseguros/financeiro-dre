@@ -102,7 +102,7 @@ export function SecaoClassificacoes({ token, podeCriar, podeEditar, podeExcluir 
 
       {podeCriar && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Nova Classificação</h3>
+          <h3 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-gray-500">Nova Classificação</h3>
           <form onSubmit={criar} className="flex flex-col gap-2 sm:flex-row sm:gap-3">
             <input required value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
               placeholder="Nome da classificação" className={`${inputCls} flex-1`} />
@@ -115,7 +115,7 @@ export function SecaoClassificacoes({ token, podeCriar, podeEditar, podeExcluir 
                 className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
               Usada na DRE
             </label>
-            {erro && <p className="self-center text-xs text-red-600">{erro}</p>}
+            {erro && <p className="self-center text-[13px] text-red-600">{erro}</p>}
             <button type="submit" disabled={criando}
               className="rounded-lg bg-navy px-5 py-2 text-sm font-medium text-white hover:bg-navy-light disabled:opacity-50 whitespace-nowrap">
               {criando ? 'Criando…' : '+ Criar Classificação'}
@@ -125,10 +125,10 @@ export function SecaoClassificacoes({ token, podeCriar, podeEditar, podeExcluir 
       )}
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        {loading ? <div className="py-10 text-center text-sm text-gray-400">Carregando…</div> : (
+        {loading ? <div className="py-10 text-center text-sm text-slate-500">Carregando…</div> : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">
+              <tr className="border-b border-gray-100 text-left text-[13px] font-medium text-gray-500">
                 <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Vale para</th>
                 <th className="px-4 py-3" title="Desmarcada: os lançamentos com esta classificação ficam fora da DRE (seguem em Lançamentos e na Visão Geral).">
@@ -157,8 +157,8 @@ export function SecaoClassificacoes({ token, podeCriar, podeEditar, podeExcluir 
                       <td className="px-4 py-1.5" />
                       <td className="px-4 py-1.5 text-right">
                         <span className="inline-flex gap-2">
-                          <button onClick={() => salvarEdicao(c)} className="text-xs font-medium text-green-600 hover:underline">Salvar</button>
-                          <button onClick={() => setEditCodigo(null)} className="text-xs text-gray-400 hover:underline">Cancelar</button>
+                          <button onClick={() => salvarEdicao(c)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] font-medium text-green-800 hover:underline">Salvar</button>
+                          <button onClick={() => setEditCodigo(null)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-slate-500 hover:underline">Cancelar</button>
                         </span>
                       </td>
                     </>
@@ -180,10 +180,10 @@ export function SecaoClassificacoes({ token, podeCriar, podeEditar, podeExcluir 
                           <span className="inline-flex gap-3">
                             {podeEditar && (
                               <button onClick={() => { setEditCodigo(c.codigo); setEditForm({ nome: c.nome, natureza: c.natureza }) }}
-                                className="text-xs text-blue-500 hover:underline">Editar</button>
+                                className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-sel hover:underline">Editar</button>
                             )}
                             {podeEditar && (
-                              <button onClick={() => alternarAtivo(c)} className="text-xs text-gray-500 hover:underline">
+                              <button onClick={() => alternarAtivo(c)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-gray-500 hover:underline">
                                 {c.ativo ? 'Desativar' : 'Reativar'}
                               </button>
                             )}
@@ -196,7 +196,7 @@ export function SecaoClassificacoes({ token, podeCriar, podeEditar, podeExcluir 
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-sm text-gray-400">Nenhuma classificação cadastrada</td></tr>
+                <tr><td colSpan={5} className="py-8 text-center text-sm text-slate-500">Nenhuma classificação cadastrada</td></tr>
               )}
             </tbody>
           </table>
