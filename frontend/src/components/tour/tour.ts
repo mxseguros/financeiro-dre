@@ -44,9 +44,9 @@ const MENU: Passo[] = [
 const TELAS: Record<string, Passo[]> = {
   '/dashboard': [
     PERIODO('Escolha o mês que quer analisar.'),
-    { el: 'kpis',      titulo: 'Indicadores do mês', texto: 'Saldo do período do Itaú e do Santander: saldo inicial, empréstimo, saldo de aplicação, saldo do banco e o resultado. O saldo inicial soma o saldo do banco dos meses anteriores, desde outubro/2026. Empréstimo e aplicação também acumulam; o saldo do banco é só do período. Só contam lançamentos com data de pagamento ou recebimento. Clique em um valor para ver os lançamentos que o formam.' },
-    { el: 'por-banco', titulo: 'Por Banco',          texto: 'Receitas e despesas por conta bancária — pela data de pagamento ou de recebimento no período. Despesas: só Fixo e Variável; receitas só de Receitas de vendas.' },
-    { el: 'pagamentos-resumo', titulo: 'Pagamentos', texto: 'O que vence até hoje, o que está com cada banco aguardando retorno, o que espera autorização no banco e o que voltou rejeitado. Clique num quadro para abrir a tela Pagamentos.' },
+    { el: 'kpis',      titulo: 'Saldo do período por banco', texto: 'Itaú e Santander lidos como extrato: saldo inicial, empréstimo e aplicação (acumulados desde outubro/2026) e o movimento do período, somando no Resultado. "Como é calculado" explica cada linha. Clique num valor para ver os lançamentos que o formam.' },
+    { el: 'pagamentos-resumo', titulo: 'Pagamentos', texto: 'O que vence até hoje, o que está com o banco aguardando retorno, o que espera autorização no banco e o que voltou rejeitado. Clique num bloco para abrir a tela Pagamentos.' },
+    { el: 'por-banco', titulo: 'Por banco',          texto: 'Receitas, despesas e saldo por conta bancária, pela data de pagamento ou de recebimento no período. Despesas: só Fixas e Variáveis; receitas só de Receitas de vendas.' },
   ],
   '/dashboard/lancamentos': [
     PERIODO('Defina o intervalo De/Até dos lançamentos listados.'),
