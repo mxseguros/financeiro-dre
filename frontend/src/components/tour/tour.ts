@@ -32,6 +32,7 @@ const MENU: Passo[] = [
   { el: 'menu-dashboard',     lado: 'right', titulo: 'Visão Geral',      texto: 'O menu tem três grupos: Acompanhar, Operar e Ajustar. A Visão Geral mostra o previsto x pago do mês, os totais dos próximos 12 meses e a posição por banco.' },
   { el: 'menu-dre',           lado: 'right', titulo: 'DRE',              texto: 'Demonstração de Resultados: previsto x realizado, com as metas do ano.' },
   { el: 'menu-relatorios',    lado: 'right', titulo: 'Relatórios',       texto: 'Monte o seu relatório como na tabela dinâmica do Excel: escolha o que vai nas linhas, nas colunas e o que somar.' },
+  { el: 'menu-chat',          lado: 'right', titulo: 'Assistente IA',    texto: 'Pergunte em português sobre os números do período escolhido. O assistente só vê o que o seu perfil pode ver.' },
   { el: 'menu-lancamentos',   lado: 'right', titulo: 'Lançamentos',      texto: 'Onde se registram despesas, receitas e ordens de compra, e se importa o extrato do banco.' },
   { el: 'menu-aprovacoes',    lado: 'right', titulo: 'Aprovações',       texto: 'Quadro para aprovar ou rejeitar o que foi lançado. O número ao lado mostra as ordens de compra aguardando aprovação.' },
   { el: 'menu-pagamentos',    lado: 'right', titulo: 'Pagamentos',       texto: 'Pague as despesas aprovadas por arquivo do banco (Santander e Itaú): gere a remessa, importe no banco e, com o retorno, a baixa é feita sozinha. O número ao lado mostra o que vence até hoje.' },
@@ -75,6 +76,9 @@ const TELAS: Record<string, Passo[]> = {
     { el: 'metas',         titulo: 'Metas (Previsto)',          texto: 'Cadastre o previsto que é comparado com o realizado.' },
     { el: 'kpis',          titulo: 'Indicadores',               texto: 'Cada número mostra a meta e quanto ficou acima ou abaixo dela, por escrito.' },
     { el: 'demonstrativo', titulo: 'Demonstração de resultados', texto: 'A DRE linha a linha: previsto, realizado, a diferença (melhor ou pior que a meta) e o peso na receita. Clique num grupo para abrir ou fechar; os que você fechar ficam fechados até sair do sistema.', lado: 'top' },
+  ],
+  '/dashboard/chat': [
+    PERIODO('O assistente responde sobre o período escolhido aqui.'),
   ],
   '/dashboard/relatorios': [
     PERIODO('O relatório usa os lançamentos deste período.'),
