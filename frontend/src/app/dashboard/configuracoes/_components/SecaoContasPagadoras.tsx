@@ -142,7 +142,7 @@ function ModalConta({ token, item, onClose, onSaved }: { token: string; item: Co
           <Opcao checked={f.opcoes.enviar_bloqueado} onChange={v => setOp('enviar_bloqueado', v)} titulo="Enviar pagamentos bloqueados">
             {santander
               ? 'Cada pagamento chega ao banco como "pendente de autorização" e só sai depois de autorizado no Internet Banking. Recomendado.'
-              : 'No Itaú a autorização é feita no próprio Itaú 30 horas, conforme o perfil de aprovação do contrato.'}
+              : 'No Itaú os pagamentos do arquivo ficam disponíveis para autorização no Internet Banking, conforme o perfil de aprovação do contrato.'}
           </Opcao>
           {santander && (
             <>
@@ -180,7 +180,7 @@ function ModalConta({ token, item, onClose, onSaved }: { token: string; item: Co
 }
 
 // Fase 6: arquivo com pagamentos fictícios para o banco criticar o leiaute.
-// Santander: só com o sequencial de teste (NSA 1 a 10). Itaú: para o Validador do 30 horas.
+// Santander: só com o sequencial de teste (NSA 1 a 10). Itaú: Transmissão (Teste) no Internet Banking.
 async function baixarTeste(token: string, c: ContaPagadora, parte: 'geral' | 'pix', nsa?: number) {
   const q = new URLSearchParams({ parte, ...(nsa ? { nsa: String(nsa) } : {}) })
   const res = await fetch(`${API_BASE}/pagamentos/contas/${c.id}/arquivo-teste?${q}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -222,10 +222,19 @@ function ModalTeste({ token, conta, onClose }: { token: string; conta: ContaPaga
             </label>
           </>
         ) : (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
-            Use <strong>somente no Validador</strong> do Itaú 30 horas (Transmissão de arquivos → Validação). Não envie como remessa.
-            O Itaú exige o Pix num arquivo separado: valide os dois.
-          </p>
+          <div className="space-y-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+            <p>
+              Envie pelo ambiente de teste do Itaú: <strong>Mais… → Transmissão de Arquivo → Transmissão (Teste) → Remessa → Enviar</strong>,
+              produto <strong>PAGAMENTOS SISPAG</strong>. O teste só confere a estrutura: nada é incluído nem debitado.
+              Não envie pela transmissão normal.
+            </p>
+            <p>
+              O resultado fica em <strong>Transmissão (Teste) → Consultar resultado do processamento do arquivo</strong>.
+              &quot;Não processado&quot; = o arquivo inteiro foi recusado; &quot;Rejeição&quot; = só alguns pagamentos foram recusados.
+              O retorno de teste sai em <strong>Transmissão (Teste) → Retorno → Recepcionar</strong>.
+            </p>
+            <p>O Itaú exige o Pix num arquivo separado: teste os dois.</p>
+          </div>
         )}
         {erro && <p role="alert" className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-600">{erro}</p>}
         <div className="flex flex-wrap justify-end gap-2">

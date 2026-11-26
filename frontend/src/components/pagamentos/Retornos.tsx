@@ -122,6 +122,12 @@ export function Retornos({ token, podeImportar, onImportado }: { token: string; 
               {resultado.banco === '033' ? 'Santander' : 'Itaú'} · retorno de {resultado.tipo === 'movimento' ? 'movimento' : 'crítica'}
               {resultado.nsa ? ` · arquivo nº ${resultado.nsa}` : ''}
             </p>
+            {resultado.ocorrencias_arquivo && (
+              <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-800">
+                <strong>Arquivo não processado pelo banco</strong> — nenhum pagamento dele foi incluído. Corrija e gere uma nova remessa.
+                <span className="block">{resultado.ocorrencias_arquivo}</span>
+              </p>
+            )}
             {Object.entries(resultado.ocorrencias_lote).map(([lote, m]) => (
               <p key={lote} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700">Lote {lote}: {m}</p>
             ))}

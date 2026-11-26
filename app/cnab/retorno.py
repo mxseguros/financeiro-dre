@@ -1,4 +1,4 @@
-"""Leitura do arquivo de retorno CNAB 240 (Santander V11.7 e Itaú SISPAG v085).
+"""Leitura do arquivo de retorno CNAB 240 (Santander V11.7 e Itaú SISPAG v086).
 
 Cada registro de pagamento (A, J, O, N) traz o "seu número" que a remessa
 gravou e até 5 ocorrências (231–240). O segmento Z (autenticação) complementa
@@ -76,10 +76,10 @@ def _valor(s: str) -> Decimal | None:
 
 
 def ler(texto: str) -> Retorno:
-    linhas = [l.rstrip("\r\n") for l in texto.splitlines() if l.strip()]
+    linhas = [ln.rstrip("\r\n") for ln in texto.splitlines() if ln.strip()]
     if not linhas:
         raise RetornoInvalido("Arquivo vazio.")
-    ruins = [i + 1 for i, l in enumerate(linhas) if len(l) != 240]
+    ruins = [i + 1 for i, ln in enumerate(linhas) if len(ln) != 240]
     if ruins:
         raise RetornoInvalido(f"Não é um arquivo CNAB 240: linha(s) {', '.join(map(str, ruins[:5]))} sem 240 posições.")
     header = linhas[0]
@@ -95,30 +95,30 @@ def ler(texto: str) -> Retorno:
     if banco == "033":
         ret.ocorrencias_arquivo = separar(header[230:240])
 
-    for l in linhas[1:]:
-        tipo, lote = l[7], int(l[3:7]) if l[3:7].isdigit() else 0
+    for ln in linhas[1:]:
+        tipo, lote = ln[7], int(ln[3:7]) if ln[3:7].isdigit() else 0
         if tipo in ("1", "5"):
-            codigos = separar(l[230:240])
+            codigos = separar(ln[230:240])
             if codigos:
                 ret.ocorrencias_lote.setdefault(lote, [])
                 ret.ocorrencias_lote[lote] += [c for c in codigos if c not in ret.ocorrencias_lote[lote]]
             continue
         if tipo != "3":
             continue
-        seg = l[13]
+        seg = ln[13]
         if seg == "Z":
             if ret.registros:
-                ret.registros[-1].autenticacao = l[14:78].strip() or None
+                ret.registros[-1].autenticacao = ln[14:78].strip() or None
             continue
-        if seg == "J" and l[17:19] == "52":
+        if seg == "J" and ln[17:19] == "52":
             continue                                    # J-52: complemento, sem ocorrência própria
         pos = _POS[banco].get(seg)
         if not pos:
             continue                                    # B, C, W…: complementos
-        estorno = (l[14] == "3") if banco == "033" and seg == "A" else False
+        estorno = (ln[14] == "3") if banco == "033" and seg == "A" else False
         ret.registros.append(Registro(
-            segmento=seg, lote=lote, sequencial=int(l[8:13]) if l[8:13].isdigit() else 0,
-            seu_numero=_f(l, pos[0]).strip(), nosso_numero=_f(l, pos[1]).strip(), ocorrencias=separar(l[230:240]),
-            data_real=_data(_f(l, pos[2])), valor_real=_valor(_f(l, pos[3])), estorno=estorno,
+            segmento=seg, lote=lote, sequencial=int(ln[8:13]) if ln[8:13].isdigit() else 0,
+            seu_numero=_f(ln, pos[0]).strip(), nosso_numero=_f(ln, pos[1]).strip(), ocorrencias=separar(ln[230:240]),
+            data_real=_data(_f(ln, pos[2])), valor_real=_valor(_f(ln, pos[3])), estorno=estorno,
         ))
     return ret

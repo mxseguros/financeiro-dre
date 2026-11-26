@@ -239,13 +239,13 @@ const FAQ: FaqItem[] = [
     id: 'pg4',
     categoria: 'Pagamentos',
     pergunta: 'Como dou baixa nos pagamentos feitos pelo banco?',
-    resposta: 'Importe o arquivo de retorno em Pagamentos → Retornos. Os pagos recebem a data de pagamento sozinhos; os rejeitados ou devolvidos voltam para A pagar com o motivo do banco. Pagamento feito fora do arquivo: use Baixa manual, com o comprovante.',
+    resposta: 'Importe o arquivo de retorno em Pagamentos → Retornos. Os pagos recebem a data de pagamento sozinhos; os rejeitados ou devolvidos voltam para A pagar com o motivo do banco. Se o banco recusou o arquivo inteiro, a tela avisa "Arquivo não processado": corrija e gere uma nova remessa. Pagamento feito fora do arquivo: use Baixa manual, com o comprovante.',
   },
   {
     id: 'pg5',
     categoria: 'Pagamentos',
     pergunta: 'Por que não consigo mudar o valor ou excluir uma despesa?',
-    resposta: 'Ela está numa remessa enviada ao banco. Cancele a remessa em Pagamentos → Remessas (e o agendamento no banco, se já importou o arquivo) ou aguarde o retorno.',
+    resposta: 'Ela está numa remessa enviada ao banco. Cancele a remessa em Pagamentos → Remessas (e o agendamento no banco, se já importou o arquivo) ou aguarde o retorno. No Itaú, Pix agendado só é cancelado no Itaú na Internet (Contas a pagar → alterar ou excluir), e esse cancelamento não gera retorno.',
   },
   {
     id: 'pg6',

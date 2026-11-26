@@ -1,10 +1,10 @@
-"""Remessa Itaú — SISPAG CNAB 240 versão 085 (out/2020).
+"""Remessa Itaú — SISPAG CNAB 240 versão 086 (fev/2024).
 
 Particularidades (ver o leiaute): lotes Pix vão num arquivo separado
 (`separar`), tipo de movimento com 3 dígitos, agência/conta no formato da
 nota 11, J com os 44 dígitos do código de barras, O com a representação de 48
 posições e salário (tipo 30) só por crédito em conta Itaú — o resto sai como
-tipo 98. O manual é anterior ao CNPJ com letras: esses favorecidos são barrados.
+tipo 98, menos o Pix QR Code, que é sempre tipo 20 (Instruções de Procedimentos). O manual é anterior ao CNPJ com letras: esses favorecidos são barrados.
 """
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from app.cnab import barcode, pix
-from app.cnab.builders.santander import BRT, _chave_tipo, _dec, tipo_inscricao
+from app.cnab.builders.santander import BRT, _dec, tipo_inscricao
 from app.cnab.engine import registro
-from app.cnab.layouts import itau_sispag_v085 as L
+from app.cnab.layouts import itau_sispag_v086 as L
 from app.cnab.modelo import ArquivoGerado, Empresa, Favorecido, ItemPagamento, LoteGerado
 from app.cnab.normalize import so_alfanum, so_digitos
 from app.cnab.validators import cnpj_alfanumerico, documento_valido
 
-LAYOUT = "itau_sispag_240_v085"
+LAYOUT = "itau_sispag_240_v086"
 _TIPO_CHAVE = {"telefone": "01", "email": "02", "cpf_cnpj": "03", "aleatoria": "04"}
 _A = {"01", "05", "41", "45"}
 _J = {"30", "31", "47"}
@@ -47,7 +47,7 @@ def classificar(item: ItemPagamento) -> tuple[str, str]:
     if item.forma == "pix":
         return "45", servico
     if item.forma == "pix_qr":
-        return "47", servico
+        return "47", "20"                # QR Code (inclusive FGTS Digital) é sempre tipo 20
     if item.forma == "boleto":
         return ("30" if (item.codigo_barras or "").startswith("341") else "31"), servico
     if item.forma == "concessionaria":
@@ -75,7 +75,7 @@ def validar(item: ItemPagamento, hoje: date | None = None) -> list[str]:
     if hoje and item.data_pagamento < hoje:
         erros.append("Data de pagamento no passado.")
     if any(cnpj_alfanumerico(d) for d in _docs(item)):
-        erros.append("O manual do Itaú (SISPAG v085) ainda não aceita CNPJ com letras: pague pelo Santander.")
+        erros.append("O manual do Itaú (SISPAG v086) ainda não aceita CNPJ com letras: pague pelo Santander.")
 
     def precisa_doc():
         if not f or not f.cpf_cnpj:
@@ -108,6 +108,10 @@ def validar(item: ItemPagamento, hoje: date | None = None) -> list[str]:
                 erros.append("Chave Pix longa demais.")
         elif not f.conta or not (f.banco_codigo or f.ispb):
             erros.append("O favorecido não tem chave Pix nem conta cadastrada.")
+        elif f.tipo_conta == "pagamento" and not so_digitos(f.agencia):
+            erros.append("Pix para conta de pagamento: o Itaú exige a agência (nota 44). Cadastre a agência ou use a chave Pix.")
+        elif f.tipo_conta == "pagamento" and len(so_digitos(f.agencia)) > 5:
+            erros.append("Agência da conta de pagamento com mais de 5 números.")
     elif item.forma == "pix_qr":
         try:
             br = pix.ler(item.pix_copia_cola or "")
@@ -203,6 +207,8 @@ def _detalhes(item: ItemPagamento, empresa: Empresa, forma: str) -> list[tuple]:
         else:
             a.update(banco_favorecido=f.banco_codigo or "000", agencia_conta=agencia_conta(f),
                      ispb="" if f.banco_codigo else (f.ispb or ""))
+            if f.tipo_conta == "pagamento":     # nota 44 (v086): agência em 225–229
+                a["agencia_pagamento"] = so_digitos(f.agencia).zfill(5)[-5:]
         chave = (so_alfanum(f.pix_chave) if f.pix_tipo_chave == "cpf_cnpj" else f.pix_chave) if por_chave else ""
         b = {"tipo_chave": _TIPO_CHAVE.get(f.pix_tipo_chave or "", "") if por_chave else "",
              "tipo_inscricao": tipo_inscricao(doc), "documento": doc, "chave": chave}
@@ -265,7 +271,7 @@ def gerar(empresa: Empresa, itens: list[ItemPagamento], nsa: int, agora: datetim
     if len({i.forma in ("pix", "pix_qr") for i in itens}) > 1:
         raise ValueError("Itaú: Pix e demais formas precisam de arquivos separados.")
     if cnpj_alfanumerico(empresa.cnpj):
-        raise ValueError("Itaú v085 não aceita CNPJ com letras no cabeçalho.")
+        raise ValueError("Itaú v086 não aceita CNPJ com letras no cabeçalho.")
     agora = (agora or datetime.now(BRT)).astimezone(BRT)
     emp = _empresa(empresa)
     end = empresa.endereco or {}

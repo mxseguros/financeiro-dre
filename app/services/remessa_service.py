@@ -30,7 +30,7 @@ from app.cnab.barcode import mod10
 from app.cnab.builders import itau, santander
 from app.cnab.modelo import Empresa, Favorecido, ItemPagamento
 from app.permissions import permissao_pagamentos
-from app.services import contas_pagadoras_service, fornecedores_service
+from app.services import contas_pagadoras_service
 from app.services.confidencial import ids_confidenciais
 
 logger = structlog.get_logger()
@@ -462,8 +462,10 @@ def detalhe(remessa_id: UUID | str, usuario: UsuarioAtual, db: Client) -> dict:
             "forma_pagamento": i["forma_pagamento"], "valor": str(i["valor"]), "status": i["status"],
             "ocorrencias": i.get("ocorrencias") or [], "motivo": i.get("motivo"), "lote": i.get("lote"),
         })
-    contas = {c["id"]: c["descricao"] for c in contas_pagadoras_service.listar(usuario, db)}
-    return {**r, "conta": contas.get(r.get("conta_id")), "arquivos": arquivos, "itens": saida}
+    contas = {c["id"]: c for c in contas_pagadoras_service.listar(usuario, db)}
+    conta = contas.get(r.get("conta_id")) or {}
+    return {**r, "conta": conta.get("descricao"), "codigo_banco": conta.get("codigo_banco"),
+            "arquivos": arquivos, "itens": saida}
 
 
 def url_arquivo(remessa_id: UUID, arquivo_id: UUID, usuario: UsuarioAtual, db: Client) -> dict:
