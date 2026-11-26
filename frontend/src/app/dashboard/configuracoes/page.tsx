@@ -57,11 +57,6 @@ export default function ConfiguracoesPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-navy md:text-2xl">Configurações</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Gerencie os parâmetros do sistema</p>
-      </div>
-
       {/* Tabs */}
       <div data-tour="cfg-abas" className="grid grid-cols-2 gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:grid-cols-3 lg:flex">
         {ABAS.map(a => (

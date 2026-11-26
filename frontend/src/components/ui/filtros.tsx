@@ -3,22 +3,25 @@ import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * Padrão único dos filtros de todas as telas (22/10/2026): mesma altura
- * (32px), fonte 12px, cantos, borda e sombra. Usar estas classes em vez de
- * montar estilo à mão em cada página.
+ * Padrão único dos filtros de todas as telas (redesenho UX, 25/11/2026):
+ * 44px de altura no desktop e 48px no celular (área de toque), fonte 14px,
+ * cantos, borda e sombra. Usar estas classes em vez de montar estilo à mão
+ * em cada página.
  */
 export const FILTRO_CAMPO =
-  'h-8 rounded-md border border-gray-200 bg-white px-2.5 text-xs text-gray-700 shadow-sm focus-ring focus:outline-none disabled:bg-gray-50 disabled:text-gray-400'
+  'h-12 md:h-11 rounded-lg border border-gray-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-ring focus:outline-none disabled:bg-gray-50 disabled:text-gray-400'
 export const FILTRO_BOTAO =
-  'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 focus-ring disabled:opacity-50'
+  'inline-flex h-12 md:h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-gray-50 focus-ring disabled:opacity-50'
+// Grupo segmentado: contorno por `ring` (fora da caixa) para cada segmento
+// ter a altura inteira do grupo — 44px no desktop e 48px no celular.
 export const FILTRO_GRUPO =
-  'inline-flex h-8 items-center rounded-md border border-gray-200 bg-white p-0.5 shadow-sm'
+  'inline-flex h-12 md:h-11 items-stretch overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-gray-300'
 export const filtroSegmento = (ativo: boolean) => cn(
-  'h-full rounded px-2.5 text-xs font-medium transition-colors focus-ring',
-  ativo ? 'bg-navy text-white' : 'text-gray-600 hover:bg-gray-50',
+  'h-full px-3.5 text-sm font-medium transition-colors focus-ring focus-visible:ring-inset',
+  ativo ? 'bg-navy text-white' : 'text-slate-700 hover:bg-gray-50',
 )
-/** Filtro com valor escolhido: destaca a borda e o texto. */
-export const filtroAtivo = (ativo: boolean) => (ativo ? 'border-navy font-medium text-navy' : '')
+/** Filtro com valor escolhido: estilo de seleção (token `sel`). */
+export const filtroAtivo = (ativo: boolean) => (ativo ? 'border-sel bg-sel-bg font-medium text-sel-text' : '')
 
 export const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 /** 'YYYY-MM' → 'Out 2026'. */
@@ -60,19 +63,19 @@ export function SeletorMes({ valor, onChange, min, semDados, rotulo = 'Mês', cl
         onClick={() => setAberto(v => !v)}
         className={cn(FILTRO_CAMPO, 'inline-flex min-w-[5.75rem] items-center justify-between gap-1.5 font-medium tabular-nums', className)}>
         {rotuloMesAbrev(valor)}
-        <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-gray-400" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-gray-500" aria-hidden="true">
           <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
         </svg>
       </button>
       {aberto && (
         <div role="dialog" aria-label={`Escolher ${rotulo.toLowerCase()}`}
-          className="absolute right-0 z-30 mt-1 w-56 rounded-xl border border-gray-200 bg-white p-2.5 shadow-lg">
+          className="absolute right-0 z-30 mt-1 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
           <div className="mb-2 flex items-center justify-between">
             <button type="button" onClick={() => setAno(a => a - 1)} aria-label="Ano anterior"
-              className="rounded px-2 py-0.5 text-sm text-gray-500 hover:bg-gray-100">‹</button>
-            <span className="text-xs font-semibold text-navy">{ano}</span>
+              className="focus-ring flex h-11 w-11 items-center justify-center rounded-lg text-base text-slate-600 hover:bg-gray-100">‹</button>
+            <span className="text-sm font-semibold text-navy">{ano}</span>
             <button type="button" onClick={() => setAno(a => a + 1)} aria-label="Próximo ano"
-              className="rounded px-2 py-0.5 text-sm text-gray-500 hover:bg-gray-100">›</button>
+              className="focus-ring flex h-11 w-11 items-center justify-center rounded-lg text-base text-slate-600 hover:bg-gray-100">›</button>
           </div>
           <div className="grid grid-cols-3 gap-1">
             {MESES_ABREV.map((nome, i) => {
@@ -84,7 +87,7 @@ export function SeletorMes({ valor, onChange, min, semDados, rotulo = 'Mês', cl
                 <button key={m} type="button" disabled={bloqueado}
                   onClick={() => { onChange(m); setAberto(false) }}
                   title={vazio ? 'Sem lançamentos realizados' : undefined}
-                  className={cn('rounded-md py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-30',
+                  className={cn('focus-ring h-11 rounded-lg text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-30',
                     escolhido ? 'bg-navy font-semibold text-white' : vazio ? 'text-gray-400 hover:bg-gray-50' : 'text-gray-700 hover:bg-gray-100')}>
                   {nome}
                 </button>

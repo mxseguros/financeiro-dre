@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
 import { usePeriodo } from '@/contexts/PeriodoContext'
+import { useTopBar } from '@/contexts/TopBarContext'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
@@ -143,20 +144,16 @@ export default function MetasPage() {
     }
   }
 
+  const subtitulo = `Orçamento mensal por conta · ${ano}${podeEditar ? '' : ' · somente leitura — Admin e Gestor podem editar'}`
+  useTopBar({ subtitulo }, [subtitulo])
+
   const totalGrupo = (g: Grupo, m: number) => g.contas.reduce((s, c) => s + valor(c.id, m), 0)
   const totalConta = (c: Conta) => Array.from({ length: 12 }, (_, i) => valor(c.id, i + 1)).reduce((a, b) => a + b, 0)
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <Link href="/dashboard/dre" className="text-xs font-medium text-blue-600 hover:underline">← DRE</Link>
-          <h1 className="mt-1 text-xl font-bold text-navy md:text-2xl">Metas (Previsto)</h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            Orçamento mensal por conta · {ano}
-            {!podeEditar && ' · somente leitura — Admin e Gestor podem editar'}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/dashboard/dre" className="focus-ring inline-flex h-11 items-center text-sm font-medium text-sel hover:underline">← Voltar para a DRE</Link>
         <div className="flex flex-wrap items-center gap-2">
           <select aria-label="Ano" value={ano} onChange={e => { setAviso(null); setAno(Number(e.target.value)) }}
             className={FILTRO_CAMPO}>

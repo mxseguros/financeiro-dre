@@ -2,11 +2,9 @@
 import { nomeCentro } from '@/lib/centros'
 import { MarcaAnexos, useContagemAnexos } from '@/components/anexos/CampoAnexos'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
 import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
-import { SeletorPeriodo } from '@/components/ui/SeletorPeriodo'
 import { fmtBRL, fmtData } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
 import { Button, Spinner } from '@/components/ui/Button'
@@ -573,20 +571,6 @@ export default function AprovacoesPage() {
       )}
 
       <div className="flex flex-col space-y-4">
-        {/* Cabeçalho */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Link href="/dashboard/lancamentos" className="text-sm text-gray-400 hover:text-gray-600">
-                Lançamentos
-              </Link>
-              <span className="text-gray-300">/</span>
-              <h1 className="text-xl font-bold text-navy md:text-2xl">Aprovações</h1>
-            </div>
-            <p className="mt-0.5 text-sm text-gray-500">Despesas e ordens de compra · arraste os cards para Aprovar ou Rejeitar</p>
-          </div>
-          <SeletorPeriodo />
-        </div>
 
         {/* Erro global */}
         {erroGlobal && (

@@ -1,170 +1,134 @@
 'use client'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { permissaoPagamentos, permissaoRelatorios, type Role, type Permissions } from '@/types'
-import Image from 'next/image'
+import type { Role, Permissions } from '@/types'
 import { iniciarTour } from '@/components/tour/tour'
-
-const Icon = {
-  grid:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
-  kanban:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="8" rx="1"/></svg>,
-  chart:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
-  book:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,
-  chat:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
-  download:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
-  gear:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
-  faq:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>,
-  compass: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>,
-  table:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>,
-  bank:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3z"/></svg>,
-  users:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
-}
-
-type PermissaoTela = keyof Permissions
-
-interface NavItem { href: string; label: string; icon: React.ReactNode; permissaoTela?: PermissaoTela }
-
-/** Âncora do tour guiado: `menu-<último trecho da rota>` (ver components/tour/tour.ts). */
-const ancoraTour = (href: string) => `menu-${href.split('/').pop()}`
-
-const NAV: NavItem[] = [
-  { href: '/dashboard',                        label: 'Visão Geral',   icon: Icon.grid,     permissaoTela: 'visao_geral'  },
-  { href: '/dashboard/dre',                    label: 'DRE',           icon: Icon.chart,    permissaoTela: 'dre'          },
-  { href: '/dashboard/lancamentos',            label: 'Lançamentos',   icon: Icon.book,     permissaoTela: 'lancamentos'  },
-  { href: '/dashboard/lancamentos/aprovacoes', label: 'Aprovações',    icon: Icon.kanban,   permissaoTela: 'aprovacoes'   },
-  // Pagamentos por arquivo CNAB (0050).
-  { href: '/dashboard/lancamentos/pagamentos', label: 'Pagamentos',    icon: Icon.bank,     permissaoTela: 'pagamentos'   },
-  { href: '/dashboard/exports',                label: 'Exportações',   icon: Icon.download                                },
-  // Relatórios substituiu o Monitoramento IA (26/10/2026).
-  { href: '/dashboard/relatorios',             label: 'Relatórios',    icon: Icon.table,    permissaoTela: 'relatorios'   },
-]
-
-const NAV_BOTTOM: NavItem[] = [
-  { href: '/dashboard/ajuda',         label: 'FAQ',           icon: Icon.faq                                            },
-  { href: '/dashboard/configuracoes', label: 'Configurações', icon: Icon.gear, permissaoTela: 'configuracoes'           },
-]
+import { GRUPOS, Icon, ROTULO_PERFIL, ancoraTour, iniciais, itemAtivo, itemVisivel, type Contador } from './navegacao'
+import { DICA_CONTADOR } from './useContadores'
 
 interface Props {
   role: Role
   permissions: Permissions
   email: string
   nome: string
+  contadores: Partial<Record<Contador, number>>
   onSignOut: () => void
-  aberta?: boolean
-  onFechar?: () => void
 }
 
-export function Sidebar({ role, permissions, email, nome, onSignOut, aberta = false, onFechar }: Props) {
+/**
+ * Menu lateral (desktop, ≥ 768 px). No celular a navegação é a TabBar.
+ * Redesenho UX, fase 1: 248 px, itens de 44 px em 3 grupos, contadores e
+ * perfil no rodapé.
+ */
+export function Sidebar({ role, permissions, email, nome, contadores, onSignOut }: Props) {
   const pathname = usePathname()
+  const [menuPerfil, setMenuPerfil] = useState(false)
+  const caixaPerfil = useRef<HTMLDivElement>(null)
 
-  const allNav = [...NAV, ...NAV_BOTTOM]
-  const isActive = (href: string) => {
-    if (href === '/dashboard') return pathname === '/dashboard'
-    if (pathname === href) return true
-    if (pathname.startsWith(href + '/')) {
-      return !allNav.some(n => n.href !== href && n.href.startsWith(href + '/') && pathname.startsWith(n.href))
-    }
-    return false
-  }
+  useEffect(() => {
+    if (!menuPerfil) return
+    const fora = (e: MouseEvent) => { if (caixaPerfil.current && !caixaPerfil.current.contains(e.target as Node)) setMenuPerfil(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuPerfil(false) }
+    document.addEventListener('mousedown', fora)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc) }
+  }, [menuPerfil])
 
-  const visible = (item: NavItem) => {
-    if (!item.permissaoTela) return true
-    if (item.permissaoTela === 'relatorios') return permissaoRelatorios(permissions, role, 'visualizar')
-    if (item.permissaoTela === 'pagamentos') return permissaoPagamentos(permissions, role, 'visualizar')
-    return permissions[item.permissaoTela]?.visualizar === true
-  }
-
-  const navItemCls = (active: boolean) => cn(
-    'flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
-    active
-      ? 'bg-white/15 text-white'
-      : 'text-white/55 hover:bg-white/8 hover:text-white/90',
-  )
-
-  const visibleBottom = NAV_BOTTOM.filter(visible)
+  const nomeCurto = (nome || email.split('@')[0]).split(' ')[0]
 
   return (
-    <>
-      {/* Overlay mobile */}
-      {aberta && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={onFechar}
-        />
-      )}
+    <aside className="hidden h-full w-[248px] shrink-0 flex-col bg-navy md:flex">
+      <div className="flex h-[76px] shrink-0 items-center justify-center border-b border-white/10 px-5">
+        <Image src="/logo_beige.png" alt="MX Corretora de Seguros" width={150} height={50} className="object-contain" />
+      </div>
 
-      <aside className={cn(
-        'fixed inset-y-0 left-0 z-50 flex h-full w-[220px] shrink-0 flex-col bg-navy transition-transform duration-200 ease-in-out',
-        'lg:relative lg:z-auto lg:translate-x-0',
-        aberta ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-      )}>
-        {/* Logo */}
-        <div className="flex items-center justify-center border-b border-white/10 px-5 py-3">
-          <Image src="/logo_beige.png" alt="MX Corretora de Seguros" width={160} height={53} className="object-contain" />
-        </div>
+      <nav aria-label="Menu principal" className="flex-1 overflow-y-auto px-3 py-4">
+        {GRUPOS.map(grupo => {
+          const itens = grupo.itens.filter(i => itemVisivel(i, permissions, role))
+          if (!itens.length) return null
+          return (
+            <div key={grupo.titulo} className="mb-5 last:mb-0">
+              <p className="mb-1.5 px-3 text-[13px] font-medium text-white/55">{grupo.titulo}</p>
+              <ul className="space-y-0.5">
+                {itens.map(item => {
+                  const ativo = itemAtivo(item.href, pathname)
+                  const n = item.contador ? contadores[item.contador] ?? 0 : 0
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        data-tour={ancoraTour(item.href)}
+                        aria-current={ativo ? 'page' : undefined}
+                        className={cn(
+                          'focus-ring flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors',
+                          ativo ? 'bg-white text-sel-text' : 'text-white/80 hover:bg-white/10 hover:text-white',
+                        )}
+                      >
+                        <span className={ativo ? 'text-sel-text' : 'text-white/60'}>{item.icon}</span>
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {n > 0 && item.contador && (
+                          <span
+                            title={`${n} ${DICA_CONTADOR[item.contador]}`}
+                            className={cn(
+                              'min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-center text-[13px] font-semibold tabular-nums',
+                              item.contador === 'aprovacoes'
+                                ? 'bg-amber-300 text-amber-900'
+                                : ativo ? 'bg-sel-bg text-sel-text' : 'bg-white/15 text-white',
+                            )}
+                          >
+                            {n > 99 ? '99+' : n}
+                            <span className="sr-only"> {DICA_CONTADOR[item.contador]}</span>
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )
+        })}
+      </nav>
 
-        {/* Nav principal */}
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-          {NAV.filter(visible).map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              data-tour={ancoraTour(item.href)}
-              onClick={onFechar}
-              className={navItemCls(isActive(item.href))}
-            >
-              <span className={isActive(item.href) ? 'text-white' : 'text-white/45'}>
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        {/* Nav inferior */}
-        <div className="border-t border-white/10 px-2 py-2">
-          {visibleBottom.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              data-tour={ancoraTour(item.href)}
-              onClick={onFechar}
-              className={navItemCls(isActive(item.href))}
-            >
-              <span className={isActive(item.href) ? 'text-white' : 'text-white/45'}>
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          ))}
-
-          <button
-            type="button"
-            data-tour="menu-tour"
-            onClick={() => {
-              // No celular o menu é uma gaveta: fecha antes, senão ela cobre a tela destacada.
-              onFechar?.()
-              window.setTimeout(() => iniciarTour(pathname), aberta ? 250 : 0)
-            }}
-            className={cn(navItemCls(false), 'w-full')}
-          >
-            <span className="text-white/45">{Icon.compass}</span>
-            Tour guiado
-          </button>
-
-          {/* Perfil */}
-          <div className="mt-1 border-t border-white/10 px-3 py-2 pt-2">
-            <p className="truncate text-[11px] text-beige leading-tight">{email}</p>
-            <button
-              onClick={onSignOut}
-              className="mt-1 text-[11px] text-white/35 hover:text-white/60 transition-colors"
-            >
-              Sair
+      {/* Perfil: abre o menu com o tour desta tela e Sair. */}
+      <div ref={caixaPerfil} className="relative border-t border-white/10 p-3">
+        {menuPerfil && (
+          <div role="menu" className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+            <p className="truncate px-4 py-2 text-[13px] text-slate-600">{email}</p>
+            <button type="button" role="menuitem"
+              onClick={() => { setMenuPerfil(false); iniciarTour(pathname) }}
+              className="focus-ring flex h-11 w-full items-center gap-3 px-4 text-sm text-slate-700 hover:bg-gray-50">
+              <span className="text-slate-500">{Icon.compass}</span> Tour guiado desta tela
+            </button>
+            <button type="button" role="menuitem" onClick={onSignOut}
+              className="focus-ring flex h-11 w-full items-center gap-3 px-4 text-sm text-slate-700 hover:bg-gray-50">
+              <span className="text-slate-500">{Icon.sair}</span> Sair
             </button>
           </div>
-        </div>
-      </aside>
-    </>
+        )}
+        <button
+          type="button"
+          data-tour="menu-tour"
+          aria-haspopup="menu"
+          aria-expanded={menuPerfil}
+          onClick={() => setMenuPerfil(v => !v)}
+          className="focus-ring flex h-12 w-full items-center gap-3 rounded-lg px-2 text-left hover:bg-white/10"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-beige text-[13px] font-semibold text-navy">
+            {iniciais(nome, email)}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-white">{nomeCurto}</span>
+            <span className="block truncate text-[13px] text-white/60">{ROTULO_PERFIL[role] ?? role}</span>
+          </span>
+          <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-white/60" aria-hidden="true">
+            <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 0 1-1.06-.02L10 8.832 6.29 12.77a.75.75 0 1 1-1.08-1.04l4.25-4.5a.75.75 0 0 1 1.08 0l4.25 4.5a.75.75 0 0 1-.02 1.06Z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
+    </aside>
   )
 }

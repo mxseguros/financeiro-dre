@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { usePeriodo } from '@/contexts/PeriodoContext'
+import { useTopBar } from '@/contexts/TopBarContext'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { DreKpis } from '@/components/dre/DreKpis'
 import { DreTable } from '@/components/dre/DreTable'
@@ -70,17 +71,14 @@ export default function DrePage() {
   const recorte = visao === 'mes' ? `${MESES_LONGOS[mes - 1]} ${ano}`
     : visao === 'acumulado' ? `Jan–${MESES[mes - 1]} ${ano}` : `${ano}`
 
+  const subtitulo = `Previsto x Realizado · ${ano}`
+    + (dados ? (ultimo ? ` · realizado lançado até ${MESES_LONGOS[ultimo - 1].toLowerCase()}` : ' · sem realizado lançado') : '')
+  useTopBar({ subtitulo }, [subtitulo])
+
   return (
     <div className="flex flex-col gap-4">
       {/* Cabeçalho */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-navy md:text-2xl">DRE</h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            Previsto x Realizado · {ano}
-            {dados && (ultimo ? ` · realizado lançado até ${MESES_LONGOS[ultimo - 1].toLowerCase()}` : ' · sem realizado lançado')}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {/* Mês de referência (ano incluso) no padrão dos filtros: "Out 2026". */}
           <SeletorMes dataTour="periodo" rotulo="Mês de referência" valor={`${ano}-${String(mes).padStart(2, '0')}`}

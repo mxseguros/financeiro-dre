@@ -14,7 +14,7 @@ const MODOS: [ModoPeriodo, string, string][] = [
   ['periodo', 'Período', 'De uma data até outra — pela data de pagamento (em aberto, pelo vencimento)'],
 ]
 
-// Padrão único dos filtros (components/ui/filtros.tsx): 32px de altura, fonte 12px.
+// Padrão único dos filtros (components/ui/filtros.tsx): 44px (48px no celular), fonte 14px.
 const campoCls = FILTRO_CAMPO
 
 const hojeISO = () => {
@@ -77,7 +77,7 @@ function IntervaloDatas() {
     <div ref={caixa} className="relative">
       <button type="button" onClick={() => setAberto(v => !v)} aria-expanded={aberto} aria-haspopup="dialog"
         className={cn(campoCls, 'inline-flex items-center gap-1.5 font-medium tabular-nums')}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5 text-gray-400" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4 text-gray-500" aria-hidden="true">
           <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
         </svg>
         {p.de === p.ate ? br(p.de) : `${br(p.de)} – ${br(p.ate)}`}
@@ -85,32 +85,32 @@ function IntervaloDatas() {
 
       {aberto && (
         <div role="dialog" aria-label="Escolher período"
-          className="absolute right-0 z-30 mt-1 w-[17rem] max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
+          className="absolute right-0 z-30 mt-1 w-[19rem] max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
           <div className="grid grid-cols-2 gap-2">
-            <label className="text-[11px] font-medium text-gray-500">
+            <label className="text-[13px] font-medium text-slate-600">
               De
               <input type="date" value={de} onChange={e => setDe(e.target.value)} className={cn(campoCls, 'mt-0.5 w-full px-2')} />
             </label>
-            <label className="text-[11px] font-medium text-gray-500">
+            <label className="text-[13px] font-medium text-slate-600">
               Até
               <input type="date" value={ate} min={de || undefined} onChange={e => setAte(e.target.value)} className={cn(campoCls, 'mt-0.5 w-full px-2')} />
             </label>
           </div>
-          {longoDemais && <p className="mt-1.5 text-[11px] text-red-600">O período pode ter no máximo 12 meses.</p>}
+          {longoDemais && <p className="mt-1.5 text-[13px] text-red-700">O período pode ter no máximo 12 meses.</p>}
 
           <div className="mt-2.5 flex flex-wrap gap-1">
             {atalhos().map(([rotulo, fn]) => (
               <button key={rotulo} type="button" onClick={() => { const [d1, d2] = fn(); aplicar(d1, d2) }}
-                className="rounded-md bg-gray-100 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-200">
+                className="focus-ring h-10 rounded-lg bg-gray-100 px-3 text-[13px] text-slate-700 hover:bg-gray-200">
                 {rotulo}
               </button>
             ))}
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-2.5">
-            <span className="text-[10px] leading-tight text-gray-400">Pela data de pagamento;<br />em aberto, pelo vencimento</span>
+            <span className="text-[13px] leading-tight text-slate-600">Pela data de pagamento;<br />em aberto, pelo vencimento</span>
             <button type="button" disabled={!valido} onClick={() => aplicar()}
-              className="rounded-lg bg-navy px-3 py-1.5 text-xs font-medium text-white hover:bg-navy-light disabled:opacity-50">
+              className="focus-ring h-11 rounded-lg bg-navy px-4 text-sm font-medium text-white hover:bg-navy-light disabled:opacity-50">
               Aplicar
             </button>
           </div>
@@ -120,15 +120,25 @@ function IntervaloDatas() {
   )
 }
 
+/** 'YYYY-MM' + n meses. */
+function somarMeses(mes: string, n: number): string {
+  const total = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
+}
+
+const setaCls = 'focus-ring inline-flex h-12 w-12 md:h-11 md:w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-lg text-slate-700 shadow-sm hover:bg-gray-50'
+
 /**
  * Filtro de período Dia | Mês | Ano | Período, ligado ao PeriodoContext (o
  * mesmo período em todas as telas). `intervaloMeses` mostra De/Até no modo Mês.
+ * Desde o redesenho (25/11/2026) fica na barra do topo; no modo Mês simples
+ * tem setas ‹ › para o mês anterior e o seguinte.
  */
 export function SeletorPeriodo({ intervaloMeses = false, className }: { intervaloMeses?: boolean; className?: string }) {
   const p = usePeriodo()
 
   return (
-    <div data-tour="periodo" className={cn('flex flex-wrap items-center gap-2 text-xs text-gray-500', className)}>
+    <div data-tour="periodo" className={cn('flex flex-wrap items-center gap-2 text-sm text-slate-600', className)}>
       <div role="group" aria-label="Filtrar por" className={FILTRO_GRUPO}>
         {MODOS.map(([m, rotulo, dica]) => (
           <button key={m} type="button" title={dica} aria-pressed={p.modo === m}
@@ -153,7 +163,11 @@ export function SeletorPeriodo({ intervaloMeses = false, className }: { interval
             onChange={v => p.definirPeriodo(p.mesInicio, v < p.mesInicio ? p.mesInicio : v)} />
         </>
       ) : (
-        <SeletorMes rotulo="Mês" valor={p.mesInicio} onChange={p.definirMes} />
+        <div className="flex items-center gap-1">
+          <button type="button" aria-label="Mês anterior" onClick={() => p.definirMes(somarMeses(p.mesInicio, -1))} className={setaCls}>‹</button>
+          <SeletorMes rotulo="Mês" valor={p.mesInicio} onChange={p.definirMes} />
+          <button type="button" aria-label="Próximo mês" onClick={() => p.definirMes(somarMeses(p.mesInicio, 1))} className={setaCls}>›</button>
+        </div>
       ))}
 
       {p.modo === 'ano' && (

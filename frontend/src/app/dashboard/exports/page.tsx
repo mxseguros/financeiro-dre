@@ -42,8 +42,6 @@ export default function ExportsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-navy">Exportações</h1>
-
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-5">
         <h2 className="font-semibold text-gray-800">Exportar DRE</h2>
 

@@ -16,6 +16,15 @@ const config: Config = {
         beige: '#B5A882',
         // Fundo da aplicação — hoje repetido como #F0F2F5 em globals.css e nos layouts.
         canvas: '#F0F2F5',
+        // Redesenho UX (spec-redesenho-ux.md §1.1): seleção (chip, aba, rádio escolhidos).
+        sel: {
+          DEFAULT: '#1d4ed8',   // borda
+          bg:      '#eff6ff',   // fundo
+          text:    '#1e3a8a',   // texto
+        },
+        // Cor do banco: só no ponto/ícone, nunca em texto.
+        itau:      '#ec7000',
+        santander: '#cc0000',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
