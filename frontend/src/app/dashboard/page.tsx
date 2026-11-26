@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
 import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
-import { SeletorPeriodo } from '@/components/ui/SeletorPeriodo'
+import { useTopBar } from '@/contexts/TopBarContext'
 import { fmtBRL, fmtData } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ShareButton } from '@/components/ui/ShareButton'
@@ -487,6 +487,16 @@ export default function DashboardPage() {
   })
   const periodo = data ? filtro.rotulo : ''
 
+  // Barra do topo: o período por extenso vira o subtítulo; Atualizar é a ação da tela.
+  useTopBar({
+    subtitulo: periodo || undefined,
+    acao: (
+      <button onClick={buscar} className={FILTRO_BOTAO}>
+        <IconRefresh /> Atualizar
+      </button>
+    ),
+  }, [periodo, buscar])
+
   // O backend serializa Decimal como string ("23311.18"): sem Number(), o `+`
   // concatena texto e o Total sai NaN — exibido como "—".
   const totalReceitaBancos = porBanco?.bancos.reduce((acc, b) => acc + Number(b.receitas), 0) ?? 0
@@ -540,24 +550,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-navy md:text-2xl">Visão Geral</h1>
-          {periodo && (
-            <p className="mt-0.5 text-sm text-gray-500">{periodo}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <SeletorPeriodo />
-          <button
-            onClick={buscar}
-            className={FILTRO_BOTAO}
-          >
-            <IconRefresh /> Atualizar
-          </button>
-        </div>
-      </div>
 
       {token && permissaoPagamentos(permissions, role, 'visualizar') && <QuadroPagamentos token={token} />}
 

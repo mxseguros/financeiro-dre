@@ -9,7 +9,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
 import { api } from '@/lib/api'
 import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
-import { SeletorPeriodo } from '@/components/ui/SeletorPeriodo'
+import { useTopBar } from '@/contexts/TopBarContext'
+import { EVENTO_NOVO, MenuNovo, type TipoNovo } from '@/components/layout/MenuNovo'
 import { fmtBRL, fmtData } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
@@ -91,6 +92,28 @@ export default function LancamentosPage() {
   // Dialog para exclusão de parcelas/ocorrências futuras (parcelamento ou recorrência)
   const [dialogParcelas, setDialogParcelas] = useState<DialogGrupo | null>(null)
   const [dialogReceita, setDialogReceita] = useState<Receita | null>(null)
+
+  // Ação principal na barra do topo: "+ Novo ▾" (redesenho UX, fase 1).
+  const abrirNovo = useCallback((t: TipoNovo) => {
+    if (t === 'despesa') { setAba('despesas'); setModalDespesa(true) }
+    else if (t === 'receita') { setAba('receitas'); setModalReceita(true) }
+    else if (t === 'ordem') { setAba('ordens'); setModalOrdem(true) }
+    else setModalImportar(true)
+  }, [])
+  useTopBar({ acao: <MenuNovo onEscolher={abrirNovo} /> }, [abrirNovo])
+
+  // "+ Lançar" da barra do celular: chega como ?novo=… (vindo de outra tela)
+  // ou como evento (já nesta tela).
+  useEffect(() => {
+    const tipo = new URLSearchParams(window.location.search).get('novo')
+    if (tipo === 'despesa' || tipo === 'receita' || tipo === 'ordem') {
+      abrirNovo(tipo)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+    const ouvir = (e: Event) => abrirNovo((e as CustomEvent<TipoNovo>).detail)
+    window.addEventListener(EVENTO_NOVO, ouvir)
+    return () => window.removeEventListener(EVENTO_NOVO, ouvir)
+  }, [abrirNovo])
 
   // A busca vai para o servidor; sem o debounce seria uma requisição por tecla.
   const [buscaDebounced, setBuscaDebounced] = useState('')
@@ -469,46 +492,6 @@ export default function LancamentosPage() {
       />
 
       <div className="space-y-6">
-        {/* Cabeçalho */}
-        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-navy md:text-xl">Lançamentos</h1>
-            <p className="mt-0.5 text-xs text-gray-500">Despesas e receitas por centro de custo e banco</p>
-          </div>
-          {/* Filtros + ações numa linha só a partir de telas médias (fonte 11px). */}
-          <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
-            <SeletorPeriodo intervaloMeses className="lg:flex-nowrap" />
-            <div data-tour="novos-lancamentos" className="flex w-full flex-wrap gap-1.5 sm:w-auto sm:flex-nowrap">
-              <button
-                data-tour="importar"
-                onClick={() => setModalImportar(true)}
-                title="Importar extrato bancário"
-                className="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-gray-300 bg-white h-8 px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors sm:flex-none">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-                Importar
-              </button>
-              <button
-                onClick={() => { setAba('despesas'); setModalDespesa(true) }}
-                className="flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-red-600 h-8 px-3 text-xs font-medium text-white hover:bg-red-700 transition-colors sm:flex-none">
-                + Despesa
-              </button>
-              <button
-                onClick={() => { setAba('receitas'); setModalReceita(true) }}
-                className="flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-green-600 h-8 px-3 text-xs font-medium text-white hover:bg-green-700 transition-colors sm:flex-none">
-                + Receita
-              </button>
-              <button
-                onClick={() => { setAba('ordens'); setModalOrdem(true) }}
-                title="Nova Ordem de Compra"
-                className="flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-navy h-8 px-3 text-xs font-medium text-white hover:bg-navy-light transition-colors sm:flex-none">
-                + Ordem
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Cards resumo */}
         <div data-tour="resumo" className="grid grid-cols-3 gap-2 sm:gap-4">
           <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">

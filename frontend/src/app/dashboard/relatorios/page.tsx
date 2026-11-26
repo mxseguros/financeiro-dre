@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { FILTRO_BOTAO, FILTRO_CAMPO, FILTRO_GRUPO, filtroSegmento } from '@/components/ui/filtros'
 import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
 import { SeletorPeriodo } from '@/components/ui/SeletorPeriodo'
+import { useTopBar } from '@/contexts/TopBarContext'
 import { Construtor } from './_components/Construtor'
 import { Detalhe, TabelaDinamica } from './_components/TabelaDinamica'
 import { Grafico, legendaGrafico } from './_components/Grafico'
@@ -341,20 +342,25 @@ export default function RelatoriosPage() {
   const resumo = `${base.length} lançamento${base.length === 1 ? '' : 's'} · ${cfg.linhas.map(nomeCampo).join(' › ') || 'sem linhas'}` +
     (cfg.colunas.length ? ' × ' + cfg.colunas.map(nomeCampo).join(' › ') : '')
 
+  // Barra do topo: nome do relatório, dono, alterações e período.
+  const deOutro = atual && !atual.meu ? (atual.dono_nome ?? 'outro usuário') : null
+  const compartilhado = !!(atual?.meu && atual.compartilhado)
+  const naoSalvo = !!(alterado && atual)
+  useTopBar({
+    subtitulo: (
+      <>
+        <strong className="font-medium text-slate-800">{cfg.nome}</strong>
+        {deOutro && <span> · de {deOutro}</span>}
+        {compartilhado && <span> · compartilhado com a equipe</span>}
+        {naoSalvo && <span className="text-amber-900"> · alterações não salvas</span>}
+        {' · '}{filtro.rotulo}
+      </>
+    ),
+  }, [cfg.nome, deOutro, compartilhado, naoSalvo, filtro.rotulo])
+
   return (
     <div className="space-y-4">
-      {/* Cabeçalho */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-navy md:text-2xl">Relatórios</h1>
-          <p className="mt-0.5 truncate text-sm text-gray-500">
-            <strong className="font-medium text-gray-700">{cfg.nome}</strong>
-            {atual && !atual.meu && <span className="text-gray-400"> · de {atual.dono_nome ?? 'outro usuário'}</span>}
-            {atual?.meu && atual.compartilhado && <span className="text-gray-400"> · compartilhado com a equipe</span>}
-            {alterado && atual && <span className="text-amber-600"> · alterações não salvas</span>}
-            {' · '}{filtro.rotulo}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <select value={modoPeriodo} onChange={e => mudarPeriodo(e.target.value)} className={FILTRO_CAMPO} aria-label="Período do relatório"
             title="Seguir o seletor usa o mesmo período das outras telas; um período relativo se atualiza sozinho">

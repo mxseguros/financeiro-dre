@@ -335,11 +335,6 @@ export default function PagamentosPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-navy md:text-2xl">Pagamentos</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Despesas aprovadas pagas por arquivo do banco (CNAB)</p>
-      </div>
-
       {dados?.habilitado && (
         <div data-tour="pag-cartoes" className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Cartao titulo="A pagar" valor={dados.totais.a_pagar} cor="text-navy" />

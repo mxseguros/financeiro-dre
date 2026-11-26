@@ -33,7 +33,7 @@ const FAQ: FaqItem[] = [
     id: 'p4',
     categoria: 'Perfis e Permissões',
     pergunta: 'Por que não vejo alguns itens no menu?',
-    resposta: 'O menu exibe apenas o que seu perfil pode usar. Aprovações e Configurações são visíveis só para Admin e Gestor.',
+    resposta: 'O menu exibe apenas o que seu perfil pode usar. Aprovações e Configurações são visíveis só para Admin e Gestor. No celular, o menu fica na barra de baixo: Início, Lançamentos, + Lançar, Aprovações e Mais (com as demais telas, o tour guiado e Sair).',
   },
   {
     id: 'p5',
@@ -187,7 +187,7 @@ const FAQ: FaqItem[] = [
     id: 'x1',
     categoria: 'Exportações',
     pergunta: 'Quais formatos posso exportar?',
-    resposta: 'Excel (.xlsx) e PDF. Ambos exportam o DRE do período selecionado, com os dados visíveis para o seu perfil.',
+    resposta: 'Excel (.xlsx) e PDF, pelo botão Exportar da barra do topo (Visão Geral, DRE, Lançamentos e Aprovações). Ambos exportam o DRE do período selecionado, com os dados visíveis para o seu perfil.',
   },
 
   // ── Relatórios ────────────────────────────────────────────────
@@ -335,12 +335,6 @@ export default function AjudaPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      {/* Cabeçalho */}
-      <div>
-        <h1 className="text-xl font-bold text-navy md:text-2xl">Central de Ajuda</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Respostas rápidas sobre o sistema.</p>
-      </div>
-
       {/* Busca */}
       <div className="relative">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}

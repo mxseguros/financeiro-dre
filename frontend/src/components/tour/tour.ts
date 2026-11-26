@@ -7,7 +7,7 @@ import 'driver.js/dist/driver.css'
  *
  * Os passos apontam para atributos `data-tour="..."` nas telas. Passo cujo
  * elemento não está na tela — sem permissão para aquele menu, bloco que não
- * carregou, menu lateral fechado no celular — é pulado em vez de abrir um
+ * carregou, menu lateral escondido no celular — é pulado em vez de abrir um
  * balão solto no meio da página.
  */
 
@@ -29,16 +29,16 @@ const MENU: Passo[] = [
     titulo: 'Bem-vindo ao DRE da MX Seguros',
     texto: 'Um passeio rápido pelo sistema. Use as setas do teclado ou os botões abaixo, e Esc para sair a qualquer momento.',
   },
-  { el: 'menu-dashboard',     lado: 'right', titulo: 'Visão Geral',      texto: 'Previsto x pago do mês, totais dos próximos 12 meses e a posição por banco.' },
+  { el: 'menu-dashboard',     lado: 'right', titulo: 'Visão Geral',      texto: 'O menu tem três grupos: Acompanhar, Operar e Ajustar. A Visão Geral mostra o previsto x pago do mês, os totais dos próximos 12 meses e a posição por banco.' },
   { el: 'menu-dre',           lado: 'right', titulo: 'DRE',              texto: 'Demonstração de Resultados: previsto x realizado, com as metas do ano.' },
-  { el: 'menu-lancamentos',   lado: 'right', titulo: 'Lançamentos',      texto: 'Onde se registram despesas, receitas e ordens de compra, e se importa o extrato do banco.' },
-  { el: 'menu-aprovacoes',    lado: 'right', titulo: 'Aprovações',       texto: 'Quadro para aprovar ou rejeitar o que foi lançado.' },
-  { el: 'menu-pagamentos',    lado: 'right', titulo: 'Pagamentos',       texto: 'Pague as despesas aprovadas por arquivo do banco (Santander e Itaú): gere a remessa, importe no banco e, com o retorno, a baixa é feita sozinha.' },
-  { el: 'menu-exports',       lado: 'right', titulo: 'Exportações',      texto: 'Baixe os relatórios em planilha.' },
   { el: 'menu-relatorios',    lado: 'right', titulo: 'Relatórios',       texto: 'Monte o seu relatório como na tabela dinâmica do Excel: escolha o que vai nas linhas, nas colunas e o que somar.' },
-  { el: 'menu-ajuda',         lado: 'right', titulo: 'FAQ',              texto: 'Respostas para as dúvidas mais comuns.' },
+  { el: 'menu-lancamentos',   lado: 'right', titulo: 'Lançamentos',      texto: 'Onde se registram despesas, receitas e ordens de compra, e se importa o extrato do banco.' },
+  { el: 'menu-aprovacoes',    lado: 'right', titulo: 'Aprovações',       texto: 'Quadro para aprovar ou rejeitar o que foi lançado. O número ao lado mostra as ordens de compra aguardando aprovação.' },
+  { el: 'menu-pagamentos',    lado: 'right', titulo: 'Pagamentos',       texto: 'Pague as despesas aprovadas por arquivo do banco (Santander e Itaú): gere a remessa, importe no banco e, com o retorno, a baixa é feita sozinha. O número ao lado mostra o que vence até hoje.' },
   { el: 'menu-configuracoes', lado: 'right', titulo: 'Configurações',    texto: 'Cadastros (categorias, subitens, bancos, centros de custo, funcionários, fornecedores e contas pagadoras) e usuários.' },
-  { el: 'menu-tour',          lado: 'right', titulo: 'Tour guiado',      texto: 'Clique aqui quando quiser rever o passo a passo da tela em que estiver.' },
+  { el: 'menu-ajuda',         lado: 'right', titulo: 'Ajuda e tour guiado', texto: 'Respostas para as dúvidas mais comuns.' },
+  { el: 'exportar',           titulo: 'Exportar',         texto: 'Na barra do topo: baixe os relatórios em planilha.' },
+  { el: 'menu-tour',          lado: 'right', titulo: 'Seu perfil',       texto: 'Clique no seu nome para rever o tour da tela em que estiver ou para sair do sistema.' },
 ]
 
 const TELAS: Record<string, Passo[]> = {
@@ -50,8 +50,7 @@ const TELAS: Record<string, Passo[]> = {
   ],
   '/dashboard/lancamentos': [
     PERIODO('Defina o intervalo De/Até dos lançamentos listados.'),
-    { el: 'novos-lancamentos', titulo: 'Novo lançamento',  texto: 'Registre uma despesa, uma receita ou uma ordem de compra. Na despesa, o bloco Pagamento guarda o favorecido, a forma (Pix, TED, boleto, guia…) e o documento usados na remessa do banco.' },
-    { el: 'importar',          titulo: 'Importar extrato', texto: 'Envie o extrato do banco (OFX ou CSV) para lançar várias movimentações de uma vez.' },
+    { el: 'novos-lancamentos', titulo: 'Novo lançamento',  texto: 'Em "+ Novo": registre uma despesa, uma receita ou uma ordem de compra, ou importe o extrato do banco (OFX ou CSV). Na despesa, o bloco Pagamento guarda o favorecido, a forma (Pix, TED, boleto, guia…) e o documento usados na remessa do banco.' },
     { el: 'resumo',            titulo: 'Totais',           texto: 'Somatório do período selecionado.' },
     { el: 'filtros',           titulo: 'Filtros', texto: 'Abra pelo ícone: Categoria e Subitem (tipo), banco, centro de custo e status. O número no botão mostra quantos filtros estão ativos.' },
     { el: 'tabela',            titulo: 'Lista',            texto: 'Lançamentos separados em Despesas, Receitas e Ordens de Compra, com busca por descrição.', lado: 'top' },
@@ -128,7 +127,7 @@ export function iniciarTour(pathname: string, { completo = false } = {}) {
 }
 
 // v2 (25/11/2026): Pagamentos por arquivo — o tour completo roda de novo uma vez para todos.
-const CHAVE_VISTO = 'dre.tour.v2.'
+const CHAVE_VISTO = 'dre.tour.v3.'  // v3: menu novo do redesenho (25/11/2026)
 
 /** Primeiro acesso do usuário neste navegador: roda o tour completo uma vez. */
 export function tourInicialPendente(userId: string): boolean {

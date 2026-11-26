@@ -13,9 +13,11 @@ const variants: Record<ButtonVariant, string> = {
   link:      'text-navy underline-offset-2 hover:underline',
 }
 
+// Redesenho UX (25/11/2026): área de toque mínima de 44px (40px no `sm`, que
+// não deve ser usado em ação principal).
 const sizes: Record<ButtonSize, string> = {
-  sm: 'px-3 py-1.5 text-xs',
-  md: 'px-5 py-2 text-sm',
+  sm: 'h-10 px-3.5 text-sm',
+  md: 'h-11 px-5 text-sm',
 }
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
