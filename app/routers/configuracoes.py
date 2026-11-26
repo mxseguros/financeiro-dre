@@ -10,9 +10,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 
 from app.auth import UsuarioAtual, obter_usuario_atual
 from app.database import get_supabase_admin, get_supabase_usuario
+from app.middleware.rate_limit import limiter
 from app.models.schemas import (
     BancoCreate, BancoItem, BancoUpdate,
     CategoriaLancamentoCreate, CategoriaLancamentoItem, CategoriaLancamentoUpdate,
@@ -22,7 +24,7 @@ from app.models.schemas import (
     ClassificacaoCreate, ClassificacaoItem, ClassificacaoUpdate,
     TipoLancamentoCreate, TipoLancamentoItem, TipoLancamentoUpdate,
 )
-from app.services import classificacao_service, financeiro_service, folha_service, funcionarios_service
+from app.services import classificacao_service, financeiro_service, folha_service, funcionarios_service, ia_chave_service
 from app.services.dre_service import registrar_auditoria
 
 router = APIRouter(prefix="/configuracoes", tags=["Configurações"])
@@ -530,3 +532,42 @@ async def excluir_tipo(
 ):
     _exigir_admin(usuario)
     await financeiro_service.excluir_tipo_lancamento(tipo_id, get_supabase_admin())
+
+
+# ── ASSISTENTE DE IA — chave da Anthropic (só Admin) ─────────
+# A chave nunca volta na resposta: só a máscara. Auditoria leva só a máscara.
+class ChaveIAPayload(BaseModel):
+    chave: str = Field(min_length=20, max_length=400)
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+@router.get("/ia", summary="Situação da chave da IA (Admin)")
+async def obter_chave_ia(usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None):
+    return ia_chave_service.situacao(usuario, get_supabase_admin())
+
+
+@router.put("/ia", summary="Cadastrar/trocar a chave da IA (Admin)")
+@limiter.limit("10/minute")
+async def salvar_chave_ia(
+    request: Request, payload: ChaveIAPayload, usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    item = ia_chave_service.salvar(payload.chave, usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "salvar_chave_ia", {"mascara": item.get("mascara")}, _ip(request),
+                              get_supabase_admin())
+    return item
+
+
+@router.post("/ia/testar", summary="Testar a chave da IA em uso (Admin)")
+@limiter.limit("10/minute")
+async def testar_chave_ia(request: Request, usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None):
+    return ia_chave_service.testar_atual(usuario)
+
+
+@router.delete("/ia", summary="Remover a chave da IA (Admin)")
+async def remover_chave_ia(request: Request, usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None):
+    item = ia_chave_service.remover(usuario, get_supabase_admin())
+    await registrar_auditoria(usuario, "remover_chave_ia", {}, _ip(request), get_supabase_admin())
+    return item

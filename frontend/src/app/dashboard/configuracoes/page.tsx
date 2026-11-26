@@ -14,8 +14,9 @@ import { SecaoFolha } from './_components/SecaoFolha'
 import { SecaoClassificacoes } from './_components/SecaoClassificacoes'
 import { SecaoFornecedores } from './_components/SecaoFornecedores'
 import { SecaoContasPagadoras } from './_components/SecaoContasPagadoras'
+import { SecaoIA } from './_components/SecaoIA'
 
-type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios' | 'folha' | 'fornecedores' | 'contas_pagadoras'
+type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios' | 'folha' | 'fornecedores' | 'contas_pagadoras' | 'ia'
 
 export default function ConfiguracoesPage() {
   const { token, session, signOut } = useAuth()
@@ -46,6 +47,9 @@ export default function ConfiguracoesPage() {
     ] },
     { titulo: 'Pagamentos', itens: [
       { id: 'contas_pagadoras', label: 'Contas pagadoras', desc: 'Contas da empresa de onde saem os pagamentos por arquivo (CNAB), com convênio e opções do banco', admin: true },
+    ] },
+    { titulo: 'Integrações', itens: [
+      { id: 'ia', label: 'Assistente de IA', desc: 'Chave da API da Anthropic usada pelo Assistente, Copiloto e sugestões do extrato (guardada criptografada)', admin: true },
     ] },
   ]
   // Pagamentos (0050): quem gera remessa gerencia fornecedores; contas, só o Admin.
@@ -136,6 +140,7 @@ export default function ConfiguracoesPage() {
       {aba === 'folha' && role === 'admin' && <SecaoFolha token={token} />}
       {aba === 'fornecedores' && <SecaoFornecedores token={token} podeGerenciar={podePagamentos} />}
       {aba === 'contas_pagadoras' && role === 'admin' && <SecaoContasPagadoras token={token} />}
+      {aba === 'ia' && role === 'admin' && <SecaoIA token={token} />}
       </div>
     </div>
   )

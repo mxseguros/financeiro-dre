@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 from supabase import Client
 
 from app.auth import UsuarioAtual
-from app.config import cfg
+from app.services import ia_chave_service
 from app.database import executar_sem_bloquear as _exec
 from app.services.copiloto_service import MODELO
 from app.services.financeiro_service import _sem_acento
@@ -152,9 +152,15 @@ async def sugerir_lote(payload: SugestaoLoteRequest, usuario: UsuarioAtual, db: 
             residuo.append(item)
 
     # ── IA em lote só para o resíduo ──────────────────────────
-    if residuo and cfg.anthropic_api_key:
+    chave = ""
+    if residuo:
         try:
-            resultado = await asyncio.to_thread(_classificar_com_ia, residuo, subitens)
+            chave = await asyncio.to_thread(ia_chave_service.obter_chave, usuario.tenant_id)
+        except ia_chave_service.ChaveIndisponivel:
+            chave = ""
+    if residuo and chave:
+        try:
+            resultado = await asyncio.to_thread(_classificar_com_ia, residuo, subitens, chave)
             for item_id, (sid, confianca) in resultado.items():
                 item = next((i for i in residuo if i.id == item_id), None)
                 # Valida id e natureza: o modelo não pode apontar subitem de
@@ -173,7 +179,7 @@ async def sugerir_lote(payload: SugestaoLoteRequest, usuario: UsuarioAtual, db: 
 
 
 def _classificar_com_ia(
-    residuo: list[ItemSugestao], subitens: dict[str, dict]
+    residuo: list[ItemSugestao], subitens: dict[str, dict], chave: str
 ) -> dict[int, tuple[str, str]]:
     """Uma chamada para o lote inteiro. Roda em thread (client síncrono)."""
     def catalogo(natureza: str) -> str:
@@ -195,7 +201,7 @@ def _classificar_com_ia(
         f"CATÁLOGO DESPESAS:\n{catalogo('despesa')}\n\n"
         f"CATÁLOGO RECEITAS:\n{catalogo('receita')}"
     )
-    cliente = anthropic.Anthropic(api_key=cfg.anthropic_api_key)
+    cliente = anthropic.Anthropic(api_key=chave)
     msg = cliente.messages.create(
         model=MODELO,
         max_tokens=8192,
