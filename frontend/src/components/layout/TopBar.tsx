@@ -1,8 +1,10 @@
 'use client'
-import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { SeletorPeriodo } from '@/components/ui/SeletorPeriodo'
 import { useTopBarValor } from '@/contexts/TopBarContext'
+import { JanelaExportar } from '@/components/exportar/JanelaExportar'
+import type { Alvo } from '@/components/exportar/dados'
 import { Icon, metaDaRota } from './navegacao'
 
 /**
@@ -15,6 +17,15 @@ export function TopBar() {
   const pathname = usePathname()
   const meta = metaDaRota(pathname)
   const { acao, subtitulo } = useTopBarValor()
+  // Exportar (fase 8): abre a janela já com o alvo da tela; ?exportar=1 abre ao chegar.
+  const [exportar, setExportar] = useState(false)
+  const alvo: Alvo = pathname.startsWith('/dashboard/dre') ? 'dre' : pathname.startsWith('/dashboard/lancamentos') ? 'lancamentos' : 'visao'
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('exportar') === '1') {
+      setExportar(true)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [pathname])
 
   return (
     <header className="relative z-20 shrink-0 md:sticky md:top-0 border-b border-gray-200 bg-white">
@@ -33,16 +44,27 @@ export function TopBar() {
           <div className="contents md:flex md:flex-nowrap md:items-center md:justify-end md:gap-2">
             {meta.periodo && <SeletorPeriodo intervaloMeses={meta.periodo === 'intervalo'} className="col-span-2 row-start-2 md:flex-nowrap" />}
             {meta.exportar && (
-              <Link href="/dashboard/exports" data-tour="exportar"
+              <button type="button" onClick={() => setExportar(true)} data-tour="exportar" aria-haspopup="dialog"
                 className="focus-ring hidden h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-gray-50 md:inline-flex">
                 <span className="text-slate-500 [&>svg]:h-4 [&>svg]:w-4">{Icon.download}</span>
                 Exportar
-              </Link>
+              </button>
             )}
-            {acao && <div className="col-start-2 row-start-1">{acao}</div>}
+            {(acao || meta.exportar) && (
+              <div className="col-start-2 row-start-1 flex items-center gap-2">
+                {meta.exportar && (
+                  <button type="button" onClick={() => setExportar(true)} aria-label="Exportar e compartilhar"
+                    className="focus-ring flex h-12 w-12 items-center justify-center rounded-lg border border-gray-300 bg-white text-slate-700 md:hidden">
+                    <span className="[&>svg]:h-5 [&>svg]:w-5">{Icon.download}</span>
+                  </button>
+                )}
+                {acao}
+              </div>
+            )}
           </div>
         )}
       </div>
+      <JanelaExportar aberta={exportar} alvoInicial={alvo} onFechar={() => setExportar(false)} />
     </header>
   )
 }

@@ -11,6 +11,7 @@ import { api } from '@/lib/api'
 import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
 import { useTopBar } from '@/contexts/TopBarContext'
 import { EVENTO_NOVO, MenuNovo, type TipoNovo } from '@/components/layout/MenuNovo'
+import { filtrosExport } from '@/components/exportar/dados'
 import { fmtBRL, fmtData } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
@@ -134,6 +135,11 @@ export default function LancamentosPage() {
     params.set('ordem', ordem.dir)
     return params.toString()
   }, [filtro.inicio, filtro.fim, filtro.base, filtroBanco, filtroCentro, filtroStatus, filtroCategoria, filtroSubitem, buscaDebounced, ordem])
+  // O Exportar da barra do topo leva os filtros desta tela (fase 8).
+  useEffect(() => {
+    filtrosExport.lancamentos = filtrosQuery()
+    return () => { filtrosExport.lancamentos = '' }
+  }, [filtrosQuery])
 
   // Paginação server-side: busca em blocos de 200 em vez de baixar o período
   // inteiro de uma vez (com anos de recorrências, seriam milhares de linhas).

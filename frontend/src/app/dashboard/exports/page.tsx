@@ -1,84 +1,10 @@
-﻿'use client'
-import { FILTRO_CAMPO } from '@/components/ui/filtros'
-import { useState } from 'react'
-import { useAuth } from '@/hooks/useAuth'
-import { mesAnterior } from '@/lib/utils'
+'use client'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
-
+/** Exportar virou a janela do botão Exportar da barra do topo (redesenho UX, fase 8). */
 export default function ExportsPage() {
-  const { token } = useAuth()
-  const [inicio, setInicio] = useState(mesAnterior()[0])
-  const [fim, setFim] = useState(mesAnterior()[1])
-  const [loading, setLoading] = useState<'pdf' | 'xlsx' | null>(null)
-  const [erro, setErro] = useState<string | null>(null)
-
-  async function baixar(tipo: 'pdf' | 'xlsx') {
-    if (!token) return
-    setLoading(tipo)
-    setErro(null)
-    try {
-      const res = await fetch(
-        `${BASE}/exports/dre/${tipo}?inicio=${inicio}&fim=${fim}`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      )
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body?.detail ?? `HTTP ${res.status}`)
-      }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `DRE_MX_${inicio}_${fim}.${tipo}`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao exportar')
-    } finally {
-      setLoading(null)
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-5">
-        <h2 className="font-semibold text-gray-800">Exportar DRE</h2>
-
-        <div className="flex flex-wrap gap-4">
-          <div className="flex-1 sm:flex-none">
-            <label className="block text-xs font-medium text-gray-600">Início</label>
-            <input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)}
-              className={`${FILTRO_CAMPO} mt-1 w-full sm:w-auto`} />
-          </div>
-          <div className="flex-1 sm:flex-none">
-            <label className="block text-xs font-medium text-gray-600">Fim</label>
-            <input type="date" value={fim} onChange={(e) => setFim(e.target.value)}
-              className={`${FILTRO_CAMPO} mt-1 w-full sm:w-auto`} />
-          </div>
-        </div>
-
-        {erro && <p className="text-sm text-red-600">Erro: {erro}</p>}
-
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <button
-            onClick={() => baixar('xlsx')}
-            disabled={!!loading}
-            className="w-full rounded-lg border border-navy px-5 py-2.5 text-xs font-medium text-navy hover:bg-canvas disabled:opacity-50 sm:w-auto"
-          >
-            {loading === 'xlsx' ? 'Gerando…' : '⬇ Excel (.xlsx)'}
-          </button>
-          <button
-            onClick={() => baixar('pdf')}
-            disabled={!!loading}
-            className="w-full rounded-lg bg-navy px-5 py-2.5 text-xs font-medium text-white hover:bg-navy-light disabled:opacity-50 sm:w-auto"
-          >
-            {loading === 'pdf' ? 'Gerando…' : '⬇ PDF'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+  const router = useRouter()
+  useEffect(() => { router.replace('/dashboard/dre?exportar=1') }, [router])
+  return null
 }
-
-
