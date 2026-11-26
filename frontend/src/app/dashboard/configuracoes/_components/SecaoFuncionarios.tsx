@@ -102,7 +102,7 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
 
       {podeCriar && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Novo Funcionário</h3>
+          <h3 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-gray-500">Novo Funcionário</h3>
           <form onSubmit={criar} className="flex flex-col gap-2 sm:flex-row sm:gap-3">
             <input required minLength={3} value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
               placeholder="Nome completo" aria-label="Nome completo" className={`${inputCls} flex-1`} />
@@ -116,18 +116,18 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
               {criando ? 'Salvando…' : '+ Cadastrar'}
             </button>
           </form>
-          {erro && <p className="mt-2 text-xs text-red-600">{erro}</p>}
-          <p className="mt-2 text-xs text-gray-400">
+          {erro && <p className="mt-2 text-[13px] text-red-600">{erro}</p>}
+          <p className="mt-2 text-[13px] text-slate-500">
             Quem estiver aqui aparece em &quot;Quem é você?&quot; no link da Ordem de Compra (/oc).
           </p>
         </div>
       )}
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        {loading ? <div className="py-10 text-center text-sm text-gray-400">Carregando…</div> : (
+        {loading ? <div className="py-10 text-center text-sm text-slate-500">Carregando…</div> : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">
+              <tr className="border-b border-gray-100 text-left text-[13px] font-medium text-gray-500">
                 <th className="px-4 py-3">Nome completo</th>
                 <th className="px-4 py-3">Centro de custo</th>
                 <th className="px-4 py-3">Situação</th>
@@ -152,7 +152,7 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
                         </select>
                       </td>
                       <td className="px-4 py-1.5">
-                        <label className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+                        <label className="inline-flex items-center gap-1.5 text-[13px] text-gray-600">
                           <input type="checkbox" checked={edit.ativo} onChange={e => setEdit(x => ({ ...x, ativo: e.target.checked }))}
                             className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
                           Ativo
@@ -161,8 +161,8 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
                       {ehAdmin && <td />}
                       <td className="px-4 py-1.5 text-right">
                         <span className="inline-flex gap-2">
-                          <button onClick={() => salvar(f)} className="text-xs font-medium text-green-600 hover:underline">Salvar</button>
-                          <button onClick={() => setEditId(null)} className="text-xs text-gray-400 hover:underline">Cancelar</button>
+                          <button onClick={() => salvar(f)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] font-medium text-green-800 hover:underline">Salvar</button>
+                          <button onClick={() => setEditId(null)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-slate-500 hover:underline">Cancelar</button>
                         </span>
                       </td>
                     </>
@@ -170,23 +170,23 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
                     <>
                       <td className="px-4 py-2.5 font-medium text-gray-800">{f.nome}</td>
                       <td className="px-4 py-2.5 text-gray-600">{f.centro_custo ? nomeCentro(f.centro_custo, centros) : '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-gray-500">{f.ativo ? 'Ativo' : 'Inativo'}</td>
+                      <td className="px-4 py-2.5 text-[13px] text-gray-500">{f.ativo ? 'Ativo' : 'Inativo'}</td>
                       {ehAdmin && (
                         <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                          {custos?.por_funcionario[f.id] ? fmtBRL(custos.por_funcionario[f.id].custo_mes) : <span className="text-xs text-gray-300">—</span>}
+                          {custos?.por_funcionario[f.id] ? fmtBRL(custos.por_funcionario[f.id].custo_mes) : <span className="text-[13px] text-gray-300">—</span>}
                         </td>
                       )}
                       {(podeEditar || podeExcluir || ehAdmin) && (
                         <td className="px-4 py-2.5 text-right">
                           <span className="inline-flex gap-3">
                             {ehAdmin && (
-                              <button onClick={() => setContratoDe(f)} className="text-xs font-medium text-navy hover:underline">
+                              <button onClick={() => setContratoDe(f)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] font-medium text-navy hover:underline">
                                 Contrato e salário
                               </button>
                             )}
                             {podeEditar && (
                               <button onClick={() => { setEditId(f.id); setEdit({ nome: f.nome, centro_custo: f.centro_custo ?? '', ativo: f.ativo }) }}
-                                className="text-xs text-blue-500 hover:underline">Editar</button>
+                                className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-sel hover:underline">Editar</button>
                             )}
                             {podeExcluir && <BtnExcluir onClick={() => setConfirmExcluir(f)} />}
                           </span>
@@ -197,7 +197,7 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-sm text-gray-400">Nenhum funcionário cadastrado</td></tr>
+                <tr><td colSpan={5} className="py-8 text-center text-sm text-slate-500">Nenhum funcionário cadastrado</td></tr>
               )}
             </tbody>
           </table>
@@ -211,11 +211,11 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
             <p className="text-sm font-semibold tabular-nums text-navy">Total {fmtBRL(custos.total_mes)}</p>
           </div>
           {!custos.parametros_conferidos && (
-            <p className="mt-1 text-xs text-amber-600">Tabelas de INSS/IRRF ainda não conferidas (Configurações → Folha).</p>
+            <p className="mt-1 text-[13px] text-amber-600">Tabelas de INSS/IRRF ainda não conferidas (Configurações → Folha).</p>
           )}
           <table className="mt-2 w-full text-sm">
             <thead>
-              <tr className="text-left text-xs text-gray-500">
+              <tr className="text-left text-[13px] text-gray-500">
                 <th className="py-1">Centro</th><th className="py-1 text-right">Pessoas</th>
                 <th className="py-1 text-right">Custo do mês</th><th className="py-1 text-right" title="Com provisões de 13º e férias">Custo real</th>
               </tr>
@@ -231,7 +231,7 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
               ))}
             </tbody>
           </table>
-          <p className="mt-2 text-[11px] text-gray-400">Só quem tem contrato cadastrado. Custo real = custo do mês + provisões de 13º e férias.</p>
+          <p className="mt-2 text-[13px] text-slate-500">Só quem tem contrato cadastrado. Custo real = custo do mês + provisões de 13º e férias.</p>
         </div>
       )}
     </div>
