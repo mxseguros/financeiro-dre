@@ -57,7 +57,7 @@ const TELAS: Record<string, Passo[]> = {
   ],
   '/dashboard/lancamentos/aprovacoes': [
     PERIODO('Escolha o mês a aprovar.'),
-    { el: 'kanban', titulo: 'Quadro de aprovação', texto: 'Despesas e ordens de compra a aprovar. Arraste os cards entre as colunas para aprovar ou rejeitar. Receitas não passam por aqui: já nascem aprovadas.', lado: 'top' },
+    { el: 'kanban', titulo: 'Quadro de aprovação', texto: 'Pendentes, Aprovadas e Rejeitadas. Use os botões Aprovar e Rejeitar do card ou arraste o card para a coluna. Marque várias despesas para aprovar de uma vez. Ordem de compra sem recibo fica com borda vermelha. Receitas não passam por aqui: já nascem aprovadas.', lado: 'top' },
   ],
   '/dashboard/lancamentos/pagamentos': [
     { el: 'pag-cartoes', titulo: 'Resumo dos pagamentos', texto: 'Quanto há a pagar, o que está em remessa ou aguardando autorização no banco, o que já foi agendado e o que voltou rejeitado ou devolvido.' },
