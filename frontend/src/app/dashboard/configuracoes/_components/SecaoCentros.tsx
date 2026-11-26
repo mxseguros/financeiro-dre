@@ -112,7 +112,7 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
           <td className="px-4 py-1.5">
             <div className="flex gap-2">
               {edit.parent_id && numerado(edit.parent_id) ? (
-                <span className="w-20 shrink-0 self-center text-xs text-gray-400" title="Número automático pelo grupo">
+                <span className="w-20 shrink-0 self-center text-[13px] text-slate-500" title="Número automático pelo grupo">
                   {edit.parent_id === c.parent_id ? c.numero : 'auto'}
                 </span>
               ) : (
@@ -134,7 +134,7 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
             </select>
           </td>
           <td className="px-4 py-1.5">
-            <label className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+            <label className="inline-flex items-center gap-1.5 text-[13px] text-gray-600">
               <input type="checkbox" checked={edit.ativo} onChange={e => setEdit(f => ({ ...f, ativo: e.target.checked }))}
                 className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
               Ativo
@@ -142,8 +142,8 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
           </td>
           <td className="px-4 py-1.5 text-right">
             <span className="inline-flex gap-2">
-              <button onClick={() => salvarEdicao(c)} className="text-xs font-medium text-green-600 hover:underline">Salvar</button>
-              <button onClick={() => setEditId(null)} className="text-xs text-gray-400 hover:underline">Cancelar</button>
+              <button onClick={() => salvarEdicao(c)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] font-medium text-green-800 hover:underline">Salvar</button>
+              <button onClick={() => setEditId(null)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-slate-500 hover:underline">Cancelar</button>
             </span>
           </td>
         </>
@@ -153,10 +153,10 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
             {sub && <span className="mr-1.5 text-gray-300" aria-hidden>└</span>}
             {rotuloCentro(c)}
           </td>
-          <td className="px-4 py-2.5 text-xs text-gray-500">
+          <td className="px-4 py-2.5 text-[13px] text-gray-500">
             {sub ? 'Subgrupo' : temFilhos(c.id) ? 'Grupo' : 'Centro'}
           </td>
-          <td className="px-4 py-2.5 text-xs text-gray-500">{c.ativo ? 'Ativo' : 'Inativo'}</td>
+          <td className="px-4 py-2.5 text-[13px] text-gray-500">{c.ativo ? 'Ativo' : 'Inativo'}</td>
           {(podeEditar || podeExcluir) && (
             <td className="px-4 py-2.5 text-right">
               <span className="inline-flex items-center gap-3">
@@ -165,14 +165,14 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
                     {(['cima', 'baixo'] as const).map(d => (
                       <button key={d} type="button" onClick={() => mover(c, d)} disabled={movendo !== null}
                         aria-label={d === 'cima' ? 'Subir' : 'Descer'} title={d === 'cima' ? 'Subir' : 'Descer'}
-                        className="rounded px-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-navy disabled:opacity-40">
+                        className="rounded px-1 text-[13px] text-slate-500 hover:bg-gray-100 hover:text-navy disabled:opacity-40">
                         {d === 'cima' ? '↑' : '↓'}
                       </button>
                     ))}
                   </span>
                 )}
                 {podeEditar && (
-                  <button onClick={() => iniciarEdicao(c)} className="text-xs text-blue-500 hover:underline">Editar</button>
+                  <button onClick={() => iniciarEdicao(c)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-sel hover:underline">Editar</button>
                 )}
                 {podeExcluir && <BtnExcluir onClick={() => setConfirmExcluir(c)} />}
               </span>
@@ -197,7 +197,7 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
 
       {podeCriar && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Novo Centro de Custo</h3>
+          <h3 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-gray-500">Novo Centro de Custo</h3>
           <form onSubmit={criar} className="flex flex-col gap-2 sm:flex-row sm:gap-3">
             <input value={form.parent_id ? (sugestao ? `${sugestao} (auto)` : '') : form.numero}
               disabled={!!form.parent_id}
@@ -217,13 +217,13 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
               {criando ? 'Criando…' : '+ Criar Centro'}
             </button>
           </form>
-          {erro && <p className="mt-2 text-xs text-red-600">{erro}</p>}
+          {erro && <p className="mt-2 text-[13px] text-red-600">{erro}</p>}
           {grupoDoForm && !sugestao && (
-            <p className="mt-2 text-xs text-amber-600">
+            <p className="mt-2 text-[13px] text-amber-600">
               Dê um número ao grupo &quot;{grupoDoForm.nome}&quot; (ex.: 1.10) para os subgrupos serem numerados sozinhos.
             </p>
           )}
-          <p className="mt-2 text-xs text-gray-400">
+          <p className="mt-2 text-[13px] text-slate-500">
             Numeração automática: o subgrupo segue o grupo (1.10 → 1.11, 1.12…; 1.9 → 2.0) e, ao excluir, os seguintes sobem.
             Use ↑ ↓ para mudar a ordem. Lançamentos vão nos subgrupos; o grupo soma e filtra.
           </p>
@@ -231,10 +231,10 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
       )}
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        {loading ? <div className="py-10 text-center text-sm text-gray-400">Carregando…</div> : (
+        {loading ? <div className="py-10 text-center text-sm text-slate-500">Carregando…</div> : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">
+              <tr className="border-b border-gray-100 text-left text-[13px] font-medium text-gray-500">
                 <th className="px-4 py-3">Centro</th>
                 <th className="px-4 py-3">Nível</th>
                 <th className="px-4 py-3">Situação</th>
@@ -249,7 +249,7 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
                 </Fragment>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={4} className="py-8 text-center text-sm text-gray-400">Nenhum centro cadastrado</td></tr>
+                <tr><td colSpan={4} className="py-8 text-center text-sm text-slate-500">Nenhum centro cadastrado</td></tr>
               )}
             </tbody>
           </table>

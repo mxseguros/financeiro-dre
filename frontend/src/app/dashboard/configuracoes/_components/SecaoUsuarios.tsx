@@ -4,15 +4,24 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import type { Role, Permissions } from '@/types'
 import { getDefaultPermissions } from '@/types'
-import { inputCls, selectCls, Chip, BtnExcluir } from './shared'
+import { cn } from '@/lib/utils'
+import { Modal } from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
+import { FILTRO_CAMPO } from '@/components/ui/filtros'
+import { inputCls, selectCls } from './shared'
 import { PermissoesSelector } from './PermissoesSelector'
 import { ModalEdicaoUsuario, type UsuarioItem } from './ModalEdicaoUsuario'
 
 const ROLE_LABEL: Record<string, string> = { admin: 'Admin', gestor: 'Gestor', contador: 'Contador', comercial: 'Comercial', colaborador: 'Colaborador' }
+// Vermelho é só para negativos e ações destrutivas: perfil usa tons neutros.
 const ROLE_COLOR: Record<string, string> = {
-  admin: 'bg-red-50 text-red-700', gestor: 'bg-amber-50 text-amber-700',
-  contador: 'bg-blue-50 text-blue-700', comercial: 'bg-gray-100 text-gray-600',
-  colaborador: 'bg-indigo-50 text-indigo-700',
+  admin: 'bg-navy text-white', gestor: 'bg-sel-bg text-sel-text',
+  contador: 'bg-slate-100 text-slate-700', comercial: 'bg-slate-100 text-slate-700',
+  colaborador: 'bg-indigo-100 text-indigo-800',
+}
+const iniciais = (nome: string, email: string) => {
+  const p = (nome || email).trim().split(/[\s._@-]+/).filter(Boolean)
+  return ((p[0]?.[0] ?? '?') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase()
 }
 
 export function SecaoUsuarios({
@@ -36,6 +45,9 @@ export function SecaoUsuarios({
     permissions: getDefaultPermissions('comercial'),
   })
   const [erro, setErro] = useState<string | null>(null)
+  const [novoAberto, setNovoAberto] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [mostrarInativos, setMostrarInativos] = useState(false)
 
   const carregar = useCallback(() => {
     api.get<{ total: number; items: UsuarioItem[] }>('/usuarios', token)
@@ -55,6 +67,8 @@ export function SecaoUsuarios({
         role: form.role, permissions: form.permissions,
       })
       setForm({ nome: '', email: '', senha: '', role: 'comercial', permissions: getDefaultPermissions('comercial') })
+      setNovoAberto(false)
+      toast.sucesso('Usuário criado. Informe a senha a ele.')
       carregar()
     } catch (err) { setErro(err instanceof Error ? err.message : 'Erro ao criar') }
     finally { setCriando(false) }
@@ -95,6 +109,7 @@ export function SecaoUsuarios({
           token={token}
           onSalvo={() => { setEditandoUsuario(null); carregar() }}
           onFechar={() => setEditandoUsuario(null)}
+          onExcluir={podeExcluir ? () => { const u = editandoUsuario; setEditandoUsuario(null); setConfirmExcluir(u) } : undefined}
         />
       )}
 
@@ -121,85 +136,144 @@ export function SecaoUsuarios({
         onConfirmar={() => confirmExcluir && excluir(confirmExcluir)}
       />
 
-      <div className="space-y-5">
-        {isAdminOuGestor && (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Novo Usuário</h3>
-            <form onSubmit={criar} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <input required value={form.nome} onChange={e => set('nome', e.target.value)}
-                placeholder="Nome completo" className={inputCls} />
-              <input required type="email" value={form.email} onChange={e => set('email', e.target.value)}
-                placeholder="E-mail" className={inputCls} />
-              <input required type="password" value={form.senha} onChange={e => set('senha', e.target.value)}
-                placeholder="Senha" className={inputCls} />
-              <select value={form.role} onChange={e => handleRoleChange(e.target.value as Role)} className={selectCls}>
-                <option value="comercial">Comercial</option>
-                <option value="contador">Contador</option>
-                <option value="gestor">Gestor</option>
-                <option value="admin">Admin</option>
-                <option value="colaborador">Colaborador (só Ordem de Compra)</option>
-              </select>
-              {form.role === 'colaborador' ? (
-                <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
-                  Colaborador só acessa o link de Ordem de Compra (<strong>/oc</strong>): lança as próprias despesas, com foto da nota, e acompanha a aprovação.
-                </p>
-              ) : (
-                <PermissoesSelector
-                  permissions={form.permissions}
-                  role={form.role}
-                  onChange={p => setForm(f => ({ ...f, permissions: p }))}
-                />
-              )}
-              <div className="col-span-1 flex items-center gap-3 sm:col-span-2 lg:col-span-4">
-                {erro && <p className="text-xs text-red-600">{erro}</p>}
-                <button type="submit" disabled={criando}
-                  className="ml-auto rounded-lg bg-navy px-5 py-2 text-sm font-medium text-white hover:bg-navy-light disabled:opacity-50">
-                  {criando ? 'Criando…' : '+ Criar Usuário'}
-                </button>
-              </div>
-            </form>
+      {/* Painel: novo usuário (a senha é criada pelo Admin e informada à pessoa) */}
+      <Modal open={novoAberto} onClose={() => setNovoAberto(false)} title="Novo usuário" variant="painel" dismissable={!criando}>
+        <form onSubmit={criar} className="space-y-4">
+          <div>
+            <label htmlFor="novo-nome" className="mb-1.5 block text-sm font-semibold text-slate-700">Nome completo</label>
+            <input id="novo-nome" required value={form.nome} onChange={e => set('nome', e.target.value)} className={inputCls} autoFocus />
           </div>
-        )}
-
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-          {loading ? (
-            <div className="py-10 text-center text-sm text-gray-400">Carregando…</div>
+          <div>
+            <label htmlFor="novo-email" className="mb-1.5 block text-sm font-semibold text-slate-700">E-mail</label>
+            <input id="novo-email" required type="email" value={form.email} onChange={e => set('email', e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label htmlFor="novo-senha" className="mb-1.5 block text-sm font-semibold text-slate-700">Senha</label>
+            <input id="novo-senha" required type="password" autoComplete="new-password" value={form.senha} onChange={e => set('senha', e.target.value)} className={inputCls} />
+            <p className="mt-1 text-[13px] text-slate-600">Você informa essa senha à pessoa. Não há troca de senha por e-mail.</p>
+          </div>
+          <div>
+            <label htmlFor="novo-perfil" className="mb-1.5 block text-sm font-semibold text-slate-700">Perfil</label>
+            <select id="novo-perfil" value={form.role} onChange={e => handleRoleChange(e.target.value as Role)} className={selectCls}>
+              <option value="comercial">Comercial</option>
+              <option value="contador">Contador</option>
+              <option value="gestor">Gestor</option>
+              <option value="admin">Admin</option>
+              <option value="colaborador">Colaborador (só Ordem de Compra)</option>
+            </select>
+          </div>
+          {form.role === 'colaborador' ? (
+            <p className="rounded-lg bg-indigo-50 px-3 py-2 text-[13px] text-indigo-800">
+              Colaborador só acessa o link de Ordem de Compra (<strong>/oc</strong>): lança as próprias despesas, com foto da nota, e acompanha a aprovação.
+            </p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">
-                  <th className="px-4 py-3">Nome</th>
-                  <th className="px-4 py-3">E-mail</th>
-                  <th className="px-4 py-3">Perfil</th>
-                  {isAdminOuGestor && <th className="px-4 py-3 text-right">Ações</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map(u => (
-                  <tr key={u.id} className="border-t border-gray-50 hover:bg-gray-50">
-                    <td className="px-4 py-2.5 font-medium text-gray-800">{u.nome}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{u.email}</td>
-                    <td className="px-4 py-2.5"><Chip label={ROLE_LABEL[u.role]} cor={ROLE_COLOR[u.role]} /></td>
-                    {isAdminOuGestor && (
-                      <td className="px-4 py-2.5 text-right">
-                        <span className="inline-flex gap-3">
-                          <button onClick={() => setEditandoUsuario(u)}
-                            className="text-xs text-blue-500 hover:underline">Editar</button>
-                          {podeExcluir && (
-                            <BtnExcluir onClick={() => setConfirmExcluir(u)} />
-                          )}
-                        </span>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-                {items.length === 0 && (
-                  <tr><td colSpan={4} className="py-8 text-center text-sm text-gray-400">Nenhum usuário</td></tr>
-                )}
-              </tbody>
-            </table>
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Permissões de acesso</p>
+              <PermissoesSelector permissions={form.permissions} role={form.role} onChange={p => setForm(f => ({ ...f, permissions: p }))} />
+            </div>
+          )}
+          {erro && <p role="alert" className="text-[13px] text-red-800">{erro}</p>}
+          <div className="sticky bottom-0 -mx-5 flex justify-end gap-2 border-t border-gray-100 bg-white px-5 pt-3">
+            <Button type="button" variant="secondary" onClick={() => setNovoAberto(false)} disabled={criando}>Cancelar</Button>
+            <Button type="submit" loading={criando}>{criando ? 'Criando…' : 'Criar usuário'}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="relative block flex-1 md:max-w-xs">
+            <span className="sr-only">Buscar usuário</span>
+            <input type="search" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar nome ou e-mail" className={cn(FILTRO_CAMPO, 'w-full')} />
+          </label>
+          <label className="inline-flex min-h-12 items-center gap-2 text-sm text-slate-700 md:min-h-11">
+            <input type="checkbox" checked={mostrarInativos} onChange={e => setMostrarInativos(e.target.checked)} className="h-5 w-5 accent-navy" />
+            Mostrar inativos
+          </label>
+          <span className="flex-1" />
+          {isAdminOuGestor && (
+            <button type="button" onClick={() => { setErro(null); setNovoAberto(true) }}
+              className="focus-ring inline-flex h-12 items-center rounded-lg bg-navy px-4 text-sm font-semibold text-white hover:bg-navy-light md:h-11">
+              + Novo usuário
+            </button>
           )}
         </div>
+
+        {(() => {
+          const t = busca.trim().toLowerCase()
+          const lista = items.filter(u => (mostrarInativos || u.ativo !== false) && (!t || `${u.nome} ${u.email}`.toLowerCase().includes(t)))
+          if (loading) return <div className="rounded-2xl border border-gray-200 bg-white py-10 text-center text-sm text-slate-600">Carregando…</div>
+          const situacao = (u: UsuarioItem) => (
+            <span className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <span className={cn('h-2 w-2 rounded-full', u.ativo === false ? 'bg-slate-400' : 'bg-green-600')} aria-hidden="true" />
+              {u.ativo === false ? 'Inativo' : 'Ativo'}
+            </span>
+          )
+          const avatar = (u: UsuarioItem) => (
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[13px] font-semibold text-slate-700">{iniciais(u.nome, u.email)}</span>
+          )
+          return (
+            <>
+              <div className="hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white md:block">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="text-left text-[13px] font-semibold text-slate-600">
+                      <th scope="col" className="px-4 py-2.5">Pessoa</th>
+                      <th scope="col" className="px-4 py-2.5">Perfil</th>
+                      <th scope="col" className="px-4 py-2.5">Situação</th>
+                      {isAdminOuGestor && <th scope="col" className="px-4 py-2.5 text-right"><span className="sr-only">Ações</span></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lista.map(u => (
+                      <tr key={u.id} className={cn('border-t border-slate-100', u.ativo === false && 'opacity-70')}>
+                        <td className="px-4 py-2.5">
+                          <span className="flex items-center gap-3">
+                            {avatar(u)}
+                            <span className="min-w-0">
+                              <span className="block font-semibold text-slate-900">{u.nome}{isSelf(u) && <span className="font-normal text-slate-500"> (você)</span>}</span>
+                              <span className="block truncate text-[13px] text-slate-600">{u.email}</span>
+                            </span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5"><span className={cn('rounded-full px-2.5 py-0.5 text-[13px] font-semibold', ROLE_COLOR[u.role])}>{ROLE_LABEL[u.role]}</span></td>
+                        <td className="px-4 py-2.5">{situacao(u)}</td>
+                        {isAdminOuGestor && (
+                          <td className="px-4 py-2.5 text-right">
+                            <button type="button" onClick={() => setEditandoUsuario(u)}
+                              className="focus-ring h-11 rounded-lg border border-gray-300 bg-white px-3.5 text-sm font-semibold text-slate-700 hover:bg-gray-50">
+                              Permissões
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    {lista.length === 0 && <tr><td colSpan={4} className="py-8 text-center text-sm text-slate-600">Nenhum usuário encontrado.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <ul className="space-y-2 md:hidden">
+                {lista.map(u => (
+                  <li key={u.id}>
+                    <button type="button" disabled={!isAdminOuGestor} onClick={() => setEditandoUsuario(u)}
+                      className={cn('focus-ring flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white p-3.5 text-left', u.ativo === false && 'opacity-70')}>
+                      {avatar(u)}
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-semibold text-slate-900">{u.nome}</span>
+                        <span className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className={cn('rounded-full px-2 py-0.5 text-[13px] font-semibold', ROLE_COLOR[u.role])}>{ROLE_LABEL[u.role]}</span>
+                          {situacao(u)}
+                        </span>
+                      </span>
+                      {isAdminOuGestor && <span aria-hidden="true" className="text-slate-400">›</span>}
+                    </button>
+                  </li>
+                ))}
+                {lista.length === 0 && <li className="py-8 text-center text-sm text-slate-600">Nenhum usuário encontrado.</li>}
+              </ul>
+            </>
+          )
+        })()}
       </div>
     </>
   )

@@ -149,3 +149,21 @@ def test_totais_so_na_primeira_pagina(monkeypatch):
     resp = _listar(GESTOR, monkeypatch, limit=200, offset=200)
     assert not any(i.agregado for i in resp.items)
     assert resp.soma_total == sum(Decimal(r["valor"]) for r in LINHAS)
+
+
+@pytest.mark.parametrize("usuario", [ADMIN, GESTOR])
+def test_resumo_paga_a_pagar_vencida_soma_o_total(usuario, monkeypatch):
+    """Resumo da aba Despesas (26/11/2026): pago + a pagar + vencido = total,
+    para o Admin (linhas) e para o Gestor (com o total de salários)."""
+    from datetime import date as d
+    from app.services import financeiro_service as fs
+    monkeypatch.setattr(fs, "hoje_brasil", lambda: d(2026, 11, 15))
+    resp = _listar(usuario, monkeypatch, limit=200)
+    assert resp.soma_paga + resp.soma_a_pagar + resp.soma_vencida == resp.soma_total
+    # Pagas: Ana 3000 + Bruno 4500 (nov) e Ana 1000 (out). Em aberto, vencimento
+    # 01/11 < hoje (15/11): Caio 2000 e Aluguel 900 ficam vencidas.
+    assert resp.soma_paga == Decimal(8500)
+    assert resp.soma_vencida == Decimal(2900)
+    assert resp.soma_a_pagar == 0
+    if usuario is ADMIN:
+        assert (resp.qtd_paga, resp.qtd_vencida) == (3, 2)

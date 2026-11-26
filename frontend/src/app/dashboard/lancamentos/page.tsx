@@ -1,10 +1,8 @@
 'use client'
-import { SeloRecibo } from '@/lib/recibo'
-import { OpcoesCentro, nomeCentro } from '@/lib/centros'
-import { MarcaAnexos, useContagemAnexos } from '@/components/anexos/CampoAnexos'
-import { FILTRO_BOTAO, FILTRO_CAMPO } from '@/components/ui/filtros'
+import { useContagemAnexos } from '@/components/anexos/CampoAnexos'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
 import { api } from '@/lib/api'
@@ -12,21 +10,28 @@ import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
 import { useTopBar } from '@/contexts/TopBarContext'
 import { EVENTO_NOVO, MenuNovo, type TipoNovo } from '@/components/layout/MenuNovo'
 import { filtrosExport } from '@/components/exportar/dados'
-import { fmtBRL, fmtData } from '@/lib/utils'
+import { FILTRO_CAMPO } from '@/components/ui/filtros'
+import { fmtBRL } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
 import { Tabs } from '@/components/ui/Tabs'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { permissaoPagamentos } from '@/types'
 import { ModalDespesa } from './_components/ModalDespesa'
 import { ModalReceita } from './_components/ModalReceita'
 import { ModalOrdemCompra } from './_components/ModalOrdemCompra'
 import { ModalImportarExtrato } from './_components/ModalImportarExtrato'
 import { DialogExcluirGrupo } from './_components/DialogExcluirGrupo'
 import {
-  Badge, StatusBadge, IconLapis, IconLixo, fmtCompetencia, tipoCor, CadeadoConfidencial,
   type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp,
   type Receita, type ReceitasResp, type OrdemCompra, type OrdensCompraResp, podeExcluirLancamento,
   type Classificacao } from './_components/shared'
+import { opcoesCentroFiltro } from '@/lib/centros'
+import { hojeISO } from './_components/situacao'
+import {
+  BarraLote, CartaoResumo, CartoesDespesas, CartoesOrdens, CartoesReceitas, ChipSelect, DialogMarcar,
+  TabelaDespesas, TabelaOrdens, TabelaReceitas, botaoLote, botaoLotePrimario, qtd, selecionavelReceita,
+} from './_components/Listas'
 
 interface DialogGrupo { id: string; grupo: 'parcelamento' | 'recorrencia'; total?: number }
 
@@ -36,7 +41,9 @@ type OrdemCampo = 'registro' | 'competencia' | 'vencimento' | 'pagamento' | 'val
 // ── Página principal ───────────────────────────────────────────
 export default function LancamentosPage() {
   const { token } = useAuth()
-  const { role, userId } = useUser()
+  const { role, userId, permissions } = useUser()
+  const router = useRouter()
+  const podeRemessa = permissaoPagamentos(permissions, role, 'remessa')
   const podeAprovar = role === 'admin' || role === 'gestor'
   // Periodo compartilhado entre telas (ver contexts/PeriodoContext.tsx).
   const periodo = usePeriodo()
@@ -50,8 +57,7 @@ export default function LancamentosPage() {
   // Filtro "Tipo" (22/10/2026): Categoria e, opcionalmente, Subitem.
   const [filtroCategoria, setFiltroCategoria] = useState('')
   const [filtroSubitem, setFiltroSubitem] = useState('')
-  // Banco, centro, status e tipo ficam num painel que abre pelo ícone de filtro.
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
+  // Redesenho UX (fase 3): filtros à vista, em chips de 44 px.
   const filtrosAtivos = [filtroCategoria, filtroBanco, filtroCentro, filtroStatus].filter(Boolean).length
   function limparFiltros() {
     setFiltroCategoria(''); setFiltroSubitem(''); setFiltroBanco(''); setFiltroCentro(''); setFiltroStatus('')
@@ -85,8 +91,13 @@ export default function LancamentosPage() {
   const [editandoDespesa, setEditandoDespesa] = useState<Despesa | null>(null)
   const [editandoReceita, setEditandoReceita]  = useState<Receita | null>(null)
   const [editandoOrdem, setEditandoOrdem] = useState<OrdemCompra | null>(null)
-  const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
+  // Exclusão simples (sem grupo): confirmação em diálogo. O Excluir fica no rodapé da modal.
+  const [confirmando, setConfirmando] = useState<{ tipo: 'despesa' | 'receita' | 'ordem'; id: string; nome: string } | null>(null)
   const [deletando, setDeletando] = useState(false)
+  // Seleção em lote (despesas e receitas da aba aberta).
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  const [marcando, setMarcando] = useState<{ ids: string[] } | null>(null)
+  const [salvandoLote, setSalvandoLote] = useState(false)
   // Erro de AÇÃO (excluir) vai para toast; `erroLista` — erro de estado da tela,
   // com "Tentar novamente" — continua sendo banner no lugar do conteúdo.
   const toast = useToast()
@@ -201,9 +212,6 @@ export default function LancamentosPage() {
         : 'Falha ao carregar categorias, tipos e bancos.'))
   }, [token])
 
-  const totalDespesas = despesas?.soma_total ?? 0
-  const totalReceitas = receitas?.soma_total ?? 0
-  const saldo = totalReceitas - totalDespesas
 
   // Despesas e receitas são buscadas e ordenadas pelo servidor — o que chega já
   // vem filtrado e na ordem certa, sobre o período inteiro e não só sobre a
@@ -252,10 +260,6 @@ export default function LancamentosPage() {
   }, [naturezaAba, filtroCategoria, categorias])
   const despesasPagina = despesasVisiveis.slice(0, visLimite)
   const receitasPagina = receitasVisiveis.slice(0, visLimite)
-  // Soma apenas das linhas na tela. O card do topo continua mostrando o total do
-  // período inteiro (soma_total do servidor) — os dois números são diferentes de
-  // propósito, por isso o rótulo aqui é "Total exibido".
-  const somaDespesasExibidas = despesasPagina.reduce((acc, d) => acc + Number(d.valor), 0)
   const temMais = aba === 'despesas'
     ? (despesasPagina.length < despesasVisiveis.length ||
        (despesas ? despesas.items.length < despesas.total : false))
@@ -282,37 +286,13 @@ export default function LancamentosPage() {
   function alternarOrdem(campo: OrdemCampo) {
     setOrdem(o => o.campo === campo ? { campo, dir: o.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'desc' })
   }
-  const setaOrdem = (campo: OrdemCampo) =>
-    ordem.campo === campo ? (ordem.dir === 'asc' ? ' ↑' : ' ↓') : ''
-
-  /** Cabeçalho ordenável: o clique fica num <button>, não no <th>, para que a
-   *  ordenação seja alcançável por teclado e anunciada via `aria-sort`. */
-  function ThOrdenavel({ campo, children, alinhar = 'left' }: {
-    campo: OrdemCampo
-    children: React.ReactNode
-    alinhar?: 'left' | 'right'
-  }) {
-    return (
-      <th
-        scope="col"
-        aria-sort={ordem.campo === campo ? (ordem.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-        className={`px-4 py-2 ${alinhar === 'right' ? 'text-right' : ''}`}
-      >
-        <button type="button" onClick={() => alternarOrdem(campo)}
-          className="focus-ring select-none rounded font-medium hover:text-gray-700">
-          {children}{setaOrdem(campo)}
-        </button>
-      </th>
-    )
-  }
-
   function abrirDialogExclusao(d: Despesa) {
     if (d.parcela_total && d.parcela_total > 1) {
       setDialogParcelas({ id: d.id, grupo: 'parcelamento', total: d.parcela_total })
     } else if (d.recorrente) {
       setDialogParcelas({ id: d.id, grupo: 'recorrencia' })
     } else {
-      setConfirmandoId(d.id)
+      setConfirmando({ tipo: 'despesa', id: d.id, nome: d.descricao })
     }
   }
 
@@ -348,12 +328,12 @@ export default function LancamentosPage() {
         const total = Math.max(0, prev.total - (prev.items.length - items.length))
         return { ...prev, items, total, soma_total }
       })
-      setConfirmandoId(null)
+      setConfirmando(null)
       setDialogParcelas(null)
       toast.sucesso(excluirFuturas ? 'Despesa e ocorrências futuras excluídas.' : 'Despesa excluída.')
     } catch (e) {
       toast.erro(e instanceof Error ? e.message : 'Erro ao excluir despesa.')
-      setConfirmandoId(null)
+      setConfirmando(null)
       setDialogParcelas(null)
     } finally {
       setDeletando(false)
@@ -372,7 +352,7 @@ export default function LancamentosPage() {
     if (temIrmaFutura) {
       setDialogReceita(r)
     } else {
-      setConfirmandoId(r.id)
+      setConfirmando({ tipo: 'receita', id: r.id, nome: r.descricao })
     }
   }
 
@@ -399,12 +379,12 @@ export default function LancamentosPage() {
         const total = Math.max(0, prev.total - (prev.items.length - items.length))
         return { ...prev, items, total, soma_total }
       })
-      setConfirmandoId(null)
+      setConfirmando(null)
       setDialogReceita(null)
       toast.sucesso(excluirFuturas ? 'Receita e ocorrências futuras excluídas.' : 'Receita excluída.')
     } catch (e) {
       toast.erro(e instanceof Error ? e.message : 'Erro ao excluir receita.')
-      setConfirmandoId(null)
+      setConfirmando(null)
       setDialogReceita(null)
     } finally {
       setDeletando(false)
@@ -424,15 +404,89 @@ export default function LancamentosPage() {
         const total = Math.max(0, prev.total - (prev.items.length - items.length))
         return { ...prev, items, total, soma_total }
       })
-      setConfirmandoId(null)
+      setConfirmando(null)
       toast.sucesso('Ordem de compra excluída.')
     } catch (e) {
       toast.erro(e instanceof Error ? e.message : 'Erro ao excluir ordem de compra.')
-      setConfirmandoId(null)
+      setConfirmando(null)
     } finally {
       setDeletando(false)
     }
   }
+
+  // ── Categoria › Subitem ────────────────────────────────────
+  const nomeCategoria = useMemo(() => new Map(categorias.map(c => [c.id, c.nome.trim()])), [categorias])
+  const tipoPorId = useMemo(() => new Map(tipos.map(t => [t.id, t])), [tipos])
+  const catSub = useCallback((tipoId: string | null, tipoNome: string | null) => {
+    const t = tipoId ? tipoPorId.get(tipoId) : undefined
+    const cat = t?.categoria_id ? nomeCategoria.get(t.categoria_id) : undefined
+    const sub = t?.nome ?? tipoNome
+    return cat && sub ? `${cat} › ${sub}` : (sub ?? cat ?? 'Sem subitem')
+  }, [tipoPorId, nomeCategoria])
+
+  // ── Seleção em lote ────────────────────────────────────────
+  useEffect(() => { setSel(new Set()) }, [aba, filtrosQuery])
+  const alternarSel = (id: string) => setSel(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const listaAba: (Despesa | Receita)[] = aba === 'despesas' ? despesasPagina : aba === 'receitas' ? receitasPagina : []
+  const selecionados = listaAba.filter(i => sel.has(i.id))
+  const totalSel = selecionados.reduce((acc, i) => acc + Number(i.valor), 0)
+  const despesasParaPagar = (selecionados as Despesa[]).filter(d => !d.paga_em && !d.agregado && d.status !== 'rejeitada')
+  const despesasParaRemessa = (selecionados as Despesa[]).filter(d => !d.paga_em && !d.agregado && d.status === 'aprovada')
+  const receitasParaReceber = (selecionados as Receita[]).filter(selecionavelReceita)
+
+  async function confirmarMarcacao(data: string) {
+    if (!token || !marcando) return
+    setSalvandoLote(true)
+    const ehReceita = aba === 'receitas'
+    const rota = ehReceita ? '/lancamentos/receitas' : '/lancamentos/despesas'
+    const corpo = ehReceita ? { recebido_em: data } : { paga_em: data }
+    const r = await Promise.allSettled(marcando.ids.map(id => api.patch(`${rota}/${id}`, token, corpo)))
+    const falhas = r.filter((x): x is PromiseRejectedResult => x.status === 'rejected')
+    const ok = r.length - falhas.length
+    setSalvandoLote(false)
+    setMarcando(null)
+    setSel(new Set())
+    if (ok) toast.sucesso(`${qtd(ok, ehReceita ? 'receita marcada' : 'despesa marcada', ehReceita ? 'receitas marcadas' : 'despesas marcadas')} como ${ehReceita ? 'recebida' : 'paga'}${ok > 1 ? 's' : ''}.`)
+    if (falhas.length) {
+      const motivo = falhas[0].reason instanceof Error ? falhas[0].reason.message : ''
+      toast.erro(`${qtd(falhas.length, 'não mudou', 'não mudaram')}${motivo ? `: ${motivo}` : '.'}`)
+    }
+    if (ehReceita) buscarReceitas(); else buscarDespesas()
+  }
+
+  function incluirNaRemessa() {
+    const ids = despesasParaRemessa.map(d => d.id)
+    if (!ids.length) return
+    router.push(`/dashboard/lancamentos/pagamentos?incluir=${ids.join(',')}`)
+  }
+
+  // ── Excluir pela modal ─────────────────────────────────────
+  function excluirDespesaDaModal(d: Despesa) { setEditandoDespesa(null); abrirDialogExclusao(d) }
+  function excluirReceitaDaModal(r: Receita) { setEditandoReceita(null); abrirDialogExclusaoReceita(r) }
+  function excluirOrdemDaModal(o: OrdemCompra) { setEditandoOrdem(null); setConfirmando({ tipo: 'ordem', id: o.id, nome: o.assunto }) }
+
+  // ── Resumo da aba ──────────────────────────────────────────
+  const hoje = hojeISO()
+  const resumoReceitas = useMemo(() => {
+    const r = { recebida: [0, 0], aReceber: [0, 0], atrasada: [0, 0] }
+    for (const x of receitas?.items ?? []) {
+      if (x.somente_dre) continue
+      const k = x.recebido_em ? 'recebida' : (x.data_vencimento && x.data_vencimento.slice(0, 10) < hoje ? 'atrasada' : 'aReceber')
+      r[k][0] += Number(x.valor); r[k][1] += 1
+    }
+    return r
+  }, [receitas, hoje])
+  const ordensPorStatus = useMemo(() => {
+    const r: Record<string, [number, number]> = { pendente: [0, 0], aprovada: [0, 0], rejeitada: [0, 0] }
+    for (const o of ordens?.items ?? []) { const k = r[o.status]; if (k) { k[0] += Number(o.valor ?? 0); k[1] += 1 } }
+    return r
+  }, [ordens])
+
+  const ordenacao = { ativo: ordem.campo, dir: ordem.dir, alternar: alternarOrdem }
+  const carregandoAba = aba === 'despesas' ? loadingDespesas : aba === 'receitas' ? loadingReceitas : loadingOrdens
+  const totalAba = aba === 'despesas' ? (despesas?.total ?? 0) : aba === 'receitas' ? receitasVisiveis.length : ordensVisiveis.length
+  const exibidosAba = aba === 'despesas' ? despesasPagina.length : aba === 'receitas' ? receitasPagina.length : ordensVisiveis.length
+  const somaAba = aba === 'despesas' ? Number(despesas?.soma_total ?? 0) : aba === 'receitas' ? Number(receitas?.soma_total ?? 0) : somaOrdensVisiveis
 
   return (
     <>
@@ -444,6 +498,8 @@ export default function LancamentosPage() {
           onClose={() => { setModalDespesa(false); setEditandoDespesa(null) }}
           onSaved={buscarDespesas}
           classificacoes={classificacoes}
+          onExcluir={editandoDespesa && podeExcluirLancamento(editandoDespesa, role, userId)
+            ? () => excluirDespesaDaModal(editandoDespesa) : undefined}
         />
       )}
       {(modalReceita || editandoReceita) && token && (
@@ -454,6 +510,7 @@ export default function LancamentosPage() {
           mesDefault={mesInicio}
           onClose={() => { setModalReceita(false); setEditandoReceita(null) }}
           onSaved={buscarReceitas}
+          onExcluir={editandoReceita ? () => excluirReceitaDaModal(editandoReceita) : undefined}
         />
       )}
       {(modalOrdem || editandoOrdem) && token && (
@@ -463,6 +520,8 @@ export default function LancamentosPage() {
           centros={centros}
           onClose={() => { setModalOrdem(false); setEditandoOrdem(null) }}
           onSaved={buscarOrdens}
+          onExcluir={editandoOrdem && podeExcluirLancamento(editandoOrdem, role, userId)
+            ? () => excluirOrdemDaModal(editandoOrdem) : undefined}
         />
       )}
       {modalImportar && token && (
@@ -473,6 +532,20 @@ export default function LancamentosPage() {
         />
       )}
 
+      <ConfirmDialog
+        open={!!confirmando}
+        titulo={confirmando?.tipo === 'ordem' ? 'Excluir ordem de compra' : confirmando?.tipo === 'receita' ? 'Excluir receita' : 'Excluir despesa'}
+        mensagem={<>Excluir <strong>{confirmando?.nome}</strong>? Esta ação não pode ser desfeita.</>}
+        loading={deletando}
+        onCancelar={() => setConfirmando(null)}
+        onConfirmar={() => {
+          if (!confirmando) return
+          if (confirmando.tipo === 'despesa') deletarDespesa(confirmando.id)
+          else if (confirmando.tipo === 'receita') deletarReceita(confirmando.id)
+          else deletarOrdem(confirmando.id)
+        }}
+      />
+
       {/* Dialog: excluir parcelas/ocorrências futuras de despesa */}
       <DialogExcluirGrupo
         open={!!dialogParcelas}
@@ -482,7 +555,7 @@ export default function LancamentosPage() {
           ? <>Esta despesa faz parte de um grupo de <strong>{dialogParcelas.total} parcelas</strong>. Deseja excluir também as parcelas futuras?</>
           : <>Esta despesa é <strong>recorrente</strong>. Deseja excluir também as ocorrências dos meses futuros?</>}
         excluindo={deletando}
-        onCancelar={() => { setDialogParcelas(null); setConfirmandoId(null) }}
+        onCancelar={() => { setDialogParcelas(null); setConfirmando(null) }}
         onExcluir={(futuras) => dialogParcelas && deletarDespesa(dialogParcelas.id, futuras)}
       />
 
@@ -497,531 +570,199 @@ export default function LancamentosPage() {
         onExcluir={(futuras) => dialogReceita && deletarReceita(dialogReceita.id, futuras)}
       />
 
-      <div className="space-y-6">
-        {/* Cards resumo */}
-        <div data-tour="resumo" className="grid grid-cols-3 gap-2 sm:gap-4">
-          <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
-            <div className="flex items-center gap-2">
-              <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 sm:flex">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5 text-red-500">
-                  <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/>
-                </svg>
-              </div>
-              <p className="text-[10px] font-medium text-gray-500 sm:text-xs">Total Despesas</p>
-            </div>
-            {loadingDespesas
-              ? <Skeleton className="mt-1.5 h-4 w-full sm:h-5" />
-              : <p className="mt-1 text-xs font-bold tabular-nums text-red-500 sm:text-base">{fmtBRL(totalDespesas)}</p>}
-          </div>
-          <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
-            <div className="flex items-center gap-2">
-              <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-50 sm:flex">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5 text-green-500">
-                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-                </svg>
-              </div>
-              <p className="text-[10px] font-medium text-gray-500 sm:text-xs">Total Receitas</p>
-            </div>
-            {loadingReceitas
-              ? <Skeleton className="mt-1.5 h-4 w-full sm:h-5" />
-              : <p className="mt-1 text-xs font-bold tabular-nums text-green-600 sm:text-base">{fmtBRL(totalReceitas)}</p>}
-          </div>
-          <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
-            <div className="flex items-center gap-2">
-              <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 sm:flex">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5 text-blue-600">
-                  <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                </svg>
-              </div>
-              <p className="text-[10px] font-medium text-gray-500 sm:text-xs">Saldo do Período</p>
-            </div>
-            {loadingDespesas || loadingReceitas
-              ? <Skeleton className="mt-1.5 h-4 w-full sm:h-5" />
-              : <p className={`mt-1 text-xs font-bold tabular-nums sm:text-base ${saldo >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtBRL(saldo)}</p>}
-          </div>
+      {marcando && (
+        <DialogMarcar key={marcando.ids.join()} open n={marcando.ids.length} receita={aba === 'receitas'} loading={salvandoLote}
+          onCancelar={() => setMarcando(null)} onConfirmar={confirmarMarcacao} />
+      )}
+
+      <div className="space-y-4">
+        <Tabs
+          idPrefix="lanc"
+          variante="pagina"
+          ativa={aba}
+          onChange={setAba}
+          items={[
+            { key: 'despesas' as const, label: 'Despesas', contador: despesas?.total ?? null },
+            { key: 'receitas' as const, label: 'Receitas', contador: receitas?.total ?? null },
+            { key: 'ordens'   as const, label: 'Ordens de compra', labelCurto: 'Ordens', contador: ordens?.total ?? null },
+          ]}
+        />
+
+        {/* Resumo da aba aberta (sem repetir os totais das outras abas) */}
+        <div data-tour="resumo" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3">
+          {carregandoAba ? Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-[92px] rounded-xl" />) : aba === 'despesas' ? (
+            <>
+              <CartaoResumo titulo="Total no período" valor={Number(despesas?.soma_total ?? 0)} sub={qtd(despesas?.total ?? 0, 'despesa', 'despesas')} />
+              <CartaoResumo titulo="Pagas" valor={Number(despesas?.soma_paga ?? 0)} sub={qtd(despesas?.qtd_paga ?? 0, 'despesa', 'despesas')} />
+              <CartaoResumo titulo="A pagar" valor={Number(despesas?.soma_a_pagar ?? 0)} sub={qtd(despesas?.qtd_a_pagar ?? 0, 'despesa', 'despesas')} />
+              <CartaoResumo titulo="Vencidas" valor={Number(despesas?.soma_vencida ?? 0)} sub={qtd(despesas?.qtd_vencida ?? 0, 'despesa', 'despesas')}
+                tom={(despesas?.qtd_vencida ?? 0) > 0 ? 'alerta' : 'neutro'} />
+            </>
+          ) : aba === 'receitas' ? (
+            <>
+              <CartaoResumo titulo="Total no período" valor={Number(receitas?.soma_total ?? 0)} corValor="text-green-700"
+                sub={qtd(receitas?.total ?? 0, 'receita', 'receitas')} />
+              <CartaoResumo titulo="Recebidas" valor={resumoReceitas.recebida[0]} sub={qtd(resumoReceitas.recebida[1], 'receita', 'receitas')} tom="positivo" />
+              <CartaoResumo titulo="A receber" valor={resumoReceitas.aReceber[0]} sub={qtd(resumoReceitas.aReceber[1], 'receita', 'receitas')} />
+              <CartaoResumo titulo="Atrasadas" valor={resumoReceitas.atrasada[0]} sub={qtd(resumoReceitas.atrasada[1], 'receita', 'receitas')}
+                tom={resumoReceitas.atrasada[1] > 0 ? 'alerta' : 'neutro'} />
+            </>
+          ) : (
+            <>
+              <CartaoResumo titulo="Total no período" valor={Number(ordens?.soma_total ?? 0)} sub={qtd(ordens?.total ?? 0, 'ordem', 'ordens')} />
+              <CartaoResumo titulo="Aguardando aprovação" valor={ordensPorStatus.pendente[0]} sub={qtd(ordensPorStatus.pendente[1], 'ordem', 'ordens')} />
+              <CartaoResumo titulo="Aprovadas" valor={ordensPorStatus.aprovada[0]} sub={qtd(ordensPorStatus.aprovada[1], 'ordem', 'ordens')} />
+              <CartaoResumo titulo="Rejeitadas" valor={ordensPorStatus.rejeitada[0]} sub={qtd(ordensPorStatus.rejeitada[1], 'ordem', 'ordens')} />
+            </>
+          )}
         </div>
 
-        {/* Banner de pendentes — visível apenas para quem pode aprovar */}
-        {podeAprovar && (despesas?.total_pendentes ?? 0) > 0 && (
-          <div className="flex items-center justify-between rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-            <div className="flex items-center gap-2 text-sm text-amber-800">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4 shrink-0">
-                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              <span><strong>{despesas!.total_pendentes}</strong> despesa{despesas!.total_pendentes > 1 ? 's' : ''} aguardando aprovação</span>
-            </div>
+        {/* Pendentes de aprovação — só para quem aprova */}
+        {podeAprovar && aba === 'despesas' && (despesas?.total_pendentes ?? 0) > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5">
+            <p className="text-sm text-amber-900">
+              <strong>{qtd(despesas!.total_pendentes, 'despesa aguarda', 'despesas aguardam')}</strong> aprovação neste período.
+            </p>
             <Link href="/dashboard/lancamentos/aprovacoes"
-              className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
-              Ver Kanban →
+              className="focus-ring inline-flex h-11 items-center rounded-lg border border-amber-400 bg-white px-4 text-sm font-semibold text-amber-900 hover:bg-amber-100">
+              Ver aprovações
             </Link>
           </div>
         )}
 
-        {/* Erro ao carregar listas */}
         {erroLista && (
-          <div className="flex items-center justify-between rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <span>{erroLista}</span>
             <button
-              onClick={() => { setErroLista(null); buscarDespesas(); buscarReceitas() }}
-              className="ml-4 shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+              onClick={() => { setErroLista(null); buscarDespesas(); buscarReceitas(); buscarOrdens() }}
+              className="focus-ring h-11 shrink-0 rounded-lg border border-red-300 bg-white px-4 text-sm font-semibold text-red-800 hover:bg-red-100">
               Tentar novamente
             </button>
           </div>
         )}
 
-        {/* Tabela */}
-        <div data-tour="tabela" className="rounded-2xl bg-white shadow-sm overflow-hidden">
-          <div className="flex flex-col gap-2 border-b border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <Tabs
-              idPrefix="lanc"
-              ativa={aba}
-              onChange={setAba}
-              className="border-b-0"
-              items={[
-                { key: 'despesas' as const, label: `Despesas${despesas ? ` (${despesas.total})` : ''}` },
-                { key: 'receitas' as const, label: `Receitas${receitas ? ` (${receitas.total})` : ''}` },
-                { key: 'ordens'   as const, label: `Ordens de Compra${ordens ? ` (${ordens.total})` : ''}` },
-              ]}
-            />
-            <div className="flex flex-wrap gap-2">
-              <input
-                type="search"
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-                placeholder="Buscar por descrição…"
-                className={`${FILTRO_CAMPO} w-full sm:w-56`}
-              />
-              <button type="button" data-tour="filtros" onClick={() => setFiltrosAbertos(v => !v)}
-                aria-expanded={filtrosAbertos} aria-controls="painel-filtros"
-                className={`${FILTRO_BOTAO} ${filtrosAbertos || filtrosAtivos > 0 ? '!border-navy !text-navy' : ''}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                Filtros
-                {filtrosAtivos > 0 && (
-                  <span className="rounded-full bg-navy px-1.5 text-[10px] font-semibold text-white">{filtrosAtivos}</span>
-                )}
-              </button>
+        <section data-tour="tabela" id={`lanc-painel-${aba}`} aria-labelledby={`lanc-${aba}`}
+          className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+          {/* Filtros à vista: busca + chips (no celular, linha que rola de lado) */}
+          <div data-tour="filtros" className="flex flex-col gap-2 border-b border-gray-200 px-3 py-3 md:flex-row md:flex-wrap md:items-center md:px-4">
+            <label className="relative block md:w-72">
+              <span className="sr-only">Buscar</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+              </svg>
+              <input type="search" value={busca} onChange={e => setBusca(e.target.value)}
+                placeholder={aba === 'ordens' ? 'Buscar ordem ou quem pediu' : 'Buscar descrição'}
+                className={`${FILTRO_CAMPO} w-full pl-9`} />
+            </label>
+            <div className="-mx-3 flex items-center gap-2 overflow-x-auto px-3 pb-0.5 md:mx-0 md:flex-wrap md:overflow-visible md:p-0">
+              {aba !== 'ordens' && (
+                <>
+                  <ChipSelect rotulo="Categoria" valor={filtroCategoria} onChange={v => { setFiltroCategoria(v); setFiltroSubitem('') }}
+                    opcoes={categorias.filter(c => c.natureza === naturezaAba && c.ativo).map(c => ({ valor: c.id, texto: c.nome.trim() }))} />
+                  <ChipSelect rotulo="Subitem" valor={filtroSubitem} onChange={setFiltroSubitem} disabled={!filtroCategoria} vazio="Subitem"
+                    opcoes={tipos.filter(t => t.categoria_id === filtroCategoria).map(t => ({ valor: t.id, texto: t.nome }))} />
+                  <ChipSelect rotulo="Banco" valor={filtroBanco} onChange={setFiltroBanco}
+                    opcoes={bancos.map(b => ({ valor: b.id, texto: b.nome }))} />
+                  <ChipSelect rotulo="Centro" valor={filtroCentro} onChange={setFiltroCentro} opcoes={opcoesCentroFiltro(centros)} />
+                </>
+              )}
+              <ChipSelect rotulo="Status" valor={filtroStatus} onChange={setFiltroStatus}
+                opcoes={[{ valor: 'pendente', texto: 'Aguardando aprovação' }, { valor: 'aprovada', texto: 'Aprovada' }, { valor: 'rejeitada', texto: 'Rejeitada' }]} />
+              {filtrosAtivos > 0 && (
+                <button type="button" onClick={limparFiltros}
+                  className="focus-ring h-12 shrink-0 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-sel hover:underline md:h-11">
+                  Limpar filtros
+                </button>
+              )}
             </div>
           </div>
 
-          {filtrosAbertos && (
-            <div id="painel-filtros" className="grid grid-cols-1 gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 sm:grid-cols-3 sm:px-5 lg:grid-cols-5">
-              <select value={filtroCategoria} onChange={e => { setFiltroCategoria(e.target.value); setFiltroSubitem('') }}
-                aria-label="Categoria" className={`${FILTRO_CAMPO} w-full ${filtroCategoria ? '!border-navy font-medium !text-navy' : ''}`}>
-                <option value="">{naturezaAba === 'receita' ? 'Todas as categorias de receita' : 'Todas as categorias de despesa'}</option>
-                {categorias.filter(c => c.natureza === naturezaAba && c.ativo).map(c => <option key={c.id} value={c.id}>{c.nome.trim()}</option>)}
-              </select>
-              <select value={filtroSubitem} onChange={e => setFiltroSubitem(e.target.value)} disabled={!filtroCategoria}
-                aria-label="Subitem" className={`${FILTRO_CAMPO} w-full ${filtroSubitem ? '!border-navy font-medium !text-navy' : ''}`}>
-                <option value="">{filtroCategoria ? 'Todos os subitens' : 'Escolha a categoria primeiro'}</option>
-                {tipos.filter(t => t.categoria_id === filtroCategoria).map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
-              </select>
-              <select value={filtroBanco} onChange={e => setFiltroBanco(e.target.value)}
-                aria-label="Banco" className={`${FILTRO_CAMPO} w-full ${filtroBanco ? '!border-navy font-medium !text-navy' : ''}`}>
-                <option value="">Todos os bancos</option>
-                {bancos.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
-              </select>
-              <select value={filtroCentro} onChange={e => setFiltroCentro(e.target.value)}
-                aria-label="Centro de custo" className={`${FILTRO_CAMPO} w-full ${filtroCentro ? '!border-navy font-medium !text-navy' : ''}`}>
-                <option value="">Todos os centros</option>
-                <OpcoesCentro centros={centros} filtro />
-              </select>
-              <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
-                aria-label="Status" className={`${FILTRO_CAMPO} w-full ${filtroStatus ? '!border-navy font-medium !text-navy' : ''}`}>
-                <option value="">Todos os status</option>
-                <option value="pendente">Pendente</option>
-                <option value="aprovada">Aprovada</option>
-                <option value="rejeitada">Rejeitada</option>
-              </select>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-400 sm:col-span-3 lg:col-span-5">
-                <span>Categoria e Subitem filtram despesas e receitas; não se aplicam a Ordens de Compra.</span>
-                {filtrosAtivos > 0 && (
-                  <button type="button" onClick={limparFiltros} className="font-medium text-navy hover:underline">Limpar filtros</button>
-                )}
-              </div>
-            </div>
+          {aba === 'despesas' && (
+            <BarraLote n={selecionados.length} total={totalSel} onLimpar={() => setSel(new Set())}>
+              <button type="button" className={botaoLote} disabled={!despesasParaPagar.length}
+                onClick={() => setMarcando({ ids: despesasParaPagar.map(d => d.id) })}>
+                Marcar como paga{despesasParaPagar.length !== selecionados.length && despesasParaPagar.length ? ` (${despesasParaPagar.length})` : ''}
+              </button>
+              {podeRemessa && (
+                <button type="button" className={botaoLotePrimario} disabled={!despesasParaRemessa.length} onClick={incluirNaRemessa}
+                  title="Leva as despesas aprovadas e em aberto para a tela Pagamentos, já escolhidas">
+                  Incluir na remessa{despesasParaRemessa.length !== selecionados.length && despesasParaRemessa.length ? ` (${despesasParaRemessa.length})` : ''}
+                </button>
+              )}
+            </BarraLote>
+          )}
+          {aba === 'receitas' && (
+            <BarraLote n={selecionados.length} total={totalSel} onLimpar={() => setSel(new Set())}>
+              <button type="button" className={botaoLotePrimario} disabled={!receitasParaReceber.length}
+                onClick={() => setMarcando({ ids: receitasParaReceber.map(r => r.id) })}>
+                Marcar como recebida
+              </button>
+            </BarraLote>
           )}
 
-          {(aba === 'despesas' ? loadingDespesas : aba === 'receitas' ? loadingReceitas : loadingOrdens) ? (
+          {carregandoAba ? (
             <div className="p-5"><Skeleton variant="table" /></div>
           ) : aba === 'despesas' ? (
             <>
-              {/* Mobile: card list */}
-              <div className="divide-y divide-gray-50 sm:hidden">
-                {despesasVisiveis.length === 0 ? (
-                  <EmptyState titulo="Nenhuma despesa no período" descricao={vazioDescricao} />
-                ) : despesasPagina.map((d) => (
-                  <div key={d.id} className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-gray-800">
-                          {d.descricao}<MarcaAnexos n={anexosDesp[d.id]} />
-                          {d.parcela_total && d.parcela_total > 1 && (
-                            <span className="ml-2 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">parcela {d.parcela_atual}/{d.parcela_total}</span>
-                          )}
-                          {d.recorrente && !d.parcela_total && (
-                            <span className="ml-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">recorrente</span>
-                          )}
-                        </p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          <Badge text={d.tipo_nome ?? d.categoria ?? '—'} cor={tipoCor(d.tipo_nome ?? d.categoria)} />
-                          <StatusBadge status={d.status} />
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-xs font-bold tabular-nums text-red-500">{fmtBRL(d.valor)}</p>
-                        <p className="mt-0.5 text-[10px] text-gray-400">{fmtCompetencia(d.competencia)}</p>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <p className="text-xs text-gray-400 capitalize">
-                        {nomeCentro(d.centro_custo, centros)}
-                        {d.banco_nome ? ` · ${d.banco_nome}` : ''}
-                        {d.data_vencimento ? ` · Vence ${fmtData(d.data_vencimento)}` : ''}
-                        {d.paga_em ? ` · Pagamento ${fmtData(d.paga_em)}` : ''}
-                      </p>
-                      {confirmandoId === d.id ? (
-                        <span className="inline-flex items-center gap-2">
-                          <button onClick={() => deletarDespesa(d.id)} disabled={deletando}
-                            className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50">
-                            {deletando ? 'Excluindo…' : 'Confirmar'}
-                          </button>
-                          <span className="text-gray-300">|</span>
-                          <button onClick={() => setConfirmandoId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
-                        </span>
-                      ) : d.agregado ? (
-                        <CadeadoConfidencial n={d.quantidade} />
-                      ) : (
-                        <span className="inline-flex items-center gap-2">
-                          <button onClick={() => setEditandoDespesa(d)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar despesa ${d.descricao}`}><IconLapis /></button>
-                          {podeExcluirLancamento(d, role, userId) && (
-                            <button onClick={() => abrirDialogExclusao(d)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir despesa ${d.descricao}`}><IconLixo /></button>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {somaDespesasExibidas > 0 && (
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <span className="text-sm font-semibold text-gray-700">Total exibido ({despesasPagina.length})</span>
-                    <span className="text-sm font-bold tabular-nums text-red-500">{fmtBRL(somaDespesasExibidas)}</span>
-                  </div>
-                )}
+              <div className="hidden overflow-x-auto md:block">
+                <TabelaDespesas itens={despesasPagina} centros={centros} catSub={catSub} anexos={anexosDesp}
+                  sel={sel} onSel={alternarSel} onSelTodos={ids => setSel(new Set(ids))} onAbrir={setEditandoDespesa}
+                  ord={ordenacao} campoVenc="vencimento" campoValor="valor"
+                  vazio={{ titulo: 'Nenhuma despesa no período', descricao: vazioDescricao }} />
               </div>
-              {/* Desktop: table */}
-              <div className="hidden overflow-x-auto sm:block">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-left text-[11px] font-medium text-gray-500">
-                      <ThOrdenavel campo="competencia">Competência</ThOrdenavel>
-                      <th className="px-4 py-2">Tipo</th>
-                      <th className="px-4 py-2">Descrição</th>
-                      <th className="px-4 py-2">Centro</th>
-                      <th className="px-4 py-2">Banco</th>
-                      <ThOrdenavel campo="valor" alinhar="right">Valor</ThOrdenavel>
-                      <ThOrdenavel campo="vencimento">Vencimento</ThOrdenavel>
-                      <ThOrdenavel campo="pagamento">Data de Pagamento</ThOrdenavel>
-                      <th className="px-4 py-2">Status</th>
-                      <th className="px-3 py-2" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {despesasPagina.map((d) => (
-                      <tr key={d.id} className="border-t border-gray-50 hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-600">{fmtCompetencia(d.competencia)}</td>
-                        <td className="px-4 py-2"><Badge text={d.tipo_nome ?? d.categoria ?? '—'} cor={tipoCor(d.tipo_nome ?? d.categoria)} /></td>
-                        <td className="px-4 py-2 text-gray-700">
-                          <span>{d.descricao}</span><MarcaAnexos n={anexosDesp[d.id]} />
-                          {d.parcela_total && d.parcela_total > 1 && (
-                            <span
-                              className="ml-2 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600"
-                              title={`Parcela ${d.parcela_atual} de ${d.parcela_total}`}
-                            >
-                              parcela {d.parcela_atual}/{d.parcela_total}
-                            </span>
-                          )}
-                          {d.recorrente && !d.parcela_total && (
-                            <span className="ml-1.5 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">recorrente</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2 text-gray-600">{nomeCentro(d.centro_custo, centros)}</td>
-                        <td className="px-4 py-2 text-gray-600">{d.banco_nome ?? '—'}</td>
-                        <td className="px-4 py-2 text-right font-medium tabular-nums text-red-500">{fmtBRL(d.valor)}</td>
-                        <td className="px-4 py-2 text-gray-400">{fmtData(d.data_vencimento)}</td>
-                        <td className="px-4 py-2 text-gray-400">{fmtData(d.paga_em)}</td>
-                        <td className="px-4 py-2"><StatusBadge status={d.status} /></td>
-                        <td className="px-3 py-2 text-right">
-                          {confirmandoId === d.id ? (
-                            <span className="inline-flex items-center gap-2">
-                              <button onClick={() => deletarDespesa(d.id)} disabled={deletando}
-                                className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50">
-                                {deletando ? 'Excluindo…' : 'Confirmar'}
-                              </button>
-                              <span className="text-gray-300">|</span>
-                              <button onClick={() => setConfirmandoId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
-                            </span>
-                          ) : d.agregado ? (
-                            <CadeadoConfidencial n={d.quantidade} />
-                          ) : (
-                            <span className="inline-flex items-center gap-2">
-                              <button onClick={() => setEditandoDespesa(d)} className="text-gray-300 hover:text-blue-500 transition-colors" title="Editar"><IconLapis /></button>
-                              {podeExcluirLancamento(d, role, userId) && (
-                            <button onClick={() => abrirDialogExclusao(d)} className="text-gray-300 hover:text-red-400 transition-colors" title="Excluir"><IconLixo /></button>
-                          )}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {despesasVisiveis.length === 0 && (
-                      <tr><td colSpan={10}><EmptyState titulo="Nenhuma despesa no período" descricao={vazioDescricao} /></td></tr>
-                    )}
-                  </tbody>
-                  {somaDespesasExibidas > 0 && (
-                    <tfoot>
-                      <tr className="border-t-2 border-gray-100">
-                        <td colSpan={5} className="px-4 py-2 font-semibold text-gray-700">Total exibido ({despesasPagina.length})</td>
-                        <td className="px-4 py-2 text-right font-bold tabular-nums text-red-500">{fmtBRL(somaDespesasExibidas)}</td>
-                        <td colSpan={4} />
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
+              <div className="md:hidden">
+                <CartoesDespesas itens={despesasPagina} centros={centros} catSub={catSub} anexos={anexosDesp}
+                  sel={sel} onSel={alternarSel} onSelTodos={ids => setSel(new Set(ids))} onAbrir={setEditandoDespesa}
+                  onMarcar={d => setMarcando({ ids: [d.id] })} ord={ordenacao}
+                  vazio={{ titulo: 'Nenhuma despesa no período', descricao: vazioDescricao }} />
               </div>
             </>
           ) : aba === 'receitas' ? (
             <>
-              {/* Mobile: card list */}
-              <div className="divide-y divide-gray-50 sm:hidden">
-                {receitasVisiveis.length === 0 ? (
-                  <EmptyState titulo="Nenhuma receita no período" descricao={vazioDescricao} />
-                ) : receitasPagina.map((r) => (
-                  <div key={r.id} className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-gray-800">{r.descricao}<MarcaAnexos n={anexosRec[r.id]} /></p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          <Badge text={r.tipo_nome ?? '—'} cor="bg-green-100 text-green-700" />
-                          {r.somente_dre && <Badge text="Só DRE" cor="bg-indigo-100 text-indigo-700" />}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-xs font-bold tabular-nums text-green-600">{fmtBRL(r.valor)}</p>
-                        <p className="mt-0.5 text-[10px] text-gray-400">{fmtCompetencia(r.competencia)}</p>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <p className="text-xs text-gray-400 capitalize">
-                        {r.centro_custo ? nomeCentro(r.centro_custo, centros) : ''}
-                        {r.banco_nome ? ` · ${r.banco_nome}` : ''}
-                        {r.recebido_em ? ` · Pagamento ${fmtData(r.recebido_em)}` : ''}
-                      </p>
-                      {confirmandoId === r.id ? (
-                        <span className="inline-flex items-center gap-2">
-                          <button onClick={() => deletarReceita(r.id)} disabled={deletando}
-                            className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50">
-                            {deletando ? 'Excluindo…' : 'Confirmar'}
-                          </button>
-                          <span className="text-gray-300">|</span>
-                          <button onClick={() => setConfirmandoId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-2">
-                          {r.origem === 'manual' && (
-                            <button onClick={() => setEditandoReceita(r)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar receita ${r.descricao}`}><IconLapis /></button>
-                          )}
-                          <button onClick={() => abrirDialogExclusaoReceita(r)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir receita ${r.descricao}`}><IconLixo /></button>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+              <div className="hidden overflow-x-auto md:block">
+                <TabelaReceitas itens={receitasPagina} centros={centros} catSub={catSub} anexos={anexosRec}
+                  sel={sel} onSel={alternarSel} onSelTodos={ids => setSel(new Set(ids))} onAbrir={setEditandoReceita}
+                  ord={ordenacao} campoReceb="pagamento" campoValor="valor"
+                  vazio={{ titulo: 'Nenhuma receita no período', descricao: vazioDescricao }} />
               </div>
-              {/* Desktop: table */}
-              <div className="hidden overflow-x-auto sm:block">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-left text-[11px] font-medium text-gray-500">
-                      <ThOrdenavel campo="competencia">Competência</ThOrdenavel>
-                      <th className="px-4 py-2">Tipo</th>
-                      <th className="px-4 py-2">Descrição</th>
-                      <th className="px-4 py-2">Centro</th>
-                      <th className="px-4 py-2">Banco</th>
-                      <ThOrdenavel campo="valor" alinhar="right">Valor</ThOrdenavel>
-                      <ThOrdenavel campo="pagamento">Data de Pagamento</ThOrdenavel>
-                      <th className="px-3 py-2" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {receitasPagina.map((r) => (
-                      <tr key={r.id} className="border-t border-gray-50 hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-600">{fmtCompetencia(r.competencia)}</td>
-                        <td className="px-4 py-2">
-                          <span className="inline-flex flex-wrap gap-1">
-                            <Badge text={r.tipo_nome ?? '—'} cor="bg-green-100 text-green-700" />
-                            {r.somente_dre && <Badge text="Só DRE" cor="bg-indigo-100 text-indigo-700" />}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-gray-700">{r.descricao}<MarcaAnexos n={anexosRec[r.id]} /></td>
-                        <td className="px-4 py-2 text-gray-600">{nomeCentro(r.centro_custo, centros)}</td>
-                        <td className="px-4 py-2 text-gray-600">{r.banco_nome ?? '—'}</td>
-                        <td className="px-4 py-2 text-right font-medium tabular-nums text-green-600">{fmtBRL(r.valor)}</td>
-                        <td className="px-4 py-2 text-gray-400">{fmtData(r.recebido_em)}</td>
-                        <td className="px-3 py-2 text-right">
-                          {confirmandoId === r.id ? (
-                            <span className="inline-flex items-center gap-2">
-                              <button onClick={() => deletarReceita(r.id)} disabled={deletando}
-                                className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50">
-                                {deletando ? 'Excluindo…' : 'Confirmar'}
-                              </button>
-                              <span className="text-gray-300">|</span>
-                              <button onClick={() => setConfirmandoId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-2">
-                              {r.origem === 'manual' && (
-                                <button onClick={() => setEditandoReceita(r)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar receita ${r.descricao}`}><IconLapis /></button>
-                              )}
-                              <button onClick={() => abrirDialogExclusaoReceita(r)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir receita ${r.descricao}`}><IconLixo /></button>
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {receitasVisiveis.length === 0 && (
-                      <tr><td colSpan={8}><EmptyState titulo="Nenhuma receita no período" descricao={vazioDescricao} /></td></tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="md:hidden">
+                <CartoesReceitas itens={receitasPagina} centros={centros} catSub={catSub} anexos={anexosRec}
+                  sel={sel} onSel={alternarSel} onSelTodos={ids => setSel(new Set(ids))} onAbrir={setEditandoReceita}
+                  onMarcar={r => setMarcando({ ids: [r.id] })} ord={ordenacao}
+                  vazio={{ titulo: 'Nenhuma receita no período', descricao: vazioDescricao }} />
               </div>
             </>
           ) : (
             <>
-              {/* Mobile: card list */}
-              <div className="divide-y divide-gray-50 sm:hidden">
-                {ordensVisiveis.length === 0 ? (
-                  <EmptyState titulo="Nenhuma ordem de compra no período" descricao={vazioDescricao} />
-                ) : ordensVisiveis.map((o) => (
-                  <div key={o.id} className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-gray-800">{o.assunto}</p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          <StatusBadge status={o.status} />
-                          <SeloRecibo status={o.recibo_status} />
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-xs font-bold tabular-nums text-navy">{o.valor != null ? fmtBRL(o.valor) : '—'}</p>
-                        <p className="mt-0.5 text-[10px] text-gray-400">{fmtData(o.data_solicitacao)}</p>
-                      </div>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-gray-500">{o.descricao}</p>
-                    <div className="mt-2 flex items-center justify-between">
-                      <p className="text-xs text-gray-400">Solicitante: {o.solicitante}</p>
-                      {confirmandoId === o.id ? (
-                        <span className="inline-flex items-center gap-2">
-                          <button onClick={() => deletarOrdem(o.id)} disabled={deletando}
-                            className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50">
-                            {deletando ? 'Excluindo…' : 'Confirmar'}
-                          </button>
-                          <span className="text-gray-300">|</span>
-                          <button onClick={() => setConfirmandoId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-2">
-                          <button onClick={() => setEditandoOrdem(o)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar ordem de compra ${o.assunto}`}><IconLapis /></button>
-                          {podeExcluirLancamento(o, role, userId) && (
-                            <button onClick={() => setConfirmandoId(o.id)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir ordem de compra ${o.assunto}`}><IconLixo /></button>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {somaOrdensVisiveis > 0 && (
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <span className="text-sm font-semibold text-gray-700">Total</span>
-                    <span className="text-sm font-bold tabular-nums text-navy">{fmtBRL(somaOrdensVisiveis)}</span>
-                  </div>
-                )}
+              <div className="hidden overflow-x-auto md:block">
+                <TabelaOrdens itens={ordensVisiveis} centros={centros} onAbrir={setEditandoOrdem}
+                  ord={ordenacao} campoData="competencia" campoValor="valor"
+                  vazio={{ titulo: 'Nenhuma ordem de compra no período', descricao: vazioDescricao }} />
               </div>
-              {/* Desktop: table */}
-              <div className="hidden overflow-x-auto sm:block">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-left text-[11px] font-medium text-gray-500">
-                      <ThOrdenavel campo="competencia">Data Solicitação</ThOrdenavel>
-                      <th className="px-4 py-2">Assunto</th>
-                      <th className="px-4 py-2">Solicitante</th>
-                      <th className="px-4 py-2">Descrição</th>
-                      <ThOrdenavel campo="valor" alinhar="right">Valor</ThOrdenavel>
-                      <th className="px-4 py-2">Status</th>
-                      <th className="px-3 py-2" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ordensVisiveis.map((o) => (
-                      <tr key={o.id} className="border-t border-gray-50 hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-600">{fmtData(o.data_solicitacao)}</td>
-                        <td className="px-4 py-2 text-gray-700">{o.assunto}</td>
-                        <td className="px-4 py-2 text-gray-600">{o.solicitante}</td>
-                        <td className="px-4 py-2 text-gray-700">{o.descricao}</td>
-                        <td className="px-4 py-2 text-right font-medium tabular-nums text-navy">{o.valor != null ? fmtBRL(o.valor) : '—'}</td>
-                        <td className="px-4 py-2">
-                          <span className="flex flex-wrap items-center gap-1"><StatusBadge status={o.status} /><SeloRecibo status={o.recibo_status} /></span>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {confirmandoId === o.id ? (
-                            <span className="inline-flex items-center gap-2">
-                              <button onClick={() => deletarOrdem(o.id)} disabled={deletando}
-                                className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50">
-                                {deletando ? 'Excluindo…' : 'Confirmar'}
-                              </button>
-                              <span className="text-gray-300">|</span>
-                              <button onClick={() => setConfirmandoId(null)} className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-2">
-                              <button onClick={() => setEditandoOrdem(o)} className="focus-ring rounded text-gray-300 transition-colors hover:text-blue-500" aria-label={`Editar ordem de compra ${o.assunto}`}><IconLapis /></button>
-                              {podeExcluirLancamento(o, role, userId) && (
-                                <button onClick={() => setConfirmandoId(o.id)} className="focus-ring rounded text-gray-300 transition-colors hover:text-red-400" aria-label={`Excluir ordem de compra ${o.assunto}`}><IconLixo /></button>
-                              )}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {ordensVisiveis.length === 0 && (
-                      <tr><td colSpan={7}><EmptyState titulo="Nenhuma ordem de compra no período" descricao={vazioDescricao} /></td></tr>
-                    )}
-                  </tbody>
-                  {somaOrdensVisiveis > 0 && (
-                    <tfoot>
-                      <tr className="border-t-2 border-gray-100">
-                        <td colSpan={4} className="px-4 py-2 font-semibold text-gray-700">Total</td>
-                        <td className="px-4 py-2 text-right font-bold tabular-nums text-navy">{fmtBRL(somaOrdensVisiveis)}</td>
-                        <td colSpan={2} />
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
+              <div className="md:hidden">
+                <CartoesOrdens itens={ordensVisiveis} centros={centros} onAbrir={setEditandoOrdem}
+                  vazio={{ titulo: 'Nenhuma ordem de compra no período', descricao: vazioDescricao }} />
               </div>
             </>
           )}
 
-          {/* Paginação: renderiza em blocos para não travar com listas longas */}
-          {temMais && (
-            <div className="border-t border-gray-100 px-4 py-3 text-center">
-              <button
-                disabled={carregandoMais}
-                onClick={exibirMais}
-                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50">
-                {carregandoMais ? 'Carregando…' : `Exibir Mais (${restantes} restantes)`}
-              </button>
+          {/* Rodapé: quanto aparece, total filtrado e "Exibir mais" (blocos de 20) */}
+          {!carregandoAba && totalAba > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 text-sm text-slate-600">
+              <span>
+                Mostrando {exibidosAba} de {totalAba}{filtrosAtivos || buscaDebounced ? ' com o filtro' : ''} · Total
+                {' '}<b className={`tabular-nums ${aba === 'receitas' ? 'text-green-700' : 'text-slate-900'}`}>{fmtBRL(somaAba)}</b>
+              </span>
+              {temMais && (
+                <button type="button" disabled={carregandoMais} onClick={exibirMais}
+                  className="focus-ring h-11 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-gray-50 disabled:opacity-50">
+                  {carregandoMais ? 'Carregando…' : `Exibir mais (${restantes} restantes)`}
+                </button>
+              )}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </>
   )

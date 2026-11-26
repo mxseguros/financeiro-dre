@@ -62,7 +62,7 @@ function paraContrato(f: Form): Contrato {
 function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <fieldset className="space-y-2">
-      <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{titulo}</legend>
+      <legend className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500">{titulo}</legend>
       {children}
     </fieldset>
   )
@@ -71,9 +71,9 @@ function Secao({ titulo, children }: { titulo: string; children: React.ReactNode
 function Campo({ rotulo, dica, children }: { rotulo: string; dica?: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-0.5 block text-xs font-medium text-gray-600">{rotulo}</span>
+      <span className="mb-0.5 block text-[13px] font-medium text-gray-600">{rotulo}</span>
       {children}
-      {dica && <span className="mt-0.5 block text-[11px] text-gray-400">{dica}</span>}
+      {dica && <span className="mt-0.5 block text-[13px] text-slate-500">{dica}</span>}
     </label>
   )
 }
@@ -84,7 +84,7 @@ function Linhas({ itens, sinal = '' }: { itens: Record<string, number>; sinal?: 
   return (
     <>
       {linhas.map(([k, v]) => (
-        <div key={k} className="flex justify-between text-xs text-gray-600">
+        <div key={k} className="flex justify-between text-[13px] text-gray-600">
           <span>{ROTULOS[k] ?? k}</span><span className="tabular-nums">{sinal}{fmtBRL(v)}</span>
         </div>
       ))}
@@ -98,39 +98,39 @@ function Previa({ c, carregando }: { c: CalculoFolha | null; carregando: boolean
   return (
     <div className={`space-y-3 transition-opacity ${carregando ? 'opacity-60' : ''}`}>
       {!c.parametros_conferidos && (
-        <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700">
+        <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[13px] text-amber-700">
           Tabelas de INSS/IRRF ainda não conferidas com o contador (Configurações → Folha).
         </p>
       )}
       <div className="space-y-1">
-        <p className="text-[11px] font-semibold uppercase text-gray-400">Funcionário recebe</p>
+        <p className="text-[13px] font-semibold uppercase text-slate-500">Funcionário recebe</p>
         <Linhas itens={c.proventos} />
         {c.salario_familia > 0 && <Linhas itens={{ 'Salário-família': c.salario_familia }} />}
-        <div className="flex justify-between border-t border-gray-100 pt-1 text-xs font-medium text-gray-700">
+        <div className="flex justify-between border-t border-gray-100 pt-1 text-[13px] font-medium text-gray-700">
           <span>Bruto</span><span className="tabular-nums">{fmtBRL(c.bruto)}</span>
         </div>
         <Linhas itens={c.descontos} sinal="− " />
         {ir.valor === 0 && ir.redutor > 0 && (
-          <p className="text-[11px] text-green-700">IRRF zerado pelo redutor de 2026 (renda até R$ 5 mil).</p>
+          <p className="text-[13px] text-green-700">IRRF zerado pelo redutor de 2026 (renda até R$ 5 mil).</p>
         )}
         <div className="flex justify-between rounded-lg bg-navy/5 px-2 py-1.5 text-sm font-semibold text-navy">
           <span>Líquido</span><span className="tabular-nums">{fmtBRL(c.liquido)}</span>
         </div>
       </div>
       <div className="space-y-1">
-        <p className="text-[11px] font-semibold uppercase text-gray-400">Empresa paga além do bruto</p>
+        <p className="text-[13px] font-semibold uppercase text-slate-500">Empresa paga além do bruto</p>
         <Linhas itens={c.encargos} />
         <Linhas itens={c.beneficios} />
         <div className="flex justify-between rounded-lg bg-green-50 px-2 py-1.5 text-sm font-semibold text-green-800">
           <span>Custo do mês</span><span className="tabular-nums">{fmtBRL(c.custo_mes)}</span>
         </div>
         <Linhas itens={c.provisoes} />
-        <div className="flex justify-between text-xs font-medium text-gray-700">
+        <div className="flex justify-between text-[13px] font-medium text-gray-700">
           <span title="Custo do mês + provisões de 13º e férias">Custo real (com provisões)</span>
           <span className="tabular-nums">{fmtBRL(c.custo_com_provisoes)}</span>
         </div>
       </div>
-      <p className="text-[11px] text-gray-400">Guias do mês: FGTS {fmtBRL(c.guias.fgts)} · INSS {fmtBRL(c.guias.inss)} · IRRF {fmtBRL(c.guias.irrf)}</p>
+      <p className="text-[13px] text-slate-500">Guias do mês: FGTS {fmtBRL(c.guias.fgts)} · INSS {fmtBRL(c.guias.inss)} · IRRF {fmtBRL(c.guias.irrf)}</p>
     </div>
   )
 }
@@ -236,7 +236,7 @@ export function ModalContrato({ token, funcionario, onClose, onSaved }: {
                 <Campo rotulo="Periculosidade (%)">{num('periculosidade_pct', { step: '0.1' })}</Campo>
               </div>
               {form.tipo_contrato !== 'clt' && (
-                <p className="text-[11px] text-amber-600">
+                <p className="text-[13px] text-amber-600">
                   O cálculo segue a regra CLT. Para {TIPOS_CONTRATO.find(t => t.id === form.tipo_contrato)?.nome}, confira com o contador.
                 </p>
               )}
@@ -259,7 +259,7 @@ export function ModalContrato({ token, funcionario, onClose, onSaved }: {
                 <Campo rotulo="Plano de saúde (desconto)" dica="Parte do funcionário">{moeda('plano_saude_desconto')}</Campo>
                 <Campo rotulo="Contribuição sindical">{moeda('sindical')}</Campo>
               </div>
-              <label className="inline-flex items-center gap-2 text-xs text-gray-600">
+              <label className="inline-flex items-center gap-2 text-[13px] text-gray-600">
                 <input type="checkbox" checked={form.vt_descontar} onChange={e => set('vt_descontar', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
                 Descontar até 6% do salário pelo vale-transporte
@@ -273,11 +273,11 @@ export function ModalContrato({ token, funcionario, onClose, onSaved }: {
                     <div className="w-36"><InputMoeda value={o.valor}
                       onChange={v => set('outros', form.outros.map((x, j) => (j === i ? { ...x, valor: v } : x)))} /></div>
                     <button type="button" onClick={() => set('outros', form.outros.filter((_, j) => j !== i))}
-                      aria-label="Remover benefício" className="px-1 text-gray-400 hover:text-red-500">✕</button>
+                      aria-label="Remover benefício" className="px-1 text-slate-500 hover:text-red-500">✕</button>
                   </div>
                 ))}
                 <button type="button" onClick={() => set('outros', [...form.outros, { nome: '', valor: '' }])}
-                  className="text-xs font-medium text-navy hover:underline">+ Outro benefício</button>
+                  className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] font-medium text-navy hover:underline">+ Outro benefício</button>
               </div>
             </Secao>
 
@@ -289,7 +289,7 @@ export function ModalContrato({ token, funcionario, onClose, onSaved }: {
                   </Campo>
                   <CamposBancarios form={banc} onChange={setBanc} />
                   {form.banco_pagamento && (
-                    <p className="text-[11px] text-gray-400">Anotação antiga: {form.banco_pagamento}</p>
+                    <p className="text-[13px] text-slate-500">Anotação antiga: {form.banco_pagamento}</p>
                   )}
                 </>
               ) : (
