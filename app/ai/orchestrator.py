@@ -14,6 +14,7 @@ ao cliente conforme chega da API.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 from datetime import date
@@ -25,9 +26,8 @@ from supabase import Client
 from app.ai.prompts.system import montar_system_prompt
 from app.ai.tools import executar_tool, tools_para_perfil
 from app.auth import UsuarioAtual
-from app.config import cfg
 from app.logging_config import get_logger
-from app.services import chat_service
+from app.services import chat_service, ia_chave_service
 
 logger = get_logger(__name__)
 
@@ -55,7 +55,14 @@ async def processar_pergunta(
     import time
     t_inicio = time.monotonic()
 
-    cliente = anthropic.Anthropic(api_key=cfg.anthropic_api_key or _get_api_key())
+    # Chave cadastrada pelo Admin em Configurações (cifrada) ou ANTHROPIC_API_KEY.
+    try:
+        chave = await asyncio.to_thread(ia_chave_service.obter_chave, usuario.tenant_id)
+    except ia_chave_service.ChaveIndisponivel as e:
+        yield _sse({"tipo": "erro", "mensagem": str(e)})
+        yield _sse({"tipo": "fim"})
+        return
+    cliente = anthropic.Anthropic(api_key=chave)
 
     system_prompt = montar_system_prompt(
         user_id=usuario.user_id,
@@ -189,7 +196,7 @@ async def processar_pergunta(
 
     except anthropic.AuthenticationError:
         logger.error("anthropic_auth_error", usuario_id=usuario.user_id)
-        yield _sse({"tipo": "erro", "mensagem": "Chave da API de IA não configurada."})
+        yield _sse({"tipo": "erro", "mensagem": "A Anthropic recusou a chave da IA. O Admin deve conferir em Configurações → Assistente de IA."})
     except Exception as e:
         logger.error("orchestrator_erro", usuario_id=usuario.user_id, exc=str(e), exc_info=True)
         yield _sse({"tipo": "erro", "mensagem": "Erro interno ao processar sua pergunta."})
@@ -228,14 +235,6 @@ def _sse(dados: dict) -> str:
     """Formata um evento SSE."""
     return f"data: {json.dumps(dados, ensure_ascii=False)}\n\n"
 
-
-def _get_api_key() -> str:
-    """Lê ANTHROPIC_API_KEY do ambiente."""
-    import os
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not key:
-        raise ValueError("ANTHROPIC_API_KEY não definida no .env")
-    return key
 
 
 async def _registrar_log(

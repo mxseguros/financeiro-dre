@@ -10,6 +10,7 @@ Princípio: a IA SUGERE, o humano CONFIRMA. Este serviço não grava nada.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, timedelta
 
@@ -17,7 +18,7 @@ import anthropic
 from supabase import Client
 
 from app.auth import UsuarioAtual
-from app.config import cfg
+from app.services import ia_chave_service
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +86,11 @@ async def sugerir_classificacao(
     )
 
     # 2) Claude com forced tool-use (saída estruturada, portável entre versões do SDK)
-    if not cfg.anthropic_api_key:
-        return {"disponivel": False, "motivo": "IA não configurada (defina ANTHROPIC_API_KEY)."}
-    cliente = anthropic.Anthropic(api_key=cfg.anthropic_api_key)
+    try:
+        chave = await asyncio.to_thread(ia_chave_service.obter_chave, usuario.tenant_id)
+    except ia_chave_service.ChaveIndisponivel as e:
+        return {"disponivel": False, "motivo": str(e)}
+    cliente = anthropic.Anthropic(api_key=chave)
     prompt = (
         f'Despesa a classificar: "{descricao}"\n\n'
         "Escolha o subitem mais adequado APENAS da lista abaixo (retorne o id exato). "
