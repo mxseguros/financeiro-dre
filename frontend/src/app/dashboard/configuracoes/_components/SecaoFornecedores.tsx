@@ -43,18 +43,18 @@ function ModalFornecedor({ token, item, onClose, onSaved }: {
       <form onSubmit={salvar} className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-[1fr_220px]">
           <label className="block">
-            <span className="mb-0.5 block text-xs font-medium text-gray-600">Nome / razão social</span>
+            <span className="mb-0.5 block text-[13px] font-medium text-gray-600">Nome / razão social</span>
             <input required minLength={2} value={nome} onChange={e => setNome(e.target.value)} className={inputCls} />
           </label>
           <label className="block">
-            <span className="mb-0.5 block text-xs font-medium text-gray-600">CPF ou CNPJ</span>
+            <span className="mb-0.5 block text-[13px] font-medium text-gray-600">CPF ou CNPJ</span>
             <input value={doc} onChange={e => setDoc(e.target.value)} placeholder="Aceita CNPJ com letras"
               className={inputCls} autoComplete="off" />
           </label>
         </div>
         <CamposBancarios form={banc} onChange={setBanc} />
         {item && (
-          <label className="inline-flex items-center gap-2 text-xs text-gray-600">
+          <label className="inline-flex items-center gap-2 text-[13px] text-gray-600">
             <input type="checkbox" checked={ativo} onChange={e => setAtivo(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
             Ativo (aparece na busca do lançamento)
@@ -123,10 +123,10 @@ export function SecaoFornecedores({ token, podeGerenciar }: { token: string; pod
       {aviso && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{aviso}</p>}
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        {loading ? <div className="py-10 text-center text-sm text-gray-400">Carregando…</div> : (
+        {loading ? <div className="py-10 text-center text-sm text-slate-500">Carregando…</div> : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500">
+              <tr className="border-b border-gray-100 text-left text-[13px] font-medium text-gray-500">
                 <th className="px-4 py-3">Favorecido</th>
                 <th className="px-4 py-3">CPF/CNPJ</th>
                 <th className="px-4 py-3">Pix</th>
@@ -150,10 +150,10 @@ export function SecaoFornecedores({ token, podeGerenciar }: { token: string; pod
                   {podeGerenciar && (
                     <td className="px-4 py-2.5 text-right">
                       {f.funcionario_id ? (
-                        <span className="text-[11px] text-gray-400">Editar no contrato</span>
+                        <span className="text-[13px] text-slate-500">Editar no contrato</span>
                       ) : (
                         <span className="inline-flex gap-3">
-                          <button onClick={() => setEditando(f)} className="text-xs text-blue-500 hover:underline">Editar</button>
+                          <button onClick={() => setEditando(f)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-sel hover:underline">Editar</button>
                           <BtnExcluir onClick={() => setExcluir(f)} />
                         </span>
                       )}
@@ -162,7 +162,7 @@ export function SecaoFornecedores({ token, podeGerenciar }: { token: string; pod
                 </tr>
               ))}
               {filtrados.length === 0 && (
-                <tr><td colSpan={6} className="py-8 text-center text-sm text-gray-400">
+                <tr><td colSpan={6} className="py-8 text-center text-sm text-slate-500">
                   {busca ? 'Nenhum favorecido encontrado' : 'Nenhum favorecido cadastrado'}
                 </td></tr>
               )}

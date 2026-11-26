@@ -42,10 +42,10 @@ function Tabela({ titulo, faixas, comDeducao, onChange }: {
     onChange(faixas.map((f, j) => (j === i ? { ...f, [k]: v } : f)))
   return (
     <div>
-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{titulo}</p>
+      <p className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500">{titulo}</p>
       <table className="text-sm">
         <thead>
-          <tr className="text-left text-xs text-gray-500">
+          <tr className="text-left text-[13px] text-gray-500">
             <th className="pr-2 font-medium">Até (R$)</th><th className="pr-2 font-medium">Alíquota %</th>
             {comDeducao && <th className="pr-2 font-medium">Dedução (R$)</th>}<th />
           </tr>
@@ -63,8 +63,8 @@ function Tabela({ titulo, faixas, comDeducao, onChange }: {
         </tbody>
       </table>
       <button type="button" onClick={() => onChange([...faixas, { ate: null, aliquota: 0, ...(comDeducao ? { deducao: 0 } : {}) }])}
-        className="mt-1 text-xs font-medium text-navy hover:underline">+ Faixa</button>
-      {comDeducao && <p className="text-[11px] text-gray-400">Última faixa sem &quot;Até&quot; = acima da anterior.</p>}
+        className="mt-1 text-[13px] font-medium text-navy hover:underline">+ Faixa</button>
+      {comDeducao && <p className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] text-slate-500">Última faixa sem &quot;Até&quot; = acima da anterior.</p>}
     </div>
   )
 }
@@ -133,7 +133,7 @@ export function SecaoFolha({ token }: { token: string }) {
         {!p ? <div className="py-8 text-center"><Spinner className="text-navy" /></div> : (
           <>
             {(!p.conferido || p.ano_vigente !== ano) && (
-              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-700">
                 {p.ano_vigente === null
                   ? `Valores de partida (${p.observacao ?? 'a conferir'}).`
                   : p.ano_vigente !== ano ? `Sem tabela de ${ano}: valendo a de ${p.ano_vigente}. Salvar cria a de ${ano}.`
@@ -144,42 +144,42 @@ export function SecaoFolha({ token }: { token: string }) {
               <div className="space-y-4">
                 <Tabela titulo="INSS do empregado (progressivo)" faixas={p.inss_faixas} onChange={f => set('inss_faixas', f)} />
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="text-xs text-gray-600">FGTS %<Num valor={p.fgts_pct} onChange={v => set('fgts_pct', v ?? 0)} /></label>
-                  <label className="text-xs text-gray-600" title="Simples Nacional Anexo III: 0 (já está no DAS)">
-                    INSS patronal % <span className="text-gray-400">(0 no Simples)</span>
+                  <label className="text-[13px] text-gray-600">FGTS %<Num valor={p.fgts_pct} onChange={v => set('fgts_pct', v ?? 0)} /></label>
+                  <label className="text-[13px] text-gray-600" title="Simples Nacional Anexo III: 0 (já está no DAS)">
+                    INSS patronal % <span className="text-slate-500">(0 no Simples)</span>
                     <Num valor={p.inss_patronal_pct} onChange={v => set('inss_patronal_pct', v ?? 0)} />
                   </label>
-                  <label className="text-xs text-gray-600">Desconto VT %<Num valor={p.vt_desconto_pct} onChange={v => set('vt_desconto_pct', v ?? 0)} /></label>
-                  <label className="text-xs text-gray-600">Salário-família: cota<Num valor={p.salario_familia_cota} onChange={v => set('salario_familia_cota', v ?? 0)} /></label>
-                  <label className="text-xs text-gray-600">Salário-família: renda até<Num valor={p.salario_familia_limite} onChange={v => set('salario_familia_limite', v ?? 0)} /></label>
+                  <label className="text-[13px] text-gray-600">Desconto VT %<Num valor={p.vt_desconto_pct} onChange={v => set('vt_desconto_pct', v ?? 0)} /></label>
+                  <label className="text-[13px] text-gray-600">Salário-família: cota<Num valor={p.salario_familia_cota} onChange={v => set('salario_familia_cota', v ?? 0)} /></label>
+                  <label className="text-[13px] text-gray-600">Salário-família: renda até<Num valor={p.salario_familia_limite} onChange={v => set('salario_familia_limite', v ?? 0)} /></label>
                 </div>
               </div>
               <div className="space-y-4">
                 <Tabela titulo="IRRF (mensal)" faixas={p.irrf_faixas} comDeducao onChange={f => set('irrf_faixas', f)} />
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="text-xs text-gray-600">Dedução por dependente<Num valor={p.irrf_deducao_dependente} onChange={v => set('irrf_deducao_dependente', v ?? 0)} /></label>
-                  <label className="text-xs text-gray-600">Desconto simplificado<Num valor={p.irrf_desconto_simplificado} onChange={v => set('irrf_desconto_simplificado', v ?? 0)} /></label>
+                  <label className="text-[13px] text-gray-600">Dedução por dependente<Num valor={p.irrf_deducao_dependente} onChange={v => set('irrf_deducao_dependente', v ?? 0)} /></label>
+                  <label className="text-[13px] text-gray-600">Desconto simplificado<Num valor={p.irrf_desconto_simplificado} onChange={v => set('irrf_desconto_simplificado', v ?? 0)} /></label>
                 </div>
                 <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Redutor de 2026</p>
+                  <p className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500">Redutor de 2026</p>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {([['isencao_ate', 'Zera até (R$)'], ['reducao_max', 'Redução máx. (R$)'], ['parcial_ate', 'Reduz até (R$)'],
                        ['a', 'Fórmula: a'], ['b', 'Fórmula: b']] as const).map(([k, r]) => (
-                      <label key={k} className="text-xs text-gray-600">{r}
+                      <label key={k} className="text-[13px] text-gray-600">{r}
                         <Num valor={p.irrf_redutor[k]} passo={k === 'b' ? '0.000001' : '0.01'}
                           onChange={v => set('irrf_redutor', { ...p.irrf_redutor, [k]: v ?? 0 })} />
                       </label>
                     ))}
                   </div>
-                  <p className="mt-1 text-[11px] text-gray-400">Entre &quot;zera até&quot; e &quot;reduz até&quot;: redução = a − b × rendimento.</p>
+                  <p className="mt-1 text-[13px] text-slate-500">Entre &quot;zera até&quot; e &quot;reduz até&quot;: redução = a − b × rendimento.</p>
                 </div>
               </div>
             </div>
             <div className="mt-4">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Vencimentos</p>
+              <p className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500">Vencimentos</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {Object.entries(VENC).map(([k, r]) => (
-                  <label key={k} className="text-xs text-gray-600">{r}
+                  <label key={k} className="text-[13px] text-gray-600">{r}
                     <Num valor={p.vencimentos?.[k]} passo="1" largura="w-20"
                       onChange={v => set('vencimentos', { ...p.vencimentos, [k]: v ?? 1 })} />
                   </label>
@@ -195,7 +195,7 @@ export function SecaoFolha({ token }: { token: string }) {
 
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-navy">Em que subitem cada parte da folha é lançada</h3>
-        <p className="text-xs text-gray-400">Usado ao gerar a folha do mês. Salários e encargos devem ser subitens confidenciais.</p>
+        <p className="text-[13px] text-slate-500">Usado ao gerar a folha do mês. Salários e encargos devem ser subitens confidenciais.</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {rubricas.map(r => (
             <label key={r.rubrica} className="flex items-center justify-between gap-3 text-sm text-gray-700">
