@@ -1,6 +1,10 @@
-"""Itaú — SISPAG, Intercâmbio Eletrônico de Arquivos, Layout CNAB versão 085 (out/2020).
+"""Itaú — SISPAG, Intercâmbio Eletrônico de Arquivos, Layout CNAB versão 086 (fev/2024).
 
-Cada registro cita a página do manual. Posições 1-based, inclusivas.
+A v086 não muda posições nem versões em relação à v085 (arquivo 080, lote A
+040, J/O/N 030); traz as notas 42–46: agência da conta de pagamento no Pix
+(225–229 do A), DOC descontinuado, "seu número" e ambiente de teste do Pix.
+
+Cada registro cita a página do manual v085 (a numeração da v086 é próxima). Posições 1-based, inclusivas.
 Diferenças marcantes em relação ao FEBRABAN puro: tipo de movimento com 3
 dígitos, agência/conta em campo X(20) (nota 11), CPF/CNPJ do favorecido no
 próprio segmento A (204–217), código de barras do O com 48 posições e lotes
@@ -94,7 +98,7 @@ SEG_A = campos(
     ("zeros1", 115, 119, "num"),
     ("valor", 120, 134, "valor"),
     ("nosso_numero", 135, 149, "alfa"),
-    ("agencia_conta_pagamento", 150, 154, "alfa"),
+    ("brancos1", 150, 154, "alfa"),               # nota 42 (agência opcional): não usamos
     ("data_efetiva", 155, 162, "data"),
     ("valor_efetivo", 163, 177, "valor"),
     ("finalidade_detalhe", 178, 197, "alfa"),
@@ -102,7 +106,7 @@ SEG_A = campos(
     ("documento", 204, 217, "num"),
     ("finalidade_doc", 218, 219, "alfa"),
     ("finalidade_ted", 220, 224, "alfa"),
-    ("filler", 225, 229, "alfa"),
+    ("agencia_pagamento", 225, 229, "alfa"),       # nota 44: Pix p/ conta de pagamento
     ("aviso", 230, 230, "fixo", "0"),
     ("ocorrencias", 231, 240, "alfa"),
 )
@@ -200,7 +204,7 @@ SEG_O = campos(
     *_INICIO,
     ("segmento", 14, 14, "fixo", "O"),
     ("tipo_movimento", 15, 17, "num", "000"),
-    ("codigo_barras", 18, 65, "num"),              # 48 posições (anexo B: representação numérica)
+    ("codigo_barras", 18, 65, "alfa"),             # X(48) (anexo B: representação numérica)
     ("nome", 66, 95, "alfa"),
     ("vencimento", 96, 103, "data"),
     ("moeda", 104, 106, "fixo", "REA"),

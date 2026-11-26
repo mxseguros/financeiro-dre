@@ -192,6 +192,8 @@ export interface Remessa {
   id: string
   conta_id: string
   conta: string | null
+  /** Só no detalhe: '033' Santander, '341' Itaú. */
+  codigo_banco?: string | null
   data_pagamento: string
   status: StatusRemessa
   ambiente: 'homologacao' | 'producao'
@@ -224,6 +226,8 @@ export interface ResultadoRetorno {
   devolvidos: LinhaRetorno[]
   nao_encontrados: { seu_numero: string; ocorrencias: string[]; valor: string | null }[]
   ocorrencias_lote: Record<string, string>
+  /** Ocorrência no header do arquivo: o banco não processou o arquivo inteiro. */
+  ocorrencias_arquivo?: string | null
 }
 export interface RetornoImportado {
   id: string; codigo_banco: string; tipo: 'critica' | 'movimento'; nsa: number | null

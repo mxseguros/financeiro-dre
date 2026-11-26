@@ -22,7 +22,7 @@ from supabase import Client
 
 from app.auth import UsuarioAtual
 from app.cnab import ocorrencias
-from app.cnab.retorno import RetornoInvalido, ler
+from app.cnab.retorno import Retorno, RetornoInvalido, ler
 from app.permissions import permissao_pagamentos
 
 logger = structlog.get_logger()
@@ -180,7 +180,18 @@ def importar(nome: str, conteudo: bytes, usuario: UsuarioAtual, db: Client) -> d
     logger.info("retorno_importado", banco=banco, **contagem)
     return {"banco": banco, "tipo": tipo, "nsa": ret.nsa, "contagem": contagem, **resumo,
             "ocorrencias_lote": {str(k): ocorrencias.motivo(banco, v) for k, v in ret.ocorrencias_lote.items()
-                                 if any(c not in ("00", "BD") for c in v)}}
+                                 if any(c not in ("00", "BD") for c in v)},
+            "ocorrencias_arquivo": _erro_arquivo(banco, ret)}
+
+
+def _erro_arquivo(banco: str, ret: Retorno) -> str | None:
+    """Recusa do arquivo como um todo ("não processado"). Santander: ocorrência no
+    header de arquivo. Itaú: o header de arquivo não tem ocorrências — o erro de
+    header (HM, nota 8) volta no header de lote."""
+    codigos = [c for c in ret.ocorrencias_arquivo if c not in ("00", "BD")]
+    if not codigos and banco == "341":
+        codigos = ["HM"] if any("HM" in v for v in ret.ocorrencias_lote.values()) else []
+    return ocorrencias.motivo(banco, codigos) if codigos else None
 
 
 def listar(usuario: UsuarioAtual, db: Client) -> list[dict]:

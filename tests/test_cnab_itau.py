@@ -1,4 +1,5 @@
-"""Remessa Itaú SISPAG v085 — leiautes, posições e regras próprias."""
+"""Remessa Itaú SISPAG v086 — leiautes, posições e regras próprias."""
+import dataclasses
 from datetime import date, datetime
 from decimal import Decimal as D
 
@@ -8,7 +9,7 @@ from app.cnab import pix
 from app.cnab.builders import itau as I
 from app.cnab.builders.santander import BRT
 from app.cnab.engine import verificar_layout
-from app.cnab.layouts import itau_sispag_v085 as L
+from app.cnab.layouts import itau_sispag_v086 as L
 from app.cnab.modelo import Empresa, Favorecido, ItemPagamento
 
 EMP = Empresa(cnpj="11222333000181", razao_social="MX Seguros Ltda", agencia="0350", conta="12345", conta_dv="6",
@@ -137,3 +138,43 @@ def test_linha_arrecadacao_volta_ao_codigo():
     cod = "84610000000362700060002000102000000457986595"
     assert I.linha_arrecadacao(cod) == "846100000005362700060001200010200000004579865959"
     assert barcode.arrecadacao_linha_para_codigo(I.linha_arrecadacao(cod)) == cod
+
+
+# ── v086 (fev/2024) ───────────────────────────────────────────
+CONTA_PAG = Favorecido(nome="Joao Lima", cpf_cnpj="52998224725", banco_codigo="380", agencia="0001",
+                       conta="1234567890", conta_dv="", tipo_conta="pagamento")
+
+
+def test_pix_conta_pagamento_leva_agencia_em_225():
+    """Nota 44: Pix por dados bancários para conta de pagamento leva a agência em 225–229."""
+    item = ItemPagamento("p", "MX3410000040000016", "pix", D("50.00"), DIA, favorecido=CONTA_PAG)
+    assert I.validar(item) == []
+    a = _det(I.gerar(EMP, [item], nsa=4), "p")
+    assert a[112:114] == "PG" and a[23:43] == "00000000001234567890"
+    assert a[224:229] == "00001" and a[149:154] == " " * 5
+
+
+def test_pix_outras_contas_225_em_branco():
+    a = _det(I.gerar(EMP, [ItemPagamento("p", "MX", "pix", D("1.00"), DIA, favorecido=FORN)], nsa=5), "p")
+    assert a[224:229] == " " * 5
+
+
+def test_pix_conta_pagamento_sem_agencia_e_barrado():
+    sem_ag = dataclasses.replace(CONTA_PAG, agencia="")
+    erros = I.validar(ItemPagamento("p", "MX", "pix", D(1), DIA, favorecido=sem_ag))
+    assert any("nota 44" in e for e in erros)
+
+
+def test_pix_qr_de_salario_e_tipo_20():
+    """Instruções de Procedimentos: QR Code (inclusive FGTS Digital) é sempre tipo 20 / forma 47."""
+    item = ItemPagamento("q", "MX", "pix_qr", D("10.00"), DIA, pix_copia_cola=_qr(), salario=True)
+    assert I.classificar(item) == ("47", "20")
+    pix_chave = ItemPagamento("p", "MX", "pix", D("10.00"), DIA, favorecido=FORN, salario=True)
+    assert I.classificar(pix_chave) == ("45", "98")
+
+
+def test_ocorrencias_nota8_v086():
+    """A tabela da nota 8 (v086) é a mesma já cadastrada; HA é extra nosso."""
+    from app.cnab import ocorrencias
+    for c in ("00", "BD", "HM", "BI", "CD", "CI", "X3", "PD", "RS", "DV", "NF", "CP", "EM", "EX", "DG"):
+        assert c in ocorrencias.ITAU, c

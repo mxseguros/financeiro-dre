@@ -199,6 +199,8 @@ function ModalRemessa({ token, remessaId, podeGerar, onClose, onMudou }: {
   const [r, setR] = useState<Remessa | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [confirmar, setConfirmar] = useState(false)
+  const itau = r?.codigo_banco === '341'
+  const temPix = !!r?.arquivos.some(a => a.tipo === 'pix')
   const toast = useToast()
 
   const carregar = useCallback(() => {
@@ -220,7 +222,13 @@ function ModalRemessa({ token, remessaId, podeGerar, onClose, onMudou }: {
     <Modal open onClose={onClose} title="Remessa" variant="sheet" maxWidth="sm:max-w-3xl">
       <ConfirmDialog open={confirmar} titulo="Cancelar a remessa?"
         mensagem={<>As despesas voltam para <strong>a pagar</strong>. {r?.status === 'enviada' &&
-          'Se o arquivo já foi importado no banco, exclua o agendamento lá também.'}</>}
+          'Se o arquivo já foi importado no banco, exclua o agendamento lá também.'}
+          {itau && temPix && (
+            <span className="mt-2 block">
+              No Itaú, Pix agendado <strong>não é cancelado por arquivo</strong> e o cancelamento não gera retorno:
+              exclua no Itaú na Internet (Contas a pagar → alterar ou excluir).
+            </span>
+          )}</>}
         loading={ocupado} onCancelar={() => setConfirmar(false)} onConfirmar={() => acao('cancelar', 'Remessa cancelada.')} />
       {!r ? <div className="flex h-32 items-center justify-center"><Spinner className="text-navy" /></div> : (
         <div className="space-y-4">
@@ -231,10 +239,19 @@ function ModalRemessa({ token, remessaId, podeGerar, onClose, onMudou }: {
             {r.ambiente === 'homologacao' && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">Homologação</span>}
           </div>
           {r.status === 'gerada' && (
-            <ol className="list-decimal space-y-0.5 rounded-lg bg-blue-50 py-2 pl-8 pr-3 text-xs text-blue-800">
-              <li>Baixe o arquivo abaixo.</li>
-              <li>No Internet Banking do banco, importe o arquivo (Pagamento a Fornecedores → Envio de arquivos).</li>
-              <li>Autorize os pagamentos no banco e volte aqui para marcar como enviada.</li>
+            <ol className="list-decimal space-y-0.5 rounded-lg bg-blue-50 py-2 pl-8 pr-3 text-[13px] text-blue-800">
+              <li>{itau && r.arquivos.length > 1 ? 'Baixe os dois arquivos abaixo (o Itaú exige o Pix num arquivo separado).' : 'Baixe o arquivo abaixo.'}</li>
+              {itau ? (
+                <>
+                  <li>No Internet Banking do Itaú, envie {r.arquivos.length > 1 ? 'cada arquivo' : 'o arquivo'} (Mais… → Transmissão de Arquivo → Remessa → Enviar, produto PAGAMENTOS SISPAG).</li>
+                  <li>Os pagamentos ficam <strong>disponíveis para autorização</strong> no Internet Banking: autorize-os lá e volte aqui para marcar como enviada.</li>
+                </>
+              ) : (
+                <>
+                  <li>No Internet Banking do banco, importe o arquivo (Pagamento a Fornecedores → Envio de arquivos).</li>
+                  <li>Autorize os pagamentos no banco e volte aqui para marcar como enviada.</li>
+                </>
+              )}
             </ol>
           )}
           <div className="flex flex-wrap gap-2">

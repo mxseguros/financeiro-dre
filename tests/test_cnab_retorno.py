@@ -138,3 +138,22 @@ def test_permissoes_e_baixa_manual():
     with pytest.raises(HTTPException) as e:
         rt.baixa_manual(D1, ontem, GESTOR, db)
     assert e.value.status_code == 409
+
+
+def test_itau_hm_vira_arquivo_nao_processado():
+    """v086, nota 8: HM = erro no header de arquivo — o arquivo inteiro não foi processado."""
+    db = banco()
+    r, seus = _gerar(db, [D1], conta=ITAU)
+    txt = next(iter(db.arquivos.values())).decode()
+    linhas = [l[:230] + "HM".ljust(10) if l[7] == "1" else l for l in _retorno(txt, {}).decode().splitlines()]
+    res = rt.importar("hm.ret", ("\r\n".join(linhas) + "\r\n").encode(), ADMIN, db)
+    assert res["ocorrencias_arquivo"] and "HM" in res["ocorrencias_arquivo"]
+    assert res["contagem"]["rejeitados"] == 1
+
+
+def test_retorno_sem_erro_de_arquivo():
+    db = banco()
+    r, seus = _gerar(db, [D1], conta=ITAU)
+    txt = next(iter(db.arquivos.values())).decode()
+    res = rt.importar("ok.ret", _retorno(txt, {seus[D1]: "00"}), ADMIN, db)
+    assert res["ocorrencias_arquivo"] is None

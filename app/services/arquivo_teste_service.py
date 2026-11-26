@@ -6,7 +6,7 @@ TED, conta de consumo e DARF) para o banco criticar o leiaute. Não reserva NSA
 nem marca despesas. Travas para nunca virar pagamento de verdade:
 - Santander: só com o "sequencial de teste" contratado e NSA de 1 a 10
   (o banco trata esses arquivos como teste) e sempre bloqueado (instrução 09);
-- Itaú: o arquivo é para o Validador do Itaú 30 horas — a tela avisa para não
+- Itaú: o arquivo é para a Transmissão (Teste) do Internet Banking — a tela avisa para não
   enviar como remessa.
 """
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Códigos de ocorrência do retorno (posições 231–240, até 5 × 2).
 
-Santander: §5 do manual V11.7 (págs. 61–64). Itaú: nota 8 do SISPAG v085
-(págs. 47–49). `classificar` reduz as ocorrências de um registro a um resultado.
+Santander: §5 do manual V11.7 (págs. 61–64). Itaú: nota 8 do SISPAG v086
+(fev/2024; mesma tabela da v085). `classificar` reduz as ocorrências de um registro a um resultado.
 """
 from __future__ import annotations
 
@@ -222,7 +222,7 @@ ITAU = {
     'EX': 'DEVOLUÇÃO DE OP NÃO SACADA PELO FAVORECIDO',
     'FC': 'PAGAMENTO EFETUADO ATRAVÉS DE FINANCIAMENTO COMPROR',
     'FD': 'PAGAMENTO EFETUADO ATRAVÉS DE FINANCIAMENTO DESCOMPROR',
-    'HA': 'ERRO NO LOTE',
+    'HA': 'ERRO NO LOTE',  # não consta da nota 8 (v085/v086): mantido por segurança
     'HM': 'ERRO NO REGISTRO HEADER DE ARQUIVO',
     'IB': 'VALOR DO DOCUMENTO INVÁLIDO',
     'IC': 'VALOR DO ABATIMENTO INVÁLIDO',
