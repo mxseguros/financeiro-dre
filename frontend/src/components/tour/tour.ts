@@ -70,11 +70,11 @@ const TELAS: Record<string, Passo[]> = {
     { el: 'cfg-abas', titulo: 'Cadastros', texto: 'Fornecedores: favorecidos dos pagamentos, com CPF/CNPJ, chave Pix e conta. Contas pagadoras (só Admin): contas da empresa de onde saem os pagamentos por arquivo, com convênio, opções do banco e o arquivo de teste para homologação. Os dados bancários dos funcionários ficam no contrato, em Funcionários.' },
   ],
   '/dashboard/dre': [
-    PERIODO('Escolha o ano e o mês de referência.'),
-    { el: 'visao',         titulo: 'Visão',                     texto: 'Mês, Acumulado do ano ou últimos 12 meses.' },
+    { el: 'periodo',       titulo: 'Mês de referência',         texto: 'Use as setas ‹ › ou clique no mês para escolher. A DRE segue por competência.' },
+    { el: 'visao',         titulo: 'Visão',                     texto: 'Mês, Acumulado no ano ou últimos 12 meses.' },
     { el: 'metas',         titulo: 'Metas (Previsto)',          texto: 'Cadastre o previsto que é comparado com o realizado.' },
-    { el: 'kpis',          titulo: 'Indicadores',               texto: 'Os principais números do período escolhido.' },
-    { el: 'demonstrativo', titulo: 'Demonstração de Resultados', texto: 'A DRE linha a linha, previsto x realizado.', lado: 'top' },
+    { el: 'kpis',          titulo: 'Indicadores',               texto: 'Cada número mostra a meta e quanto ficou acima ou abaixo dela, por escrito.' },
+    { el: 'demonstrativo', titulo: 'Demonstração de resultados', texto: 'A DRE linha a linha: previsto, realizado, a diferença (melhor ou pior que a meta) e o peso na receita. Clique num grupo para abrir ou fechar; os que você fechar ficam fechados até sair do sistema.', lado: 'top' },
   ],
   '/dashboard/relatorios': [
     PERIODO('O relatório usa os lançamentos deste período.'),
