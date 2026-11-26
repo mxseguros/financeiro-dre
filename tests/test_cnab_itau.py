@@ -26,9 +26,11 @@ def _linhas(arq):
 
 
 def _det(arq, ref, seg="A"):
+    """Registro principal do item (posição gravada) ou o complemento logo depois."""
     lote, seq = arq.posicoes[ref]
-    return next(l for l in _linhas(arq) if l[3:7] == f"{lote:04d}" and l[7] == "3" and int(l[8:13]) == seq and l[13] == seg[0]
-                and (seg != "J52" or l[17:19] == "52") and (seg != "J" or l[17:19] != "52"))
+    linhas = _linhas(arq)
+    i = next(k for k, l in enumerate(linhas) if l[3:7] == f"{lote:04d}" and l[7] == "3" and int(l[8:13]) == seq)
+    return linhas[i + 1] if seg in ("B", "J52") else linhas[i]
 
 
 def test_leiautes_cobrem_240():
@@ -67,6 +69,7 @@ def test_arquivo_geral():
     assert ted[14:17] == "000" and ted[17:20] == "000" and ted[20:23] == "237"
     assert ted[23:43] == "01234 000000056789 0" and ted[101:104] == "REA"
     assert ted[203:217] == "11222333000181" and ted[219:224] == "00005" and ted[119:134] == "000000000030000"
+    assert ted[104:119] == "0" * 15                     # validador: complemento numérico fora do Pix
     sal = _det(arq, "s1")
     assert sal[23:43] == "00350 000000098765 4" and sal[203:217] == "00052998224725"
     j = _det(arq, "b1", "J")
@@ -74,19 +77,25 @@ def test_arquivo_geral():
     j52 = _det(arq, "b1", "J52")
     assert j52[75] == "2" and j52[76:91] == "011222333000181" and j52[20:35] == "011222333000181"
     o = _det(arq, "o1", "O")
-    assert o[17:65] == I.linha_arrecadacao("83600000001234500001111111111111111111111111")
+    assert o[17:65] == "83600000001234500001111111111111111111111111" + " " * 4   # 44 dígitos (validador)
+    assert o[159:174] == " " * 15
     assert o[121:136] == "000000000012345" and o[174:194].rstrip() == "MX3410000020000049"
     darf = _det(arq, "d1", "N")
     assert darf[17:19] == "02" and darf[19:23] == "0561" and darf[23] == "2" and darf[24:38] == "11222333000181"
     assert darf[63:77] == "00000000100000" and darf[77:91] == "00000000005000" and darf[105:119] == "00000000105000"
+    assert darf[46:63] == " " * 17                      # sem referência: brancos (só zeros é recusado)
+    to = next(l for l in linhas if l[7] == "5" and l[3:7] == f"{arq.posicoes['o1'][0]:04d}")
+    assert to[41:59] == "0" * 18 and to[59:65] == " " * 6
     gps = _det(arq, "g1", "N")
     assert gps[17:19] == "01" and gps[19:23] == "2100" and gps[23:29] == "112026"
     assert gps[43:57] == "00000000070000" and gps[57:71] == "00000000010000" and gps[195:215].rstrip() == "MX3410000020000061"
     tn = next(l for l in linhas if l[7] == "5" and l[3:7] == f"{arq.posicoes['g1'][0]:04d}")
     assert tn[23:37] == "00000000070000" and tn[37:51] == "00000000010000" and tn[65:79] == "00000000080000"
-    # complementos repetem o número do segmento principal (nota 9)
+    # Numeração corrida no lote, inclusive J-52 e B (validador do Itaú, 26/11/2026).
     lote_j = arq.posicoes["b1"][0]
-    assert [l[8:13] for l in linhas if l[3:7] == f"{lote_j:04d}" and l[7] == "3"] == ["00001", "00001"]
+    assert [l[8:13] for l in linhas if l[3:7] == f"{lote_j:04d}" and l[7] == "3"] == ["00001", "00002"]
+    lote_t = arq.posicoes["t1"][0]
+    assert [l[8:14] for l in linhas if l[3:7] == f"{lote_t:04d}" and l[7] == "3"] == ["00001A", "00002B"]
 
 
 def _qr(dinamico=True):
@@ -178,3 +187,23 @@ def test_ocorrencias_nota8_v086():
     from app.cnab import ocorrencias
     for c in ("00", "BD", "HM", "BI", "CD", "CI", "X3", "PD", "RS", "DV", "NF", "CP", "EM", "EX", "DG"):
         assert c in ocorrencias.ITAU, c
+
+
+# ── Validador do Itaú (26/11/2026) ────────────────────────────
+def test_pix_transferencia_vai_como_tipo_98():
+    """'Forma 45 não permitida para o tipo 20': Pix transferência sai em Diversos (98)."""
+    item = ItemPagamento("p", "MX", "pix", D("1.00"), DIA, favorecido=FORN)
+    assert I.classificar(item) == ("45", "98")
+    hl = _linhas(I.gerar(EMP, [item], nsa=7))[1]
+    assert hl[9:13] == "9845"
+
+
+def test_nomes_de_arquivo_com_ate_8_caracteres():
+    from app.services.remessa_service import nome_arquivo
+    for banco in ("341", "033"):
+        for tipo in ("geral", "pix"):
+            nome = nome_arquivo(banco, tipo, 123)
+            base, ext = nome.split(".")
+            assert len(base) <= 8 and ext == "REM", nome
+    assert nome_arquivo("341", "pix", 123) == "IP000123.REM"
+    assert nome_arquivo("033", "geral", 5) == "SG000005.REM"

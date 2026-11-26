@@ -68,10 +68,10 @@ def gerar(conta_id: str, nsa: int | None, parte: str, usuario: UsuarioAtual, db:
             raise HTTPException(422, "No Santander, arquivo de teste usa número (NSA) de 1 a 10.")
         empresa.opcoes = {**empresa.opcoes, "enviar_bloqueado": True}
         arq = santander.gerar(empresa, _itens("033", nsa, dia), nsa)
-        return f"TESTE_PAG033_NSA{nsa:02d}.REM", arq.texto
+        return f"TSTNSA{nsa:02d}.REM", arq.texto            # até 8 caracteres (Internet Banking)
     nsa = nsa or 1
     grupos = dict(itau.separar(_itens("341", nsa, dia)))
     if parte not in grupos:
         raise HTTPException(422, "Parte inválida: use geral ou pix.")
     arq = itau.gerar(empresa, grupos[parte], nsa)
-    return f"TESTE_PAG341_{parte.upper()}.REM", arq.texto
+    return ("TSTPIX.REM" if parte == "pix" else "TSTGERAL.REM"), arq.texto

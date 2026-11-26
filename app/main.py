@@ -106,6 +106,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
+    # O navegador só deixa o front ler o nome do arquivo baixado (CNAB de teste) se exposto.
+    expose_headers=["Content-Disposition"],
 )
 
 

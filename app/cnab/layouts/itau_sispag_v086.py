@@ -204,7 +204,10 @@ SEG_O = campos(
     *_INICIO,
     ("segmento", 14, 14, "fixo", "O"),
     ("tipo_movimento", 15, 17, "num", "000"),
-    ("codigo_barras", 18, 65, "alfa"),             # X(48) (anexo B: representação numérica)
+    # Validador Itaú (26/11/2026): os 44 dígitos do código de barras em 18–61
+    # (anexo B, "composição do código de barras"); a representação de 48 deu
+    # "dígito verificador não confere".
+    ("codigo_barras", 18, 65, "alfa"),
     ("nome", 66, 95, "alfa"),
     ("vencimento", 96, 103, "data"),
     ("moeda", 104, 106, "fixo", "REA"),
@@ -213,7 +216,7 @@ SEG_O = campos(
     ("data_pagamento", 137, 144, "data"),
     ("valor_pago", 145, 159, "valor"),
     ("filler1", 160, 162, "alfa"),
-    ("nota_fiscal", 163, 171, "num"),
+    ("nota_fiscal", 163, 171, "alfa"),             # validador: 160–174 em branco
     ("filler2", 172, 174, "alfa"),
     ("seu_numero", 175, 194, "alfa"),
     ("filler3", 195, 215, "alfa"),
@@ -257,7 +260,7 @@ SEG_N_DARF = campos(
     ("tipo_inscricao", 24, 24, "num"),
     ("inscricao", 25, 38, "texto"),                # CPF à esquerda + 3 brancos; CNPJ 14 dígitos
     ("periodo_apuracao", 39, 46, "data"),
-    ("referencia", 47, 63, "num"),
+    ("referencia", 47, 63, "alfa"),                # validador: só zeros é recusado → brancos se vazio
     ("valor_principal", 64, 77, "valor"),
     ("valor_multa", 78, 91, "valor"),
     ("valor_juros", 92, 105, "valor"),
@@ -301,8 +304,8 @@ TRAILER_LOTE_O = campos(
     ("filler1", 9, 17, "alfa"),
     ("qtd_registros", 18, 23, "num"),
     ("soma_valores", 24, 41, "valor"),
-    ("soma_moeda", 42, 56, "num"),
-    ("filler2", 57, 230, "alfa"),
+    ("soma_moeda", 42, 59, "num"),                 # validador: zeros até a 59 (como o trailer A/J)
+    ("filler2", 60, 230, "alfa"),
     ("ocorrencias", 231, 240, "alfa"),
 )
 

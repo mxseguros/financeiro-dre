@@ -45,7 +45,9 @@ def classificar(item: ItemPagamento) -> tuple[str, str]:
     if item.forma == "ted":
         return "41", servico
     if item.forma == "pix":
-        return "45", servico
+        # Validador Itaú (26/11/2026): "forma 45 não permitida para o tipo 20".
+        # A tabela da pág. 5 admite Pix em Fornecedores ou Diversos: vai como 98.
+        return "45", "98"
     if item.forma == "pix_qr":
         return "47", "20"                # QR Code (inclusive FGTS Digital) é sempre tipo 20
     if item.forma == "boleto":
@@ -190,8 +192,10 @@ def _detalhes(item: ItemPagamento, empresa: Empresa, forma: str) -> list[tuple]:
 
     if forma in ("01", "05", "41"):
         so_ispb = forma == "41" and f.ispb and not f.banco_codigo
+        # Validador: fora do Pix, 105–119 é complemento numérico (zeros).
         a = {**base, "camara": "888" if so_ispb else "000", "banco_favorecido": f.banco_codigo or "000",
-             "agencia_conta": agencia_conta(f), "nome_favorecido": f.nome, "ispb": f.ispb if so_ispb else "",
+             "agencia_conta": agencia_conta(f), "nome_favorecido": f.nome,
+             "ispb": f.ispb if so_ispb else "00000000", "tipo_transferencia": "00",
              "valor": item.valor, "documento": doc,
              "finalidade_ted": ("00004" if item.salario else "00005") if forma == "41" else ""}
         b = {"tipo_inscricao": tipo_inscricao(doc), "documento": doc}
@@ -237,7 +241,7 @@ def _detalhes(item: ItemPagamento, empresa: Empresa, forma: str) -> list[tuple]:
         return [(L.SEG_J, j, True), (L.SEG_J52, j52, False)]
 
     if forma in _O:
-        o = {**base, "codigo_barras": linha_arrecadacao(item.codigo_barras or ""), "nome": f.nome or item.descricao,
+        o = {**base, "codigo_barras": so_digitos(item.codigo_barras), "nome": f.nome or item.descricao,
              "vencimento": item.vencimento or item.data_pagamento, "valor": item.valor}
         return [(L.SEG_O, o, True)]
 
@@ -255,7 +259,8 @@ def _detalhes(item: ItemPagamento, empresa: Empresa, forma: str) -> list[tuple]:
         inscricao = contrib.ljust(14) if len(contrib) == 11 else contrib.zfill(14)
         n.update(codigo_receita=so_digitos(t.get("codigo_receita"))[-4:], tipo_inscricao="1" if len(contrib) == 11 else "2",
                  inscricao=inscricao, periodo_apuracao=t.get("periodo_apuracao"),
-                 referencia=t.get("numero_referencia") or "", valor_principal=_principal(item),
+                 referencia=so_digitos(t.get("numero_referencia")).zfill(17) if so_digitos(t.get("numero_referencia")) else "",
+                 valor_principal=_principal(item),
                  valor_multa=_dec(t.get("valor_multa")), valor_juros=_dec(t.get("valor_juros")),
                  valor_total=item.valor, vencimento=item.vencimento or item.data_pagamento)
         return [(L.SEG_N_DARF, n, True)]
@@ -291,14 +296,15 @@ def gerar(empresa: Empresa, itens: list[ItemPagamento], nsa: int, agora: datetim
             "cidade": end.get("cidade"), "cep": so_digitos(end.get("cep")), "uf": end.get("uf")}))
         qtd_reg, soma = 0, Decimal(0)
         principal = outras = acrescimos = Decimal(0)
-        for seq, item in enumerate(grupo, start=1):
-            posicoes[item.ref] = (numero, seq)
+        for item in grupo:
             for layout, valores, conta in _detalhes(item, empresa, forma):
                 qtd_reg += 1
                 if conta:
                     soma += item.valor
-                # Nota 9: complementos (B, J-52…) repetem o número do segmento principal.
-                linhas.append(registro(layout, {**valores, "lote": numero, "sequencial": seq}))
+                    posicoes[item.ref] = (numero, qtd_reg)
+                # A nota 9 diz que B/J-52 repetem o número do principal, mas o
+                # validador do Itaú (26/11/2026) recusa: numeração corrida no lote.
+                linhas.append(registro(layout, {**valores, "lote": numero, "sequencial": qtd_reg}))
             if forma in _N:
                 t = item.tributo or {}
                 if forma == "17":
