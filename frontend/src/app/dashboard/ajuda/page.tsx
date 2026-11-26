@@ -187,7 +187,7 @@ const FAQ: FaqItem[] = [
     id: 'x1',
     categoria: 'Exportações',
     pergunta: 'Quais formatos posso exportar?',
-    resposta: 'Excel (.xlsx) e PDF, pelo botão Exportar da barra do topo (Visão Geral, DRE, Lançamentos e Aprovações). Ambos exportam o DRE do período selecionado, com os dados visíveis para o seu perfil.',
+    resposta: 'Pelo botão Exportar da barra do topo, em qualquer tela: escolha o que exportar (DRE, Visão Geral ou Lançamentos, com os filtros da tela), o período e o formato. A DRE sai em Excel (.xlsx) ou PDF; Visão Geral e Lançamentos saem em planilha .csv (abre no Excel) ou PDF pela impressão do navegador. Também dá para baixar uma imagem ou enviar no WhatsApp. Quem não é Admin exporta sempre com os salários agrupados',
   },
 
   // ── Relatórios ────────────────────────────────────────────────
