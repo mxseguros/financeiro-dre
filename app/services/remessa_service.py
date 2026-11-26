@@ -111,6 +111,13 @@ def _empresa(conta: dict) -> Empresa:
                    opcoes={"enviar_bloqueado": True, **(conta.get("opcoes") or {})})
 
 
+def nome_arquivo(codigo_banco: str, tipo: str, nsa: int) -> str:
+    """Nome com até 8 caracteres + .REM: o Internet Banking dos dois bancos
+    recusa nomes maiores (26/11/2026). Banco (I/S) + tipo (G geral, P Pix) + NSA."""
+    banco = "I" if codigo_banco == "341" else "S"
+    return f"{banco}{'P' if tipo == 'pix' else 'G'}{nsa % 1_000_000:06d}.REM"
+
+
 def seu_numero(codigo_banco: str, nsa: int, seq: int) -> str:
     base = f"{codigo_banco}{nsa:06d}{seq:06d}"
     return f"MX{base}{mod10(base)}"
@@ -293,7 +300,10 @@ def validar(conta_id: str, data_pagamento: date, despesa_ids: list[str], usuario
         avisos.append(f"{data_pagamento:%d/%m/%Y} não é dia útil: o banco paga no próximo dia útil ({sugerida:%d/%m/%Y}). "
                       "Pix pode ser em dia não útil.")
     opcoes = conta.get("opcoes") or {}
-    if conta.get("ambiente") == "homologacao":
+    if conta.get("ambiente") == "homologacao" and conta.get("codigo_banco") == "341":
+        avisos.append("Conta em homologação: envie o arquivo pela Transmissão (Teste) do Itaú "
+                      "(Mais… → Transmissão de Arquivo → Transmissão (Teste)). Pela transmissão normal ele é REAL.")
+    elif conta.get("ambiente") == "homologacao":
         if opcoes.get("sequencial_teste") and conta.get("proximo_nsa", 1) <= 10:
             avisos.append(f"Conta em homologação: o arquivo nº {conta['proximo_nsa']} é tratado pelo banco como TESTE.")
         else:
@@ -380,8 +390,7 @@ def gerar(conta_id: str, data_pagamento: date, despesa_ids: list[str], usuario: 
                 it.seu_numero = seu_numero(conta["codigo_banco"], nsa, n)
             arq = builder.gerar(_empresa(conta), itens, nsa)
             conteudo = arq.texto.encode("ascii")
-            sufixo = "_PIX" if tipo == "pix" else ""
-            nome = f"PAG{conta['codigo_banco']}_{data_pagamento:%Y%m%d}_{nsa:06d}{sufixo}.REM"
+            nome = nome_arquivo(conta["codigo_banco"], tipo, nsa)
             path = f"{tenant or 'geral'}/remessas/{remessa['id']}/{nome}"
             db.storage.from_(BUCKET).upload(path, conteudo, {"content-type": "text/plain", "upsert": "false"})
             arquivo = db.table("remessa_arquivos").insert({

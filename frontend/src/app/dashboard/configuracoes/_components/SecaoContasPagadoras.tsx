@@ -188,7 +188,9 @@ async function baixarTeste(token: string, c: ContaPagadora, parte: 'geral' | 'pi
     const body = await res.json().catch(() => ({}))
     throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${res.status}`)
   }
-  const nome = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'teste.REM'
+  // Até 8 caracteres + .REM: o Internet Banking recusa nomes maiores.
+  const padrao = c.codigo_banco === '033' ? `TSTNSA${String(nsa ?? 1).padStart(2, '0')}.REM` : parte === 'pix' ? 'TSTPIX.REM' : 'TSTGERAL.REM'
+  const nome = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? padrao
   const url = URL.createObjectURL(await res.blob())
   const a = document.createElement('a')
   a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove()

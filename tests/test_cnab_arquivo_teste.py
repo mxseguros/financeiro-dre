@@ -16,7 +16,7 @@ def test_santander_so_com_sequencial_de_teste():
         at.gerar(CONTA, 1, "geral", GESTOR, banco())
     nome, texto = at.gerar(CONTA, 3, "geral", ADMIN, banco(opcoes={"sequencial_teste": True, "enviar_bloqueado": False}))
     linhas = texto.splitlines()
-    assert nome.startswith("TESTE") and all(len(l) == 240 for l in linhas) and linhas[0][157:163] == "000003"
+    assert nome == "TSTNSA03.REM" and all(len(l) == 240 for l in linhas) and linhas[0][157:163] == "000003"
     # sempre bloqueado (instrução 09), mesmo com a conta liberando
     assert all(l[15:17] == "09" for l in linhas if l[7] == "3" and l[13] in "AJON" and l[17:19] != "52")
 
