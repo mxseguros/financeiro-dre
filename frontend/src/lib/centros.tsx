@@ -88,3 +88,11 @@ export function proximoNumeroSub(grupo: CentroCusto | undefined, centros: Centro
   const n = centros.filter(c => c.parent_id === grupo.id && c.id !== excetoId).length
   return numeroSub(grupo.numero, n + 1)
 }
+
+/** Opções planas do filtro de centro (chip de Lançamentos): grupo inteiro e, abaixo, os subgrupos. */
+export function opcoesCentroFiltro(centros: CentroCusto[]): { valor: string; texto: string }[] {
+  return arvoreCentros(centros).flatMap(({ grupo, filhos }) => filhos.length
+    ? [{ valor: grupo.codigo, texto: `${rotuloCentro(grupo)} (todo o grupo)` },
+       ...filhos.map(c => ({ valor: c.codigo, texto: `  ${rotuloCentro(c)}` }))]
+    : [{ valor: grupo.codigo, texto: rotuloCentro(grupo) }])
+}

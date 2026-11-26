@@ -104,9 +104,11 @@ interface ModalDespesaProps {
   onClose: () => void
   onSaved: () => void
   classificacoes?: Classificacao[]
+  /** Editando: mostra Excluir no rodapé (o botão saiu da linha da tabela, redesenho UX). */
+  onExcluir?: () => void
 }
 
-export function ModalDespesa({ token, categorias, tipos, bancos, centros, despesa, mesDefault, onClose, onSaved, classificacoes }: ModalDespesaProps) {
+export function ModalDespesa({ token, categorias, tipos, bancos, centros, despesa, mesDefault, onClose, onSaved, classificacoes, onExcluir }: ModalDespesaProps) {
   const editando = !!despesa
   const tipoInicial = despesa ? tipos.find(t => t.id === despesa.tipo_lancamento_id) : undefined
   const [form, setForm] = useState({
@@ -568,7 +570,11 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
         {erro && <p role="alert" className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-600">{erro}</p>}
         {falhaAnexos && <p role="alert" className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-700">{falhaAnexos}</p>}
 
-        <div className="flex justify-end gap-3 pt-1">
+        <div className="flex items-center justify-end gap-3 pt-1">
+          {onExcluir && !falhaAnexos && (
+            <Button type="button" variant="ghost" tone="danger" onClick={onExcluir} disabled={salvando}
+              className="mr-auto">Excluir</Button>
+          )}
           {falhaAnexos ? (
             <Button type="button" onClick={onClose}>Fechar</Button>
           ) : (

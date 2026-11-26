@@ -506,6 +506,15 @@ class DespesasResponse(RespostaBase):
     items:              list[DespesaItem]
     soma_total:         Decimal
     total_pendentes:    int = 0
+    # Resumo da aba Despesas (redesenho UX, 26/11/2026), sobre o período inteiro
+    # e não só a página: paga = com Data de Pagamento; vencida = sem pagamento e
+    # vencimento antes de hoje; a pagar = o resto. Somam soma_total.
+    soma_paga:          Decimal = Decimal(0)
+    soma_a_pagar:       Decimal = Decimal(0)
+    soma_vencida:       Decimal = Decimal(0)
+    qtd_paga:           int = 0
+    qtd_a_pagar:        int = 0
+    qtd_vencida:        int = 0
 
 
 class DespesaUpdate(RespostaBase):
