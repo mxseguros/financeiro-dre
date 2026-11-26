@@ -44,20 +44,20 @@ const MENU: Passo[] = [
 const TELAS: Record<string, Passo[]> = {
   '/dashboard': [
     PERIODO('Escolha o mês que quer analisar.'),
-    { el: 'kpis',      titulo: 'Indicadores do mês', texto: 'Saldo do período do Itaú e do Santander: saldo inicial, empréstimo, saldo de aplicação, saldo do banco e o resultado. O saldo inicial soma o saldo do banco dos meses anteriores, desde outubro/2026. Empréstimo e aplicação também acumulam; o saldo do banco é só do período. Só contam lançamentos com data de pagamento ou recebimento. Clique em um valor para ver os lançamentos que o formam.' },
-    { el: 'por-banco', titulo: 'Por Banco',          texto: 'Receitas e despesas por conta bancária — pela data de pagamento ou de recebimento no período. Despesas: só Fixo e Variável; receitas só de Receitas de vendas.' },
-    { el: 'pagamentos-resumo', titulo: 'Pagamentos', texto: 'O que vence até hoje, o que está com cada banco aguardando retorno, o que espera autorização no banco e o que voltou rejeitado. Clique num quadro para abrir a tela Pagamentos.' },
+    { el: 'kpis',      titulo: 'Saldo do período por banco', texto: 'Itaú e Santander lidos como extrato: saldo inicial, empréstimo e aplicação (acumulados desde outubro/2026) e o movimento do período, somando no Resultado. "Como é calculado" explica cada linha. Clique num valor para ver os lançamentos que o formam.' },
+    { el: 'pagamentos-resumo', titulo: 'Pagamentos', texto: 'O que vence até hoje, o que está com o banco aguardando retorno, o que espera autorização no banco e o que voltou rejeitado. Clique num bloco para abrir a tela Pagamentos.' },
+    { el: 'por-banco', titulo: 'Por banco',          texto: 'Receitas, despesas e saldo por conta bancária, pela data de pagamento ou de recebimento no período. Despesas: só Fixas e Variáveis; receitas só de Receitas de vendas.' },
   ],
   '/dashboard/lancamentos': [
     PERIODO('Defina o intervalo De/Até dos lançamentos listados.'),
     { el: 'novos-lancamentos', titulo: 'Novo lançamento',  texto: 'Em "+ Novo": registre uma despesa, uma receita ou uma ordem de compra, ou importe o extrato do banco (OFX ou CSV). Na despesa, o bloco Pagamento guarda o favorecido, a forma (Pix, TED, boleto, guia…) e o documento usados na remessa do banco.' },
-    { el: 'resumo',            titulo: 'Totais',           texto: 'Somatório do período selecionado.' },
-    { el: 'filtros',           titulo: 'Filtros', texto: 'Abra pelo ícone: Categoria e Subitem (tipo), banco, centro de custo e status. O número no botão mostra quantos filtros estão ativos.' },
-    { el: 'tabela',            titulo: 'Lista',            texto: 'Lançamentos separados em Despesas, Receitas e Ordens de Compra, com busca por descrição.', lado: 'top' },
+    { el: 'resumo',            titulo: 'Resumo da aba',    texto: 'Totais da aba aberta no período: em Despesas, o que já foi pago, o que falta pagar e o que venceu; em Receitas, o recebido, o a receber e o atrasado.' },
+    { el: 'filtros',           titulo: 'Filtros', texto: 'Busca e filtros à vista: Categoria, Subitem, Banco, Centro e Status. O filtro escolhido fica em azul; "Limpar filtros" tira todos.' },
+    { el: 'tabela',            titulo: 'Lista',            texto: 'Clique numa linha para abrir e editar (o Excluir fica no rodapé da janela). Marque as caixas para agir em lote: marcar como paga ou levar para a remessa do banco.', lado: 'top' },
   ],
   '/dashboard/lancamentos/aprovacoes': [
     PERIODO('Escolha o mês a aprovar.'),
-    { el: 'kanban', titulo: 'Quadro de aprovação', texto: 'Despesas e ordens de compra a aprovar. Arraste os cards entre as colunas para aprovar ou rejeitar. Receitas não passam por aqui: já nascem aprovadas.', lado: 'top' },
+    { el: 'kanban', titulo: 'Quadro de aprovação', texto: 'Pendentes, Aprovadas e Rejeitadas. Use os botões Aprovar e Rejeitar do card ou arraste o card para a coluna. Marque várias despesas para aprovar de uma vez. Ordem de compra sem recibo fica com borda vermelha. Receitas não passam por aqui: já nascem aprovadas.', lado: 'top' },
   ],
   '/dashboard/lancamentos/pagamentos': [
     { el: 'pag-cartoes', titulo: 'Resumo dos pagamentos', texto: 'Quanto há a pagar, o que está em remessa ou aguardando autorização no banco, o que já foi agendado e o que voltou rejeitado ou devolvido.' },
@@ -70,11 +70,11 @@ const TELAS: Record<string, Passo[]> = {
     { el: 'cfg-abas', titulo: 'Seções', texto: 'As configurações em quatro grupos: Acesso (usuários), Estrutura (categorias e subitens, classificações, centros e bancos), Pessoas (funcionários, fornecedores e folha) e Pagamentos (contas pagadoras). Editar abre um painel ao lado. Cada seção tem endereço próprio, para voltar ou compartilhar.' },
   ],
   '/dashboard/dre': [
-    PERIODO('Escolha o ano e o mês de referência.'),
-    { el: 'visao',         titulo: 'Visão',                     texto: 'Mês, Acumulado do ano ou últimos 12 meses.' },
+    { el: 'periodo',       titulo: 'Mês de referência',         texto: 'Use as setas ‹ › ou clique no mês para escolher. A DRE segue por competência.' },
+    { el: 'visao',         titulo: 'Visão',                     texto: 'Mês, Acumulado no ano ou últimos 12 meses.' },
     { el: 'metas',         titulo: 'Metas (Previsto)',          texto: 'Cadastre o previsto que é comparado com o realizado.' },
-    { el: 'kpis',          titulo: 'Indicadores',               texto: 'Os principais números do período escolhido.' },
-    { el: 'demonstrativo', titulo: 'Demonstração de Resultados', texto: 'A DRE linha a linha, previsto x realizado.', lado: 'top' },
+    { el: 'kpis',          titulo: 'Indicadores',               texto: 'Cada número mostra a meta e quanto ficou acima ou abaixo dela, por escrito.' },
+    { el: 'demonstrativo', titulo: 'Demonstração de resultados', texto: 'A DRE linha a linha: previsto, realizado, a diferença (melhor ou pior que a meta) e o peso na receita. Clique num grupo para abrir ou fechar; os que você fechar ficam fechados até sair do sistema.', lado: 'top' },
   ],
   '/dashboard/relatorios': [
     PERIODO('O relatório usa os lançamentos deste período.'),

@@ -6,177 +6,19 @@ import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
 import { filtroDoPeriodo, usePeriodo } from '@/contexts/PeriodoContext'
 import { useTopBar } from '@/contexts/TopBarContext'
-import { fmtBRL, fmtData } from '@/lib/utils'
+import { cn, fmtBRL, fmtData } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ShareButton } from '@/components/ui/ShareButton'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { useUser } from '@/contexts/UserContext'
-import { QuadroPagamentos } from '@/components/pagamentos/QuadroPagamentos'
 import { permissaoPagamentos } from '@/types'
 import type { DashboardResponse } from '@/types'
 import type { CentroCusto, DespesasResp, ReceitasResp } from './lancamentos/_components/shared'
 import { ModalDetalheValor, ValorClicavel, type AbrirDetalhe, type PedidoDetalhe } from './_components/DetalheValor'
-
-const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
-
-function nomeMes(inicio: string) {
-  const d = new Date(inicio + 'T12:00:00')
-  return `${MESES[d.getMonth()]} De ${d.getFullYear()}`
-}
-
-interface CardKPIProps {
-  label: string
-  valor: number | null | undefined
-  sub?: string
-  compacto?: boolean
-  iconBg: string
-  icon: React.ReactNode
-  /** Código da classificação, para o valor abrir os lançamentos dela. */
-  classificacao?: string
-  abrir?: AbrirDetalhe
-}
-
-function CardKPI({ label, valor, sub, iconBg, icon, compacto, classificacao, abrir }: CardKPIProps) {
-  // `compacto`: box Fixas vs. Variáveis, onde todas as classificações dividem uma linha.
-  if (compacto) {
-    return (
-      <div className="flex min-w-0 items-start justify-between gap-2 rounded-2xl bg-white p-3 shadow-sm xl:flex-1">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-gray-500" title={label}>{label}</p>
-          <p className="mt-1 whitespace-nowrap text-base font-semibold tabular-nums text-navy">
-            {valor == null ? '—' : classificacao ? (
-              <ValorClicavel valor={valor} abrir={abrir}
-                pedido={{ titulo: `Despesas: ${label}`, params: { bloco: 'classificacao', classificacao } }} />
-            ) : fmtBRL(valor)}
-          </p>
-        </div>
-        <div className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg sm:flex xl:hidden 2xl:flex [&_svg]:h-4 [&_svg]:w-4 ${iconBg}`}>
-          {icon}
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className="flex items-start justify-between rounded-2xl bg-white p-4 shadow-sm sm:p-5">
-      <div>
-        <p className="text-sm font-medium text-gray-500">{label}</p>
-        <p className="mt-2 text-xl font-semibold text-navy">
-          {valor != null ? fmtBRL(valor) : '—'}
-        </p>
-        {sub && <p className="mt-1 text-xs text-gray-400">{sub}</p>}
-      </div>
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-        {icon}
-      </div>
-    </div>
-  )
-}
-
-/** Linhas de um lado (Receitas ou Despesas): item, quantidade, valor e total. */
-function LadoQuadro({ rotulo, lado, cor, titulo, params, chaveLado, abrir }: {
-  rotulo: string; lado: EmprestimoLado; cor: string
-  titulo: string; params: Record<string, string>; chaveLado: 'receitas' | 'despesas'; abrir?: AbrirDetalhe
-}) {
-  return (
-    <div className="min-w-0">
-      <p className="text-sm font-medium text-gray-500">{rotulo}</p>
-      <div className="mt-2 space-y-1 text-sm">
-        {lado.itens.length === 0 && <p className="text-gray-400">Nenhum item cadastrado</p>}
-        {lado.itens.map(i => (
-          <div key={i.subitem} className="flex justify-between gap-3">
-            <span className="truncate text-gray-400" title={i.subitem}>
-              {i.subitem}{i.qtd > 0 && <span className="ml-1 text-[11px] text-gray-300">({i.qtd})</span>}
-            </span>
-            <ValorClicavel valor={i.valor} abrir={abrir}
-              className={`font-medium tabular-nums ${Number(i.valor) > 0 ? cor : 'text-gray-300'}`}
-              pedido={{ titulo: `${titulo} · ${rotulo} · ${i.subitem}`, params: { ...params, lado: chaveLado, subitem: i.subitem } }} />
-          </div>
-        ))}
-        <div className="flex justify-between border-t border-gray-100 pt-1">
-          <span className="text-gray-500">Total</span>
-          <ValorClicavel valor={lado.total} abrir={abrir} className={`font-semibold tabular-nums ${cor}`}
-            pedido={{ titulo: `${titulo} · ${rotulo}`, params: { ...params, lado: chaveLado } }} />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Empréstimos e Aplicações: um card por banco, com Receitas e Despesas por subitem e o saldo. */
-function QuadroPorBanco({ titulo, legenda, tour, dados, bloco, abrir }: {
-  titulo: string; legenda: string; tour: string; dados: EmprestimosResponse
-  bloco: 'emprestimos' | 'aplicacoes'; abrir?: AbrirDetalhe
-}) {
-  return (
-    <div data-tour={tour}>
-      <h2 className="text-sm font-semibold text-gray-600">{titulo}</h2>
-      <p className="mb-2 text-xs text-gray-400">{legenda}</p>
-      <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${dados.bancos.length > 2 ? 'xl:grid-cols-3' : ''}`}>
-        {dados.bancos.map(b => (
-          <div key={b.banco} className="space-y-4 rounded-2xl bg-white p-4 shadow-sm sm:p-5">
-            <p className="text-sm font-semibold text-gray-700">{b.banco}</p>
-            <LadoQuadro rotulo="Receitas" lado={b.receitas} cor="text-green-600" chaveLado="receitas"
-              titulo={`${titulo} ${b.banco}`} params={{ bloco, banco: b.banco }} abrir={abrir} />
-            <LadoQuadro rotulo="Despesas" lado={b.despesas} cor="text-red-500" chaveLado="despesas"
-              titulo={`${titulo} ${b.banco}`} params={{ bloco, banco: b.banco }} abrir={abrir} />
-            <div className="flex justify-between border-t border-gray-100 pt-2 text-sm">
-              <span className="text-gray-500">Saldo</span>
-              <ValorClicavel valor={b.saldo} abrir={abrir}
-                className={`font-semibold tabular-nums ${Number(b.saldo) >= 0 ? 'text-green-600' : 'text-red-500'}`}
-                pedido={{ titulo: `${titulo} ${b.banco} · Saldo`, params: { bloco, banco: b.banco } }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/** Box "Saldo do período <banco>" (Itaú e Santander, 23/10/2026). Empréstimo e Aplicação são o
- *  `saldo_acumulado` dos quadros de mesmo nome (receitas − despesas). Resultado = Saldo inicial + Empréstimo + Aplicação + Saldo Itaú,
- *  cada um com o próprio sinal: negativo reduz. Desde 05/11/2026, o Saldo inicial soma o saldo do banco dos
- *  meses anteriores, Empréstimo e Aplicação acumulam desde out/2026, o Saldo é só do período, e todos só
- *  contam lançamentos com data de pagamento/recebimento (o lançamento de Saldo Inicial não exige data).
- *  `null` = dado ainda carregando. */
-function CardSaldoPeriodoBanco({ banco, saldoInicial, emprestimo, aplicacao, saldoBanco, abrir }: {
-  banco: string; saldoInicial: number; emprestimo: number | null; aplicacao: number | null; saldoBanco: number
-  abrir?: AbrirDetalhe
-}) {
-  const linhas: [string, number | null, string, string][] = [
-    ['Saldo inicial', saldoInicial, 'text-navy', 'saldo_inicial'],
-    [`Empréstimo ${banco}`, emprestimo, (emprestimo ?? 0) >= 0 ? 'text-green-600' : 'text-red-500', 'box_emprestimo'],
-    [`Saldo aplicação ${banco}`, aplicacao, (aplicacao ?? 0) >= 0 ? 'text-green-600' : 'text-red-500', 'box_aplicacao'],
-    [`Saldo ${banco}`, saldoBanco, saldoBanco >= 0 ? 'text-green-600' : 'text-red-500', 'box_banco'],
-  ]
-  const resultado = emprestimo == null || aplicacao == null ? null : saldoInicial + emprestimo + aplicacao + saldoBanco
-  return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
-      <p className="text-sm font-medium text-gray-500">Saldo do período {banco}</p>
-      <div className="mt-2 space-y-1 text-sm">
-        {linhas.map(([rotulo, valor, cor, bloco]) => (
-          <div key={rotulo} className="flex justify-between gap-3">
-            <span className="text-gray-400">{rotulo}</span>
-            {valor == null ? <span className="font-medium tabular-nums text-gray-300">—</span> : (
-              <ValorClicavel valor={valor} abrir={abrir} className={`font-medium tabular-nums ${cor}`}
-                pedido={{ titulo: bloco === 'saldo_inicial' ? `Saldo inicial ${banco}` : rotulo, params: { bloco, banco } }} />
-            )}
-          </div>
-        ))}
-        <div className="flex justify-between gap-3 border-t border-gray-100 pt-1">
-          <span className="text-gray-500">Resultado</span>
-          {resultado == null ? <span className="font-semibold tabular-nums text-gray-300">—</span> : (
-            <ValorClicavel valor={resultado} abrir={abrir}
-              className={`font-semibold tabular-nums ${resultado >= 0 ? 'text-green-600' : 'text-red-500'}`}
-              pedido={{ titulo: `Resultado ${banco}`, params: { bloco: 'resultado', banco } }} />
-          )}
-        </div>
-      </div>
-      <p className="mt-2 text-xs text-gray-400">
-        Resultado = saldo inicial + empréstimo + aplicação + saldo {banco}, cada um com o próprio sinal. O saldo inicial soma o saldo {banco} dos meses anteriores, desde outubro/2026. Empréstimo e aplicação também acumulam; saldo {banco} é só do período. Só entram lançamentos com data de pagamento ou recebimento.
-      </p>
-    </div>
-  )
-}
+import {
+  BarraClassificacao, ComoCalculado, ExtratoBanco, FaixaPagamentos, Secao, TabelaTotal,
+  type FatiaClass, type LinhaTabela, type ResumoPagamentos,
+} from './_components/VisaoGeral'
 
 // Decimal do backend chega como string no JSON.
 interface BancoResumoItem { banco_id: string; banco_nome: string; receitas: number | string; despesas: number | string; saldo: number | string; saldo_inicial?: number | string; saldo_anterior?: number | string }
@@ -284,126 +126,109 @@ async function buscarCentro(inicio: string, fim: string, base: string, token: st
   return montarBlocoCentro(centro.nome, despesas, receitas)
 }
 
-function ListaDiaMes({ titulo, subtitulo, dados, cor, header, resumo }: {
-  titulo: string
-  subtitulo?: string
-  dados: LancamentosDiaMesResponse | null
-  cor: 'red' | 'green' | 'indigo'
-  header?: React.ReactNode
-  resumo?: React.ReactNode
-}) {
-  // "Hoje" mostra tudo; "No período" abre com LIMITE_LISTA linhas e o "Ver mais"
-  // exibe o restante na mesma lista (09/11/2026) — o backend já manda tudo.
-  const [periodoAberto, setPeriodoAberto] = useState(false)
-  const corPadrao = cor === 'red' ? 'text-red-500' : cor === 'green' ? 'text-green-600' : 'text-indigo-600'
-  // Numa lista que mistura despesa e receita (bloco por centro de custo), a cor
-  // do valor precisa vir do item, não do bloco.
-  const corValor = (item: LancamentoResumoItem) =>
-    item.natureza === 'despesa' ? 'text-red-500'
-      : item.natureza === 'receita' ? 'text-green-600'
-      : corPadrao
+type AbaMov = 'despesas' | 'receitas' | 'ordens' | 'centro'
 
-  // A descrição é o que distingue um lançamento do outro — 15 salários do mesmo
-  // subitem são 15 pessoas diferentes. Antes esta lista mostrava só o nome do
-  // subitem, então linhas distintas apareciam como repetições.
-  // O subitem vira apoio, em segunda linha: inline ele quebraria no mobile.
-  const linhaItem = (item: LancamentoResumoItem, comData: boolean) => {
-    const principal = item.descricao?.trim() || item.tipo_nome || '—'
-    const subitem = item.tipo_nome && item.tipo_nome !== principal ? item.tipo_nome : null
-    // Na lista mista, o rótulo da natureza vem antes do subitem: só a cor do
-    // valor deixaria dúvida sobre o que é entrada e o que é saída.
-    const detalhe = [
-      item.natureza === 'despesa' ? 'Despesa' : item.natureza === 'receita' ? 'Receita' : null,
-      subitem,
-    ].filter(Boolean).join(' · ')
-    return (
-      <li key={item.id} className="flex items-start justify-between gap-2 text-xs">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-gray-700">
-            {item.agregado && <span aria-hidden className="mr-1" title="Detalhe por funcionário só para o Admin">🔒</span>}
-            {principal}
-          </p>
-          {detalhe && <p className="truncate text-[10px] leading-tight text-gray-400">{detalhe}</p>}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 pl-2 text-right">
-          {/* Badge compacto: nesta lista densa o tamanho padrão rouba largura
-              da descrição no mobile. */}
-          {item.status && <StatusBadge status={item.status} className="px-1.5 py-0 text-[10px]" />}
-          {item.valor > 0 && <span className={`font-medium tabular-nums ${corValor(item)}`}>{fmtBRL(item.valor)}</span>}
-          {comData && item.data && <span className="text-gray-400">{fmtData(item.data)}</span>}
-        </div>
-      </li>
-    )
-  }
+/**
+ * As 4 listas (Despesas, Receitas, Ordens e o centro em destaque) num card só,
+ * com abas e o alternador Hoje / No período (redesenho UX, fase 4).
+ * "Hoje" segue as regras de sempre (despesa: vence hoje e não paga; receita:
+ * vence ou foi recebida hoje).
+ */
+function Movimentacoes({ listas, centroNome, topoCentro, compartilhar }: {
+  listas: Record<AbaMov, LancamentosDiaMesResponse | null>
+  centroNome: string
+  topoCentro: React.ReactNode
+  compartilhar: (aba: AbaMov) => React.ReactNode
+}) {
+  const [aba, setAba] = useState<AbaMov>('despesas')
+  const [quando, setQuando] = useState<'dia' | 'mes'>('dia')
+  const [todos, setTodos] = useState(false)
+  useEffect(() => { setTodos(false) }, [aba, quando])
+  const rotulos: Record<AbaMov, string> = { despesas: 'Despesas', receitas: 'Receitas', ordens: 'Ordens de compra', centro: `Centro ${centroNome}` }
+  const dados = listas[aba]
+  const lista = dados ? dados[quando] : null
+  const exibidos = lista ? (todos || quando === 'dia' ? lista : lista.slice(0, LIMITE_LISTA)) : []
+  const soma = (lista ?? []).reduce((s, i) => s + (Number(i.valor) || 0), 0)
+  const corItem = (i: LancamentoResumoItem) =>
+    (i.natureza ?? (aba === 'receitas' ? 'receita' : 'despesa')) === 'receita' ? 'text-green-700' : 'text-slate-900'
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-navy">{titulo}</p>
-          {subtitulo && <p className="text-[10px] uppercase tracking-wide text-gray-400">{subtitulo}</p>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {header}
-          <Link href="/dashboard/lancamentos" className="text-xs font-medium text-blue-500 hover:underline">
-            Ver todas →
-          </Link>
+    <section aria-labelledby="mov-titulo" className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 md:px-5">
+        <h2 id="mov-titulo" className="text-base font-bold text-slate-900">Movimentações</h2>
+        <div className="flex items-center gap-2">
+          <div role="group" aria-label="Quando" className="inline-flex h-12 overflow-hidden rounded-lg bg-white ring-1 ring-gray-300 md:h-11">
+            {([['dia', 'Hoje'], ['mes', 'No período']] as const).map(([k, r]) => (
+              <button key={k} type="button" aria-pressed={quando === k} onClick={() => setQuando(k)}
+                className={cn('focus-ring px-3.5 text-sm font-medium', quando === k ? 'bg-navy text-white' : 'text-slate-700 hover:bg-gray-50')}>{r}</button>
+            ))}
+          </div>
+          {compartilhar(aba)}
         </div>
       </div>
-      {resumo}
-      {/* dados === null é "ainda carregando" (renderização incremental) —
-          diferente de lista vazia, que aí sim diz "nenhum lançamento". */}
-      {!dados ? (
-        <div className="space-y-2">
-          {['w-2/3', 'w-1/2', 'w-3/5'].map(w => (
-            <div key={w} className={`h-3 animate-pulse rounded bg-gray-100 ${w}`} />
-          ))}
-        </div>
+      <div role="tablist" aria-label="Tipo de movimentação" className="flex gap-2 overflow-x-auto px-4 py-3 md:px-5">
+        {(Object.keys(rotulos) as AbaMov[]).map(k => {
+          const n = listas[k]?.[quando]?.length
+          const sel = aba === k
+          return (
+            <button key={k} type="button" role="tab" aria-selected={sel} onClick={() => setAba(k)}
+              className={cn('focus-ring inline-flex h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 text-sm md:h-11',
+                sel ? 'bg-navy font-semibold text-white' : 'border border-gray-300 bg-white text-slate-700 hover:bg-gray-50')}>
+              {rotulos[k]}
+              {n != null && <span className={cn('rounded-full px-1.5 text-[13px] font-semibold tabular-nums', sel ? 'bg-white/20' : 'bg-slate-100 text-slate-700')}>{n}</span>}
+            </button>
+          )
+        })}
+      </div>
+      {aba === 'centro' && topoCentro}
+      {!lista ? (
+        <div className="space-y-2 px-4 pb-4 md:px-5">{['w-2/3', 'w-1/2', 'w-3/5'].map(w => <Skeleton key={w} className={`h-5 ${w}`} />)}</div>
+      ) : lista.length === 0 ? (
+        <p className="px-4 pb-4 text-sm text-slate-600 md:px-5">{quando === 'dia' ? 'Nenhum lançamento hoje.' : 'Nenhum lançamento no período.'}</p>
       ) : (
-      <div className="space-y-3">
-        <div>
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Hoje</p>
-          {dados.dia.length > 0 ? (
-            <ul className="space-y-1.5">{dados.dia.map(item => linhaItem(item, false))}</ul>
-          ) : <p className="text-xs text-gray-400">Nenhum lançamento hoje</p>}
-        </div>
-        <div className="border-t border-gray-100 pt-3">
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">No período</p>
-          {dados.mes.length > 0 ? (
-            <>
-              <ul className="space-y-1.5">
-                {(periodoAberto ? dados.mes : dados.mes.slice(0, LIMITE_LISTA)).map(item => linhaItem(item, true))}
-              </ul>
-              {dados.mes.length > LIMITE_LISTA && (
-                <button type="button" onClick={() => setPeriodoAberto(v => !v)}
-                  className="mt-2 text-xs font-medium text-blue-500 hover:underline">
-                  {periodoAberto ? 'Ver menos' : `Ver mais (${dados.mes.length - LIMITE_LISTA})`}
-                </button>
-              )}
-            </>
-          ) : <p className="text-xs text-gray-400">Nenhum lançamento no período</p>}
-        </div>
-      </div>
+        <ul className="px-4 md:px-5">
+          {exibidos.map(i => {
+            const principal = i.descricao?.trim() || i.tipo_nome || '—'
+            const detalhe = [i.natureza === 'despesa' ? 'Despesa' : i.natureza === 'receita' ? 'Receita' : null,
+              i.tipo_nome && i.tipo_nome !== principal ? i.tipo_nome : null].filter(Boolean).join(' · ')
+            return (
+              <li key={i.id} className="flex min-h-[56px] items-center gap-3 border-t border-slate-100 py-2 text-sm">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold text-slate-900">
+                    {i.agregado && <span aria-hidden className="mr-1" title="Detalhe por funcionário só para o Admin">🔒</span>}{principal}
+                  </span>
+                  {detalhe && <span className="block truncate text-[13px] text-slate-600">{detalhe}</span>}
+                </span>
+                {i.status && <StatusBadge status={i.status} className="hidden sm:inline-flex" />}
+                <span className="flex shrink-0 flex-col items-end">
+                  <span className={cn('font-semibold tabular-nums', corItem(i))}>{fmtBRL(i.valor)}</span>
+                  {quando === 'mes' && i.data && <span className="text-[13px] text-slate-600">{fmtData(i.data)}</span>}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
       )}
-    </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 px-4 py-2 text-sm text-slate-600 md:px-5">
+        <span>
+          {lista && lista.length > 0 && <>{quando === 'dia' ? 'Total de hoje' : 'Total listado'}: <b className="tabular-nums text-slate-900">{fmtBRL(soma)}</b> · {lista.length} {lista.length === 1 ? 'item' : 'itens'}</>}
+        </span>
+        <span className="flex items-center gap-1">
+          {lista && quando === 'mes' && lista.length > LIMITE_LISTA && (
+            <button type="button" onClick={() => setTodos(v => !v)}
+              className="focus-ring h-12 rounded-lg px-2 font-semibold text-sel hover:underline md:h-11">
+              {todos ? 'Ver menos' : `Ver mais (${lista.length - LIMITE_LISTA})`}
+            </button>
+          )}
+          <Link href="/dashboard/lancamentos" className="focus-ring inline-flex h-12 items-center rounded-lg px-2 font-semibold text-sel hover:underline md:h-11">
+            Ver todas em Lançamentos
+          </Link>
+        </span>
+      </div>
+    </section>
   )
 }
 
-const IconTrendUp = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5 text-blue-600">
-    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-  </svg>
-)
-const IconDollar = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5 text-green-600">
-    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-  </svg>
-)
-const IconTarget = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5 text-purple-500">
-    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
-  </svg>
-)
 const IconRefresh = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
     <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -423,6 +248,7 @@ export default function DashboardPage() {
   const [centroDiaMes, setCentroDiaMes] = useState<CentroCustoResumo | null>(null)
   const [erroCentro, setErroCentro] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  const [resumoPag, setResumoPag] = useState<ResumoPagamentos | null>(null)
   // Periodo compartilhado entre telas (ver contexts/PeriodoContext.tsx).
   // Todos os modos filtram pela Data de Pagamento (em aberto, pelo vencimento).
   const filtro = filtroDoPeriodo(usePeriodo())
@@ -469,7 +295,13 @@ export default function DashboardPage() {
 
   useEffect(() => { buscar() }, [buscar])
 
-  const d = data?.dre
+  // Faixa de Pagamentos (CNAB): só para quem vê a tela Pagamentos.
+  const vePagamentos = permissaoPagamentos(permissions, role, 'visualizar')
+  useEffect(() => {
+    if (!token || !vePagamentos) return
+    api.get<ResumoPagamentos>('/pagamentos/resumo', token).then(setResumoPag).catch(() => setResumoPag(null))
+  }, [token, vePagamentos, filtro.qs])
+
   // Boxes "Saldo do período <banco>" — juntam o card do banco, Empréstimos e Aplicações.
   const BANCOS_SALDO_PERIODO = ['Itaú', 'Santander']
   const saldosPeriodo = BANCOS_SALDO_PERIODO.flatMap(nome => {
@@ -503,18 +335,54 @@ export default function DashboardPage() {
   const totalDespesaBancos = porBanco?.bancos.reduce((acc, b) => acc + Number(b.despesas), 0) ?? 0
   const totalSaldoBancos   = totalReceitaBancos - totalDespesaBancos
   // Todos os bancos ativos, Sicredi incluído (voltou a pedido em 19/10/2026).
-  const bancosExibidos = porBanco?.bancos ?? []
+  const linhasPorBanco: LinhaTabela[] = (porBanco?.bancos ?? []).map((b): LinhaTabela => ({
+    chave: b.banco_id, banco: b.banco_nome, valores: [
+      { v: Number(b.receitas), verde: true, pedido: { titulo: `Por Banco ${b.banco_nome} · Receita`, params: { bloco: 'por_banco', banco: b.banco_nome, lado: 'receitas' } } },
+      { v: Number(b.despesas), pedido: { titulo: `Por Banco ${b.banco_nome} · Despesas`, params: { bloco: 'por_banco', banco: b.banco_nome, lado: 'despesas' } } },
+      { v: Number(b.saldo), verde: true, pedido: { titulo: `Por Banco ${b.banco_nome} · Saldo`, params: { bloco: 'por_banco', banco: b.banco_nome } } },
+    ],
+  }))
+  const totalPorBanco: LinhaTabela = { chave: 'total', banco: 'Total', valores: [
+    { v: totalReceitaBancos, verde: true, pedido: { titulo: 'Por Banco Total · Receita', params: { bloco: 'por_banco', lado: 'receitas' } } },
+    { v: totalDespesaBancos, pedido: { titulo: 'Por Banco Total · Despesas', params: { bloco: 'por_banco', lado: 'despesas' } } },
+    { v: totalSaldoBancos, verde: true, pedido: { titulo: 'Por Banco Total · Saldo', params: { bloco: 'por_banco' } } },
+  ] }
 
-  // ── Dados para o botão Share de cada seção (reflete a lista do período exibida) ──
+  /** Empréstimos e Aplicações: entradas (receitas), saídas (despesas) e saldo acumulado, com total. */
+  function linhasQuadro(dados: EmprestimosResponse, titulo: string, bloco: 'emprestimos' | 'aplicacoes'): [LinhaTabela[], LinhaTabela] {
+    const linhas = dados.bancos.map((b): LinhaTabela => ({
+      chave: b.banco, banco: b.banco, valores: [
+        { v: Number(b.receitas.total), pedido: { titulo: `${titulo} ${b.banco} · Entradas`, params: { bloco, banco: b.banco, lado: 'receitas' } } },
+        { v: Number(b.despesas.total), pedido: { titulo: `${titulo} ${b.banco} · Saídas`, params: { bloco, banco: b.banco, lado: 'despesas' } } },
+        { v: Number(b.saldo_acumulado ?? b.saldo), pedido: { titulo: `${titulo} ${b.banco} · Saldo`, params: { bloco, banco: b.banco } } },
+      ],
+    }))
+    const soma = (i: number) => linhas.reduce((a, l) => a + l.valores[i].v, 0)
+    return [linhas, { chave: 'total', banco: 'Total', valores: [
+      { v: soma(0), pedido: { titulo: `${titulo} · Entradas`, params: { bloco, lado: 'receitas' } } },
+      { v: soma(1), pedido: { titulo: `${titulo} · Saídas`, params: { bloco, lado: 'despesas' } } },
+      { v: soma(2), pedido: { titulo: `${titulo} · Saldo`, params: { bloco } } },
+    ] }]
+  }
+
+  // Despesas por classificação: uma barra só (ordem e cores fixas; "Não classificadas" pede revisão).
+  const fatias: FatiaClass[] = porClassificacao ? [
+    { codigo: 'fixo', nome: 'Fixas', valor: Number(porClassificacao.fixas), cor: 'bg-sel-text' },
+    { codigo: 'variavel', nome: 'Variáveis', valor: Number(porClassificacao.variaveis), cor: 'bg-blue-400' },
+    { codigo: 'imposto', nome: 'Impostos', valor: Number(porClassificacao.impostos), cor: 'bg-amber-500' },
+    { codigo: 'nao_operacional', nome: 'Não operacionais', valor: Number(porClassificacao.nao_operacionais), cor: 'bg-slate-500' },
+    ...(porClassificacao.outras ?? []).map((o, i) => ({ codigo: o.codigo, nome: o.nome, valor: Number(o.valor), cor: ['bg-teal-500', 'bg-violet-400', 'bg-rose-300'][i % 3] })),
+    { codigo: 'nao_classificada', nome: 'Não classificadas', valor: Number(porClassificacao.nao_classificadas), cor: 'bg-slate-300', revisar: true },
+  ] : []
+
+  // ── Compartilhar (por aba das Movimentações) ──
   // Mesmo critério da lista: a descrição identifica, o subitem contextualiza.
   const nomeShare = (i: LancamentoResumoItem) => {
     const principal = i.descricao?.trim() || i.tipo_nome || '—'
     return i.tipo_nome && i.tipo_nome !== principal ? `${principal} (${i.tipo_nome})` : principal
   }
-  // Despesas e Receitas compartilham só o bloco HOJE (pedido de 19/10/2026),
-  // não a lista do mês que aparece logo abaixo dele no card.
   const hojeLabel = `Hoje, ${new Date().toLocaleDateString('pt-BR')}`
-  // Compartilhar Despesas/Receitas: o box inteiro — Hoje + No período (o que a lista mostra).
+  // Despesas/Receitas: o box inteiro — Hoje + No período (o que a lista mostra).
   const secoesShare = (dados: LancamentosDiaMesResponse | null) => {
     const conv = (lista: LancamentosDiaMesResponse['dia'] | undefined) =>
       (lista ?? []).map(i => ({ nome: nomeShare(i), valor: i.valor, data: i.data }))
@@ -540,7 +408,6 @@ export default function DashboardPage() {
     valor: i.valor,
     data: i.data,
   }))
-  // Mesmos três totais do card, para o compartilhamento não sair só com a lista.
   const resumoCentroShare = [
     { rotulo: 'Despesas', valor: fmtBRL(centroDiaMes?.total_despesas ?? 0), cor: '#ef4444' },
     { rotulo: 'Receitas', valor: fmtBRL(centroDiaMes?.total_receitas ?? 0), cor: '#16a34a' },
@@ -548,176 +415,115 @@ export default function DashboardPage() {
   ]
   const totalCentroShare = `${itensCentroShare.length} lançamento(s) no período`
 
-  return (
-    <div className="space-y-6">
+  const compartilhar = (aba: AbaMov) => aba === 'despesas'
+    ? <ShareButton titulo="Despesas" periodoLabel={`${hojeLabel} · ${filtro.rotulo}`} itens={[]} secoes={secoesShare(despesasDiaMes)} emoji="💸" />
+    : aba === 'receitas'
+    ? <ShareButton titulo="Receitas" periodoLabel={`${hojeLabel} · ${filtro.rotulo}`} itens={[]} secoes={secoesShare(receitasDiaMes)} emoji="💰" />
+    : aba === 'ordens'
+    ? <ShareButton titulo="Ordens de Compra" periodoLabel={periodo} itens={itensOrdShare} totalTexto={totalOrdShare} emoji="📋" />
+    : <ShareButton titulo={`${centroNome} — Despesas e Receitas`} periodoLabel={periodo}
+        itens={itensCentroShare} resumo={resumoCentroShare} totalTexto={totalCentroShare} emoji="🏢" />
 
-      {token && permissaoPagamentos(permissions, role, 'visualizar') && <QuadroPagamentos token={token} />}
+  const topoCentro = erroCentro ? (
+    <p className="mx-4 mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[13px] text-amber-900 md:mx-5">
+      Não foi possível carregar este bloco: {erroCentro}
+    </p>
+  ) : (
+    <div className="mx-4 mb-3 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm md:mx-5">
+      {([['Despesas', centroDiaMes?.total_despesas ?? 0, 'despesas', 'text-slate-900'], ['Receitas', centroDiaMes?.total_receitas ?? 0, 'receitas', 'text-green-700'],
+        ['Saldo', centroSaldo, '', centroSaldo < 0 ? 'text-red-700' : 'text-green-700']] as const).map(([rot, v, lado, cor]) => (
+        <div key={rot}>
+          <p className="text-[13px] text-slate-600">{rot}</p>
+          <ValorClicavel valor={v} abrir={abrir} className={cn('inline-flex min-h-12 items-center md:min-h-0 font-semibold tabular-nums', cor)}
+            pedido={{ titulo: `${centroNome} · ${rot}`, params: lado ? { bloco: 'centro', centro: centroNome, lado } : { bloco: 'centro', centro: centroNome } }} />
+        </div>
+      ))}
+    </div>
+  )
+
+  const alertas = data?.alertas ?? []
+
+  return (
+    <div className="space-y-5 md:space-y-6">
+      {/* Alertas: faixa no topo */}
+      {alertas.length > 0 && (
+        <div className="space-y-2">
+          {alertas.map((a, i) => (
+            <div key={i} role="status" className={cn('flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm',
+              a.severidade === 'info' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-300 bg-amber-50 text-amber-900')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16.5v.5" />
+              </svg>
+              <span className="flex-1">{a.mensagem}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {erro ? (
-        <div className="rounded-xl bg-red-50 p-4 text-sm text-red-600">{erro}</div>
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{erro}</div>
       ) : (
         <>
-          {/* Despesas por classificação (Fixas, Variáveis…) — topo da página, sem título */}
-          {porClassificacao && (
-            <div aria-label="Despesas por classificação">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:flex">
-                <CardKPI compacto label="Fixas" valor={porClassificacao.fixas} iconBg="bg-blue-50" icon={<IconTarget />} classificacao="fixo" abrir={abrir} />
-                <CardKPI compacto label="Variáveis" valor={porClassificacao.variaveis} iconBg="bg-amber-50" icon={<IconTrendUp />} classificacao="variavel" abrir={abrir} />
-                {porClassificacao.nao_operacionais > 0 && (
-                  <CardKPI compacto label="Não Operacionais" valor={porClassificacao.nao_operacionais} iconBg="bg-gray-100" icon={<IconDollar />} classificacao="nao_operacional" abrir={abrir} />
-                )}
-                {porClassificacao.impostos > 0 && (
-                  <CardKPI compacto label="Impostos" valor={porClassificacao.impostos} iconBg="bg-red-50" icon={<IconDollar />} classificacao="imposto" abrir={abrir} />
-                )}
-                {(porClassificacao.outras ?? []).filter(o => Number(o.valor) > 0).map(o => (
-                  <CardKPI compacto key={o.codigo} label={o.nome} valor={Number(o.valor)} iconBg="bg-teal-50" icon={<IconDollar />} classificacao={o.codigo} abrir={abrir} />
-                ))}
-                {porClassificacao.nao_classificadas > 0 && (
-                  <CardKPI compacto label="Não Classificadas" valor={porClassificacao.nao_classificadas} iconBg="bg-gray-100" icon={<IconDollar />} classificacao="nao_classificada" abrir={abrir} />
-                )}
+          {/* Saldo do período por banco, lido como extrato */}
+          <section aria-labelledby="saldos-titulo" data-tour="kpis" className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 id="saldos-titulo" className="text-base font-bold text-slate-900">Saldo do período por banco</h2>
+              <ComoCalculado />
+            </div>
+            {saldosPeriodo.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {saldosPeriodo.map(sp => <ExtratoBanco key={sp.banco} s={sp} abrir={abrir} />)}
               </div>
-            </div>
-          )}
+            ) : !porBanco ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2"><Skeleton className="h-56 rounded-2xl" /><Skeleton className="h-56 rounded-2xl" /></div>
+            ) : <p className="text-sm text-slate-600">Sem saldos de Itaú e Santander no período.</p>}
+          </section>
 
-          {/* Cada seção renderiza assim que o SEU endpoint responde — o KPI
-              (endpoint mais pesado) não segura mais os demais blocos. */}
-          {saldosPeriodo.length > 0 ? (
-            <div data-tour="kpis" className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {saldosPeriodo.map(sp => <CardSaldoPeriodoBanco key={sp.banco} {...sp} abrir={abrir} />)}
-            </div>
-          ) : porBanco ? null : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Skeleton variant="card" />
-            </div>
-          )}
+          {resumoPag?.habilitado && <FaixaPagamentos r={resumoPag} />}
 
-          {/* Receita/Despesa por banco */}
-          {porBanco && porBanco.bancos.length > 0 && (
-            <div data-tour="por-banco">
-              <h2 className="text-sm font-semibold text-gray-600">Por Banco</h2>
-              <p className="mb-2 text-xs text-gray-400">
-                Só o que já passou pelo banco, pela data de pagamento ou de recebimento no período. Despesas: só as classificadas como Fixo ou Variável. Receitas: só a categoria Receitas de vendas.
-              </p>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {bancosExibidos.map(b => (
-                  <div key={b.banco_id} className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
-                    <p className="text-sm font-medium text-gray-500">{b.banco_nome}</p>
-                    <div className="mt-2 space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Receita</span>
-                        <ValorClicavel valor={b.receitas} abrir={abrir} className="font-medium tabular-nums text-green-600"
-                          pedido={{ titulo: `Por Banco ${b.banco_nome} · Receita`, params: { bloco: 'por_banco', banco: b.banco_nome, lado: 'receitas' } }} />
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Despesas</span>
-                        <ValorClicavel valor={b.despesas} abrir={abrir} className="font-medium tabular-nums text-red-500"
-                          pedido={{ titulo: `Por Banco ${b.banco_nome} · Despesas`, params: { bloco: 'por_banco', banco: b.banco_nome, lado: 'despesas' } }} />
-                      </div>
-                      <div className="flex justify-between border-t border-gray-100 pt-1">
-                        <span className="text-gray-500">Saldo</span>
-                        <ValorClicavel valor={b.saldo} abrir={abrir}
-                          className={`font-semibold tabular-nums ${Number(b.saldo) >= 0 ? 'text-green-600' : 'text-red-500'}`}
-                          pedido={{ titulo: `Por Banco ${b.banco_nome} · Saldo`, params: { bloco: 'por_banco', banco: b.banco_nome } }} />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {porBanco.bancos.length > 1 && (
-                  <div className="rounded-2xl bg-navy p-4 shadow-sm sm:p-5">
-                    <p className="text-sm font-medium text-blue-100">Total (todos os bancos)</p>
-                    <div className="mt-2 space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-blue-200">Receita</span>
-                        <ValorClicavel valor={totalReceitaBancos} abrir={abrir} className="font-medium tabular-nums text-white"
-                          pedido={{ titulo: 'Por Banco Total · Receita', params: { bloco: 'por_banco', lado: 'receitas' } }} />
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-blue-200">Despesas</span>
-                        <ValorClicavel valor={totalDespesaBancos} abrir={abrir} className="font-medium tabular-nums text-white"
-                          pedido={{ titulo: 'Por Banco Total · Despesas', params: { bloco: 'por_banco', lado: 'despesas' } }} />
-                      </div>
-                      <div className="flex justify-between border-t border-white/20 pt-1">
-                        <span className="text-blue-100">Saldo</span>
-                        <ValorClicavel valor={totalSaldoBancos} abrir={abrir} className="font-semibold tabular-nums text-white"
-                          pedido={{ titulo: 'Por Banco Total · Saldo', params: { bloco: 'por_banco' } }} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            {porClassificacao ? (
+              <Secao titulo="Despesas por classificação" id="class-titulo"
+                acao={<span className="text-sm font-semibold tabular-nums text-slate-900">{fmtBRL(porClassificacao.total)}</span>}>
+                <BarraClassificacao fatias={fatias} total={Number(porClassificacao.total)} abrir={abrir} />
+              </Secao>
+            ) : <Skeleton className="h-64 rounded-2xl" />}
 
-          {/* Empréstimos (um card por banco) e Aplicações (linhas por banco) */}
-          {emprestimos && emprestimos.bancos.length > 0 && (
-            <QuadroPorBanco titulo="Empréstimos" tour="emprestimos" dados={emprestimos} bloco="emprestimos" abrir={abrir}
-              legenda="Lançamentos das categorias Empréstimo no período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
-          )}
-          {aplicacoes && aplicacoes.bancos.length > 0 && (
-            <QuadroPorBanco titulo="Aplicações" tour="aplicacoes" dados={aplicacoes} bloco="aplicacoes" abrir={abrir}
-              legenda="Lançamentos da categoria Aplicações no período, por banco e subitem. Só lançamentos com data de pagamento ou recebimento." />
-          )}
-
-          {/* Listas diária/mensal: despesas, receitas, ordens de compra e o centro de custo em destaque */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ListaDiaMes titulo="Despesas" dados={despesasDiaMes} cor="red"
-              header={<ShareButton titulo="Despesas" periodoLabel={`${hojeLabel} · ${filtro.rotulo}`} itens={[]}
-                secoes={secoesShare(despesasDiaMes)} emoji="💸" />} />
-            <ListaDiaMes titulo="Receitas" dados={receitasDiaMes} cor="green"
-              header={<ShareButton titulo="Receitas" periodoLabel={`${hojeLabel} · ${filtro.rotulo}`} itens={[]}
-                secoes={secoesShare(receitasDiaMes)} emoji="💰" />} />
-            <ListaDiaMes titulo="Ordens de Compra" dados={ordensDiaMes} cor="indigo"
-              header={<ShareButton titulo="Ordens de Compra" periodoLabel={periodo} itens={itensOrdShare}
-                totalTexto={totalOrdShare} emoji="📋" />} />
-            {/* Bloco do centro de custo em destaque — despesas e receitas na mesma lista */}
-            <ListaDiaMes titulo={centroNome} subtitulo="Centro de custo" dados={centroDiaMes} cor="indigo"
-              header={<ShareButton titulo={`${centroNome} — Despesas e Receitas`} periodoLabel={periodo}
-                itens={itensCentroShare} resumo={resumoCentroShare} totalTexto={totalCentroShare} emoji="🏢" />}
-              resumo={erroCentro ? (
-                <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                  Não foi possível carregar este bloco: {erroCentro}
-                </p>
-              ) : (
-                <div className="mb-3 grid grid-cols-3 gap-2 rounded-xl bg-gray-50 px-3 py-2 text-xs">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-400">Despesas</p>
-                    <p className="font-semibold tabular-nums text-red-500">
-                      <ValorClicavel valor={centroDiaMes?.total_despesas ?? 0} abrir={abrir}
-                        pedido={{ titulo: `${centroNome} · Despesas`, params: { bloco: 'centro', centro: centroNome, lado: 'despesas' } }} />
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-400">Receitas</p>
-                    <p className="font-semibold tabular-nums text-green-600">
-                      <ValorClicavel valor={centroDiaMes?.total_receitas ?? 0} abrir={abrir}
-                        pedido={{ titulo: `${centroNome} · Receitas`, params: { bloco: 'centro', centro: centroNome, lado: 'receitas' } }} />
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-400">Saldo</p>
-                    <p className={`font-semibold tabular-nums ${centroSaldo >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      <ValorClicavel valor={centroSaldo} abrir={abrir}
-                        pedido={{ titulo: `${centroNome} · Saldo`, params: { bloco: 'centro', centro: centroNome } }} />
-                    </p>
-                  </div>
-                </div>
-              )} />
+            {porBanco && porBanco.bancos.length > 0 ? (
+              <Secao titulo="Por banco" id="porbanco-titulo" tour="por-banco"
+                nota="Só o que já passou pelo banco no período, pela data de pagamento ou de recebimento. Despesas: só Fixas e Variáveis. Receitas: só a categoria Receitas de vendas.">
+                <TabelaTotal colunas={['Receitas', 'Despesas', 'Saldo']} linhas={linhasPorBanco}
+                  total={linhasPorBanco.length > 1 ? totalPorBanco : undefined} abrir={abrir} />
+              </Secao>
+            ) : !porBanco ? <Skeleton className="h-64 rounded-2xl" /> : null}
           </div>
 
-          {/* Alertas */}
-          {data?.alertas && data.alertas.length > 0 && (
-            <div className="space-y-2">
-              {data.alertas.map((a, i) => (
-                <div key={i} className={`rounded-xl px-4 py-3 text-sm ${
-                  a.severidade === 'critico' ? 'bg-red-50 text-red-700' :
-                  a.severidade === 'aviso'   ? 'bg-amber-50 text-amber-700' :
-                                               'bg-blue-50 text-blue-700'
-                }`}>
-                  {a.mensagem}
-                </div>
-              ))}
+          {((emprestimos && emprestimos.bancos.length > 0) || (aplicacoes && aplicacoes.bancos.length > 0)) && (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              {emprestimos && emprestimos.bancos.length > 0 && (() => {
+                const [linhas, total] = linhasQuadro(emprestimos, 'Empréstimos', 'emprestimos')
+                return (
+                  <Secao titulo="Empréstimos" id="emp-titulo" tour="emprestimos"
+                    nota="Categorias Empréstimo, por banco. Saldo acumulado desde outubro/2026; só lançamentos com data de pagamento ou recebimento.">
+                    <TabelaTotal colunas={['Entradas', 'Saídas', 'Saldo acumulado']} linhas={linhas} total={linhas.length > 1 ? total : undefined} abrir={abrir} />
+                  </Secao>
+                )
+              })()}
+              {aplicacoes && aplicacoes.bancos.length > 0 && (() => {
+                const [linhas, total] = linhasQuadro(aplicacoes, 'Aplicações', 'aplicacoes')
+                return (
+                  <Secao titulo="Aplicações" id="apl-titulo" tour="aplicacoes"
+                    nota="Categoria Aplicações, por banco. Saldo acumulado desde outubro/2026; só lançamentos com data de pagamento ou recebimento.">
+                    <TabelaTotal colunas={['Aplicado', 'Resgatado', 'Saldo acumulado']} linhas={linhas} total={linhas.length > 1 ? total : undefined} abrir={abrir} />
+                  </Secao>
+                )
+              })()}
             </div>
           )}
+
+          <Movimentacoes
+            listas={{ despesas: despesasDiaMes, receitas: receitasDiaMes, ordens: ordensDiaMes, centro: centroDiaMes ?? (erroCentro ? { dia: [], mes: [] } : null) }}
+            centroNome={centroNome} topoCentro={topoCentro} compartilhar={compartilhar} />
         </>
       )}
 

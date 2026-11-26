@@ -30,7 +30,12 @@ export interface Despesa {
   /** Classificação do lançamento (migration 0040). */
   custo_tipo?: string | null
 }
-export interface DespesasResp { total: number; items: Despesa[]; soma_total: number; total_pendentes: number }
+export interface DespesasResp {
+  total: number; items: Despesa[]; soma_total: number; total_pendentes: number
+  /** Resumo da aba (26/11/2026), sobre o período inteiro: pago + a pagar + vencido = soma_total. */
+  soma_paga?: number | string; soma_a_pagar?: number | string; soma_vencida?: number | string
+  qtd_paga?: number; qtd_a_pagar?: number; qtd_vencida?: number
+}
 
 export interface Receita {
   id: string; competencia: string; tipo_lancamento_id: string | null; banco_id: string | null
