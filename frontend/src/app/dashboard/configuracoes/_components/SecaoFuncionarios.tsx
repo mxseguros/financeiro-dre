@@ -5,9 +5,9 @@ import { useToast } from '@/components/ui/Toast'
 import { OpcoesCentro, nomeCentro, type CentroCusto } from '@/lib/centros'
 import type { Funcionario } from '@/lib/funcionarios'
 import { inputCls, BtnExcluir } from './shared'
-import { ModalContrato } from './ModalContrato'
+import { ModalRemuneracao } from './ModalRemuneracao'
 import { fmtBRL } from '@/lib/utils'
-import type { CustosFolha } from '@/lib/folha'
+import type { CustosPessoal } from '@/lib/remuneracao'
 
 // Funcionários (24/11/2026): nome completo e centro de custo. Aparecem no
 // "Quem é você?" do link /oc — a Ordem de Compra fica no nome do funcionário
@@ -17,7 +17,7 @@ const VAZIO = { nome: '', centro_custo: '' }
 
 export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, ehAdmin = false }: {
   token: string; podeCriar: boolean; podeEditar: boolean; podeExcluir: boolean
-  /** Salário e custo (0049) só aparecem para o Admin. */
+  /** Remuneração e custo mensal (0052) só aparecem para o Admin. */
   ehAdmin?: boolean
 }) {
   const [items, setItems] = useState<Funcionario[]>([])
@@ -33,12 +33,12 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
   const [excluindo, setExcluindo] = useState(false)
   const toast = useToast()
   const [contratoDe, setContratoDe] = useState<Funcionario | null>(null)
-  const [custos, setCustos] = useState<CustosFolha | null>(null)
+  const [custos, setCustos] = useState<CustosPessoal | null>(null)
 
   const carregar = useCallback(() => {
     api.get<Funcionario[]>('/configuracoes/funcionarios', token)
       .then(setItems).catch(() => {}).finally(() => setLoading(false))
-    if (ehAdmin) api.get<CustosFolha>('/configuracoes/funcionarios/custos', token).then(setCustos).catch(() => setCustos(null))
+    if (ehAdmin) api.get<CustosPessoal>('/configuracoes/funcionarios/custos', token).then(setCustos).catch(() => setCustos(null))
   }, [token, ehAdmin])
 
   useEffect(() => {
@@ -88,7 +88,7 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
   return (
     <div className="space-y-5">
       {contratoDe && (
-        <ModalContrato token={token} funcionario={contratoDe} onClose={() => setContratoDe(null)} onSaved={carregar} />
+        <ModalRemuneracao token={token} funcionario={contratoDe} onClose={() => setContratoDe(null)} onSaved={carregar} />
       )}
       <ConfirmDialog
         open={!!confirmExcluir}
@@ -173,7 +173,7 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
                       <td className="px-4 py-2.5 text-[13px] text-gray-500">{f.ativo ? 'Ativo' : 'Inativo'}</td>
                       {ehAdmin && (
                         <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                          {custos?.por_funcionario[f.id] ? fmtBRL(custos.por_funcionario[f.id].custo_mes) : <span className="text-[13px] text-gray-300">—</span>}
+                          {custos?.por_funcionario[f.id] ? fmtBRL(custos.por_funcionario[f.id].custo_mensal) : <span className="text-[13px] text-gray-300">—</span>}
                         </td>
                       )}
                       {(podeEditar || podeExcluir || ehAdmin) && (
@@ -181,7 +181,7 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
                           <span className="inline-flex gap-3">
                             {ehAdmin && (
                               <button onClick={() => setContratoDe(f)} className="focus-ring inline-flex min-h-11 items-center rounded px-1 text-[13px] font-medium text-navy hover:underline">
-                                Contrato e salário
+                                Pagamento
                               </button>
                             )}
                             {podeEditar && (
@@ -207,31 +207,28 @@ export function SecaoFuncionarios({ token, podeCriar, podeEditar, podeExcluir, e
       {ehAdmin && custos && Object.keys(custos.por_centro).length > 0 && (
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold text-navy">Custo de pessoal por centro (mês)</h3>
+            <h3 className="text-sm font-semibold text-navy">Custo mensal de pessoal por centro</h3>
             <p className="text-sm font-semibold tabular-nums text-navy">Total {fmtBRL(custos.total_mes)}</p>
           </div>
-          {!custos.parametros_conferidos && (
-            <p className="mt-1 text-[13px] text-amber-600">Tabelas de INSS/IRRF ainda não conferidas (Configurações → Folha).</p>
-          )}
+          <p className="mt-1 text-[13px] text-slate-500">Salário + FGTS + benefícios (13º, férias, abono e rescisão ficam de fora).</p>
           <table className="mt-2 w-full text-sm">
             <thead>
               <tr className="text-left text-[13px] text-gray-500">
                 <th className="py-1">Centro</th><th className="py-1 text-right">Pessoas</th>
-                <th className="py-1 text-right">Custo do mês</th><th className="py-1 text-right" title="Com provisões de 13º e férias">Custo real</th>
+                <th className="py-1 text-right">Custo mensal</th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(custos.por_centro).sort((a, b) => b[1].custo_mes - a[1].custo_mes).map(([cod, v]) => (
+              {Object.entries(custos.por_centro).sort((a, b) => b[1].custo_mensal - a[1].custo_mensal).map(([cod, v]) => (
                 <tr key={cod} className="border-t border-gray-50">
                   <td className="py-1.5 text-gray-700">{cod === 'sem_centro' ? 'Sem centro' : nomeCentro(cod, centros)}</td>
                   <td className="py-1.5 text-right tabular-nums text-gray-600">{v.pessoas}</td>
-                  <td className="py-1.5 text-right tabular-nums text-gray-800">{fmtBRL(v.custo_mes)}</td>
-                  <td className="py-1.5 text-right tabular-nums text-gray-500">{fmtBRL(v.custo_com_provisoes)}</td>
+                  <td className="py-1.5 text-right tabular-nums text-gray-800">{fmtBRL(v.custo_mensal)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="mt-2 text-[13px] text-slate-500">Só quem tem contrato cadastrado. Custo real = custo do mês + provisões de 13º e férias.</p>
+          <p className="mt-2 text-[13px] text-slate-500">Só funcionários ativos com valores preenchidos em Pagamento.</p>
         </div>
       )}
     </div>

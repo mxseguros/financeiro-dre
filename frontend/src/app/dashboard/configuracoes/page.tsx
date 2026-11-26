@@ -10,13 +10,12 @@ import { SecaoCategoriasSubitens } from './_components/SecaoCategoriasSubitens'
 import { SecaoBancos } from './_components/SecaoBancos'
 import { SecaoCentros } from './_components/SecaoCentros'
 import { SecaoFuncionarios } from './_components/SecaoFuncionarios'
-import { SecaoFolha } from './_components/SecaoFolha'
 import { SecaoClassificacoes } from './_components/SecaoClassificacoes'
 import { SecaoFornecedores } from './_components/SecaoFornecedores'
 import { SecaoContasPagadoras } from './_components/SecaoContasPagadoras'
 import { SecaoIA } from './_components/SecaoIA'
 
-type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios' | 'folha' | 'fornecedores' | 'contas_pagadoras' | 'ia'
+type Aba = 'usuarios' | 'categorias' | 'classificacoes' | 'bancos' | 'centros' | 'funcionarios' | 'fornecedores' | 'contas_pagadoras' | 'ia'
 
 export default function ConfiguracoesPage() {
   const { token, session, signOut } = useAuth()
@@ -43,7 +42,6 @@ export default function ConfiguracoesPage() {
     { titulo: 'Pessoas', itens: [
       { id: 'funcionarios', label: 'Funcionários', desc: 'Quem lança Ordem de Compra pelo link /oc, com o centro de custo de cada um' },
       { id: 'fornecedores', label: 'Fornecedores', desc: 'Favorecidos dos pagamentos: CPF/CNPJ, chave Pix e conta. Os funcionários são editados no contrato.' },
-      { id: 'folha', label: 'Folha', desc: 'Tabelas de INSS/IRRF, encargos, vencimentos e subitens da folha', admin: true },
     ] },
     { titulo: 'Pagamentos', itens: [
       { id: 'contas_pagadoras', label: 'Contas pagadoras', desc: 'Contas da empresa de onde saem os pagamentos por arquivo (CNAB), com convênio e opções do banco', admin: true },
@@ -54,7 +52,7 @@ export default function ConfiguracoesPage() {
   ]
   // Pagamentos (0050): quem gera remessa gerencia fornecedores; contas, só o Admin.
   const podePagamentos = permissaoPagamentos(permissions, role, 'remessa')
-  // Folha (0049) e Contas pagadoras: só o Admin.
+  // Contas pagadoras e Assistente de IA: só o Admin.
   const GRUPOS = GRUPOS_TODOS.map(g => ({ ...g, itens: g.itens.filter(i => !i.admin || role === 'admin') })).filter(g => g.itens.length)
   const ABAS = GRUPOS.flatMap(g => g.itens)
 
@@ -137,7 +135,6 @@ export default function ConfiguracoesPage() {
         <SecaoFuncionarios token={token} podeCriar={podeCriar} podeEditar={podeEditar} podeExcluir={podeExcluir}
           ehAdmin={role === 'admin'} />
       )}
-      {aba === 'folha' && role === 'admin' && <SecaoFolha token={token} />}
       {aba === 'fornecedores' && <SecaoFornecedores token={token} podeGerenciar={podePagamentos} />}
       {aba === 'contas_pagadoras' && role === 'admin' && <SecaoContasPagadoras token={token} />}
       {aba === 'ia' && role === 'admin' && <SecaoIA token={token} />}

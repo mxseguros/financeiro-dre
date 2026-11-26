@@ -6,6 +6,7 @@ Escrita/edição: exclusivo Admin.
 """
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
@@ -20,11 +21,12 @@ from app.models.schemas import (
     CategoriaLancamentoCreate, CategoriaLancamentoItem, CategoriaLancamentoUpdate,
     CentroCustoCreate, CentroCustoItem, CentroCustoUpdate, CentroCustoMover,
     FuncionarioCreate, FuncionarioItem, FuncionarioUpdate,
-    FolhaParametrosPayload, FolhaRubricasPayload, FolhaSimulacao, FuncionarioContrato,
     ClassificacaoCreate, ClassificacaoItem, ClassificacaoUpdate,
     TipoLancamentoCreate, TipoLancamentoItem, TipoLancamentoUpdate,
 )
-from app.services import classificacao_service, financeiro_service, folha_service, funcionarios_service, ia_chave_service
+from app.services import (
+    classificacao_service, financeiro_service, funcionarios_service, ia_chave_service, remuneracao_service,
+)
 from app.services.dre_service import registrar_auditoria
 
 router = APIRouter(prefix="/configuracoes", tags=["Configurações"])
@@ -260,76 +262,40 @@ async def excluir_funcionario(
     )
 
 
-# ── FOLHA CLT (0049) — só Admin ───────────────────────────────
-# Contrato e salário do funcionário, simulação do mês, tabelas e mapeamento.
+# ── REMUNERAÇÃO DO FUNCIONÁRIO (0052) — só Admin ──────────────
+# Valores por item (salário, 13º, férias, FGTS, benefícios, rescisão). A Folha
+# CLT (cálculo de INSS/IRRF, tabelas e rubricas) foi removida em 26/11/2026.
 
-@router.get("/funcionarios/custos", summary="Custo do mês por funcionário e centro (Admin)")
+class RemuneracaoPayload(BaseModel):
+    valores: dict[str, Decimal | None] = Field(default_factory=dict)
+
+
+@router.get("/funcionarios/custos", summary="Custo mensal por funcionário e centro (Admin)")
 async def custos_funcionarios(usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None):
-    return folha_service.custos(usuario, get_supabase_admin())
+    return remuneracao_service.custos(usuario, get_supabase_admin())
 
 
-@router.get("/funcionarios/{funcionario_id}/contrato", summary="Contrato e salário (Admin)")
-async def obter_contrato(
+@router.get("/funcionarios/{funcionario_id}/remuneracao", summary="Remuneração do funcionário (Admin)")
+async def obter_remuneracao(
     funcionario_id: UUID, usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
-    return folha_service.obter_contrato(funcionario_id, usuario, get_supabase_admin())
+    return remuneracao_service.obter(funcionario_id, usuario, get_supabase_admin())
 
 
-@router.put("/funcionarios/{funcionario_id}/contrato", summary="Salvar contrato e salário (Admin)")
-async def salvar_contrato(
+@router.put("/funcionarios/{funcionario_id}/remuneracao", summary="Salvar remuneração do funcionário (Admin)")
+async def salvar_remuneracao(
     request: Request,
     funcionario_id: UUID,
-    payload: FuncionarioContrato,
+    payload: RemuneracaoPayload,
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
-    item = folha_service.salvar_contrato(funcionario_id, payload.model_dump(), usuario, get_supabase_admin())
+    item = remuneracao_service.salvar(funcionario_id, payload.valores, usuario, get_supabase_admin())
     # Auditoria sem valores: salário é confidencial.
     await registrar_auditoria(
-        usuario, "salvar_contrato_funcionario", {"funcionario_id": str(funcionario_id)},
+        usuario, "salvar_remuneracao_funcionario", {"funcionario_id": str(funcionario_id)},
         request.client.host if request.client else None, get_supabase_admin(),
     )
     return item
-
-
-@router.post("/folha/simular", summary="Calcula o mês de um contrato (Admin)")
-async def simular_folha(payload: FolhaSimulacao, usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None):
-    return folha_service.simular(payload.contrato.model_dump(), usuario, get_supabase_admin(),
-                                 ano=payload.ano, variaveis=payload.variaveis)
-
-
-@router.get("/folha/parametros", summary="Tabelas da folha do ano (Admin)")
-async def obter_parametros_folha(
-    ano: int = Query(default=None), usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
-):
-    from datetime import date as _date
-    folha_service.exigir_admin(usuario)
-    return folha_service.parametros(ano or _date.today().year, usuario, get_supabase_admin())
-
-
-@router.put("/folha/parametros", summary="Salvar tabelas da folha (Admin)")
-async def salvar_parametros_folha(
-    request: Request, payload: FolhaParametrosPayload,
-    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
-):
-    item = folha_service.salvar_parametros(payload.ano, payload.dados, payload.conferido, usuario, get_supabase_admin())
-    await registrar_auditoria(
-        usuario, "salvar_parametros_folha", {"ano": payload.ano, "conferido": payload.conferido},
-        request.client.host if request.client else None, get_supabase_admin(),
-    )
-    return item
-
-
-@router.get("/folha/rubricas", summary="Rubrica da folha → subitem (Admin)")
-async def obter_rubricas_folha(usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None):
-    folha_service.exigir_admin(usuario)
-    return folha_service.rubricas(usuario, get_supabase_admin())
-
-
-@router.put("/folha/rubricas", summary="Salvar rubrica → subitem (Admin)")
-async def salvar_rubricas_folha(
-    payload: FolhaRubricasPayload, usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
-):
-    return folha_service.salvar_rubricas(payload.mapa, usuario, get_supabase_admin())
 
 
 # ── CATEGORIAS DE LANÇAMENTO ──────────────────────────────────
