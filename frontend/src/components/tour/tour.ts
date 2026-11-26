@@ -51,9 +51,9 @@ const TELAS: Record<string, Passo[]> = {
   '/dashboard/lancamentos': [
     PERIODO('Defina o intervalo De/Até dos lançamentos listados.'),
     { el: 'novos-lancamentos', titulo: 'Novo lançamento',  texto: 'Em "+ Novo": registre uma despesa, uma receita ou uma ordem de compra, ou importe o extrato do banco (OFX ou CSV). Na despesa, o bloco Pagamento guarda o favorecido, a forma (Pix, TED, boleto, guia…) e o documento usados na remessa do banco.' },
-    { el: 'resumo',            titulo: 'Totais',           texto: 'Somatório do período selecionado.' },
-    { el: 'filtros',           titulo: 'Filtros', texto: 'Abra pelo ícone: Categoria e Subitem (tipo), banco, centro de custo e status. O número no botão mostra quantos filtros estão ativos.' },
-    { el: 'tabela',            titulo: 'Lista',            texto: 'Lançamentos separados em Despesas, Receitas e Ordens de Compra, com busca por descrição.', lado: 'top' },
+    { el: 'resumo',            titulo: 'Resumo da aba',    texto: 'Totais da aba aberta no período: em Despesas, o que já foi pago, o que falta pagar e o que venceu; em Receitas, o recebido, o a receber e o atrasado.' },
+    { el: 'filtros',           titulo: 'Filtros', texto: 'Busca e filtros à vista: Categoria, Subitem, Banco, Centro e Status. O filtro escolhido fica em azul; "Limpar filtros" tira todos.' },
+    { el: 'tabela',            titulo: 'Lista',            texto: 'Clique numa linha para abrir e editar (o Excluir fica no rodapé da janela). Marque as caixas para agir em lote: marcar como paga ou levar para a remessa do banco.', lado: 'top' },
   ],
   '/dashboard/lancamentos/aprovacoes': [
     PERIODO('Escolha o mês a aprovar.'),
