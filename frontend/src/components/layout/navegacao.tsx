@@ -21,6 +21,7 @@ export const Icon = {
   compass: svg(<><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></>),
   table:   svg(<><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></>),
   bank:    svg(<path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3z"/>),
+  chat:    svg(<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>),
   mais:    svg(<><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></>),
   sair:    svg(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>),
   download:svg(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>),
@@ -40,12 +41,12 @@ export interface NavItem {
 export interface NavGrupo { titulo: string; itens: NavItem[] }
 
 // "Exportações" saiu do menu: exportar é o botão da barra do topo.
-// O Assistente IA entra no grupo Acompanhar na fase 9 (hoje /dashboard/chat só redireciona).
 export const GRUPOS: NavGrupo[] = [
   { titulo: 'Acompanhar', itens: [
     { href: '/dashboard',            label: 'Visão Geral', icon: Icon.grid,  permissaoTela: 'visao_geral' },
     { href: '/dashboard/dre',        label: 'DRE',         icon: Icon.chart, permissaoTela: 'dre' },
     { href: '/dashboard/relatorios', label: 'Relatórios',  icon: Icon.table, permissaoTela: 'relatorios' },
+    { href: '/dashboard/chat',       label: 'Assistente IA', icon: Icon.chat },
   ] },
   { titulo: 'Operar', itens: [
     { href: '/dashboard/lancamentos',            label: 'Lançamentos', icon: Icon.book,   permissaoTela: 'lancamentos' },
@@ -93,6 +94,7 @@ const ROTAS: [string, MetaRota][] = [
   ['/dashboard/dre',                    { titulo: 'DRE',          subtitulo: 'Previsto x Realizado', periodo: false, exportar: true }],
   ['/dashboard/relatorios',             { titulo: 'Relatórios',   subtitulo: 'Monte o relatório como numa tabela dinâmica', periodo: false }],
   ['/dashboard/configuracoes',          { titulo: 'Configurações', subtitulo: 'Cadastros, usuários e parâmetros do sistema', periodo: false }],
+  ['/dashboard/chat',                   { titulo: 'Assistente IA', subtitulo: 'Pergunte sobre os números do período', periodo: true }],
   ['/dashboard/ajuda',                  { titulo: 'Ajuda',        subtitulo: 'Respostas rápidas e tour guiado', periodo: false }],
   ['/dashboard/exports',                { titulo: 'Exportações',  subtitulo: 'Baixe os relatórios em planilha', periodo: false }],
   ['/dashboard',                        { titulo: 'Visão Geral',  subtitulo: 'Previsto x pago e posição por banco', periodo: true, exportar: true }],
