@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -553,6 +553,16 @@ def _sem_acento(texto: str) -> str:
     return "".join(c for c in decomposto if not unicodedata.combining(c))
 
 
+def hoje_brasil() -> date:
+    """Data de hoje no horário de Brasília (o servidor roda em UTC: depois das
+    21h, `date.today()` já seria amanhã). Sem base de fusos, cai no UTC."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    except Exception:  # noqa: BLE001
+        return date.today()
+
+
 async def buscar_despesas(
     inicio: date,
     fim: date,
@@ -640,7 +650,7 @@ async def buscar_despesas(
                 _aplicar_filtros(db.table("despesas").select("id", count="exact"))
                 .eq("status", "pendente").limit(1)
             ),
-            _exec(_aplicar_filtros(db.table("despesas").select("valor"))),
+            _exec(_aplicar_filtros(db.table("despesas").select("valor, paga_em, data_vencimento"))),
         )
     def _item(row: dict) -> DespesaItem:
         tipo_nome  = (row.get("subitens_lancamento") or {}).get("nome")
@@ -687,10 +697,20 @@ async def buscar_despesas(
         )
         agregados = [_item(r) for r in conf.agregar(linhas, getattr(usuario, "tenant_id", None))]
 
+    hoje = hoje_brasil().isoformat()
+    situacao = {"paga": [Decimal(0), 0], "a_pagar": [Decimal(0), 0], "vencida": [Decimal(0), 0]}
+
+    def _contar(valor, paga_em, vencimento) -> None:
+        chave = "paga" if paga_em else ("vencida" if vencimento and str(vencimento)[:10] < hoje else "a_pagar")
+        situacao[chave][0] += _dec(valor or 0)
+        situacao[chave][1] += 1
+
     if limit is None:
         soma = sum(i.valor for i in items)
         pendentes = sum(1 for i in items if i.status == "pendente")
         total = len(items)
+        for i in items:
+            _contar(i.valor, i.paga_em, i.data_vencimento)
     else:
         # Paginado: os agregados precisam refletir TODO o período (e a busca),
         # não a página atual — as queries já rodaram em paralelo lá em cima.
@@ -704,13 +724,21 @@ async def buscar_despesas(
         total = resp_total.count or 0
         pendentes = resp_pend.count or 0
         soma = sum(_dec(r.get("valor", 0)) for r in (resp_soma.data or []))
+        for r in (resp_soma.data or []):
+            _contar(r.get("valor"), r.get("paga_em"), r.get("data_vencimento"))
     if agregados:
         # Entram no topo da 1ª página; total e soma contam em todas.
         total += len(agregados)
         soma += sum(a.valor for a in agregados)
+        for a in agregados:
+            _contar(a.valor, a.paga_em, a.data_vencimento)
         if not offset:
             items = agregados + items
-    return DespesasResponse(total=total, items=items, soma_total=soma, total_pendentes=pendentes)
+    return DespesasResponse(
+        total=total, items=items, soma_total=soma, total_pendentes=pendentes,
+        soma_paga=situacao["paga"][0], soma_a_pagar=situacao["a_pagar"][0], soma_vencida=situacao["vencida"][0],
+        qtd_paga=situacao["paga"][1], qtd_a_pagar=situacao["a_pagar"][1], qtd_vencida=situacao["vencida"][1],
+    )
 
 
 def campos_aprovacao(usuario_id: str | None) -> dict:

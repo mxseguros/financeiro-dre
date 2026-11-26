@@ -238,7 +238,7 @@ export function useContagemAnexos(token: string | null | undefined, entidade: En
 export function MarcaAnexos({ n }: { n?: number }) {
   if (!n) return null
   return (
-    <span className="ml-1.5 inline-flex shrink-0 items-center text-[11px] font-normal text-gray-400"
+    <span className="ml-1.5 inline-flex shrink-0 items-center text-[13px] font-normal text-slate-500"
       title={`${n} anexo${n > 1 ? 's' : ''}`} aria-label={`${n} anexo${n > 1 ? 's' : ''}`}>
       📎{n > 1 ? n : ''}
     </span>

@@ -1,7 +1,7 @@
 'use client'
 // Pagamentos por arquivo CNAB (0050, fase 2): despesas aprovadas a pagar,
 // criação da remessa (validação item a item, NSA, arquivo) e lista de remessas.
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
@@ -325,6 +325,23 @@ export default function PagamentosPage() {
     return t ? lista.filter(i => `${i.descricao} ${i.favorecido?.nome ?? ''}`.toLowerCase().includes(t)) : lista
   }, [dados, busca])
   const prontos = itens.filter(i => i.pendencias.length === 0)
+
+  // "Incluir na remessa" de Lançamentos (redesenho UX, fase 3): chega como
+  // ?incluir=id1,id2 e já deixa escolhidas as que estão prontas para o banco.
+  const incluirAplicado = useRef(false)
+  useEffect(() => {
+    if (incluirAplicado.current || aba !== 'a_pagar' || !dados) return
+    const pedidos = (new URLSearchParams(window.location.search).get('incluir') ?? '').split(',').filter(Boolean)
+    incluirAplicado.current = true
+    if (!pedidos.length) return
+    window.history.replaceState(null, '', window.location.pathname)
+    const prontasIds = new Set((dados.itens ?? []).filter(i => i.pendencias.length === 0).map(i => i.id))
+    const ok = pedidos.filter(id => prontasIds.has(id))
+    setSel(new Set(ok))
+    const faltam = pedidos.length - ok.length
+    if (ok.length) toast.sucesso(`${ok.length} despesa${ok.length > 1 ? 's escolhidas' : ' escolhida'} em Lançamentos. Confira e clique em Criar remessa.`)
+    if (faltam) toast.erro(`${faltam} não ${faltam > 1 ? 'puderam' : 'pôde'} entrar: falta favorecido, forma de pagamento ou documento. Veja os avisos na lista.`)
+  }, [aba, dados, toast])
   const totalSel = itens.filter(i => sel.has(i.id)).reduce((s, i) => s + parseFloat(i.valor_pagar), 0)
 
   function alternar(id: string) {
