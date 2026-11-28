@@ -1,24 +1,27 @@
-import { OpcoesCentro } from '@/lib/centros'
+import { OpcoesCentro, nomeCentro } from '@/lib/centros'
 import { CampoAnexos, enviarAnexos, type AnexoPendente } from '@/components/anexos/CampoAnexos'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { api } from '@/lib/api'
-import { mesAtual } from '@/lib/utils'
+import { cn, mesAtual } from '@/lib/utils'
 import { InputMoeda } from '@/components/ui/InputMoeda'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { Field, Input, Select } from '@/components/ui/Field'
 import { AvisoRecorrencia, type SerieRecorrencia } from './AvisoRecorrencia'
-import { BlocoPagamento, estadoPagamentoVazio, pagamentoPreenchido, salvarPagamento, type EstadoPagamento } from '@/components/pagamentos/BlocoPagamento'
-import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type Classificacao, type Receita, classificacoesDe } from './shared'
+import { BlocoPagamento, estadoPagamentoVazio, pagamentoPreenchido, salvarPagamento, type EstadoPagamento, type ResumoPagamento } from '@/components/pagamentos/BlocoPagamento'
+import { type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type Classificacao, type Receita } from './shared'
 import { DicaEspelhoIndisponivel, ESPELHO_VAZIO, FaixaVinculo, PainelEspelho, ehEmprestimo, payloadEspelho, useVinculo, type EspelhoForm } from './Emprestimo'
+import {
+  Campo, CaixaInterruptor, Checklist, ContadorParcelas, EscolhaBotoes, Historico, ResumoFaixa, ResumoValor, Secao,
+  SeloClassificacao, atalhoSalvar, campoCls, corBanco, mesAno, type EstadoItem,
+} from './FormLancamento'
+import { Selo, hojeISO, situacaoDespesa } from './situacao'
 
 // Limites espelhados de DespesaCreate/DespesaUpdate (app/models/schemas.py).
 // Sem eles o backend devolvia 422 e a tela mostrava só "HTTP 422".
 // Parcelas: sem limite de negócio (pedido de 07/10/2026). 999 é só teto técnico —
 // cada parcela vira um lançamento mensal, e um erro de digitação como "12000"
-// gravaria milhares de linhas de uma vez. A lista oferece atalhos de 1 a 120.
+// gravaria milhares de linhas de uma vez.
 const MAX_PARCELAS = 999
-const OPCOES_PARCELAS = Array.from({ length: 120 }, (_, i) => i + 1)
 const DESCRICAO_MIN = 3
 const DESCRICAO_MAX = 500
 const SUBCATEGORIA_MAX = 100
@@ -29,69 +32,6 @@ function competenciaMaxima(): string {
   d.setDate(1)
   d.setMonth(d.getMonth() + 2)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-interface SeletorParcelasProps {
-  id: string
-  value: string
-  onChange: (v: string) => void
-  'aria-invalid': boolean | undefined
-  'aria-describedby': string | undefined
-}
-
-/** Nº de parcelas: escolhe na lista (atalhos de 1 a 120) ou digita qualquer número. */
-function SeletorParcelas({ id, value, onChange, ...aria }: SeletorParcelasProps) {
-  const [aberto, setAberto] = useState(false)
-  const listaRef = useRef<HTMLUListElement>(null)
-  const atual = parseInt(value) || 0
-  const listaId = `${id}-opcoes`
-
-  useEffect(() => {
-    if (!aberto) return
-    listaRef.current?.querySelector<HTMLElement>(`[data-n="${atual}"]`)?.scrollIntoView({ block: 'nearest' })
-  }, [aberto, atual])
-
-  const escolher = (n: number) => { onChange(String(n)); setAberto(false) }
-
-  return (
-    <div className="relative">
-      <Input {...aria} id={id} size="sm" type="text" inputMode="numeric" autoComplete="off"
-        role="combobox" aria-expanded={aberto} aria-controls={listaId}
-        value={value} placeholder="Ex.: 12" className="pr-8"
-        onChange={e => { onChange(e.target.value.replace(/\D/g, '').slice(0, 4)); setAberto(true) }}
-        onFocus={() => setAberto(true)}
-        onBlur={() => { setAberto(false); if (!value) onChange('1') }}
-        onKeyDown={e => {
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault()
-            const n = Math.min(MAX_PARCELAS, Math.max(1, (atual || 1) + (e.key === 'ArrowDown' ? 1 : -1)))
-            onChange(String(n)); setAberto(true)
-          } else if (e.key === 'Enter' && aberto) {
-            e.preventDefault(); setAberto(false)
-          }
-        }} />
-      <button type="button" tabIndex={-1} aria-label="Abrir lista de parcelas"
-        onMouseDown={e => { e.preventDefault(); setAberto(a => !a) }}
-        className="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-gray-400 hover:text-gray-600">
-        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-        </svg>
-      </button>
-      {aberto && (
-        <ul ref={listaRef} id={listaId} role="listbox"
-          className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg">
-          {OPCOES_PARCELAS.map(n => (
-            <li key={n} data-n={n} role="option" aria-selected={n === atual}
-              // mousedown (e não click) para escolher antes do blur do campo fechar a lista
-              onMouseDown={e => { e.preventDefault(); escolher(n) }}
-              className={`cursor-pointer px-2.5 py-1 ${n === atual ? 'bg-navy text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
-              {n === 1 ? '1x (sem parcelar)' : `${n}x`}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
 }
 
 interface ModalDespesaProps {
@@ -122,7 +62,8 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     competencia:        despesa ? despesa.competencia.slice(0, 7) : (mesDefault ?? mesAtual()[0].slice(0, 7)),
     data_vencimento:    despesa?.data_vencimento ?? '',
     paga_em:            despesa?.paga_em ?? '',
-    centro_custo:       despesa?.centro_custo ?? 'matriz',
+    // Sem padrão: "matriz" virou grupo (0044) e o backend recusa lançamento nele.
+    centro_custo:       despesa?.centro_custo ?? '',
     recorrente:         despesa?.recorrente ?? false,
     repetir_ate:        '',
     // Parcelamento
@@ -144,6 +85,11 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   // Empréstimo (28/11/2026): receita espelho na criação; faixa do vínculo na edição.
   const [espelho, setEspelho] = useState<EspelhoForm>(ESPELHO_VAZIO)
   const vinculado = useVinculo(token, 'despesa', despesa?.id)
+  // Novo layout (28/11/2026): "Já foi paga" mostra a Data de Pagamento.
+  const [pagaLigada, setPagaLigada] = useState(!!despesa?.paga_em)
+  const [resumoPagto, setResumoPagto] = useState<ResumoPagamento | null>(null)
+  const [nAnexos, setNAnexos] = useState(0)
+  const formId = useId()
 
   // Se o modal abriu antes de a taxonomia terminar de carregar, a categoria
   // nasceu vazia — o useState acima só calcula o valor inicial uma vez — e o
@@ -226,6 +172,8 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     // A trava de competência futura só existe na criação (DespesaCreate).
     else if (!editando && form.competencia > competenciaMaxima()) e.competencia = 'A competência pode ser no máximo 2 meses à frente.'
     if (!form.data_vencimento) e.data_vencimento = 'Informe a data de vencimento.'
+    if (!form.centro_custo) e.centro_custo = 'Selecione o centro de custo.'
+    if (pagaLigada && !form.paga_em) e.paga_em = 'Informe a data de pagamento.'
     // Só na criação: o campo "Repetir até" não é desenhado na edição, e exigi-lo
     // ali travava o Salvar de toda despesa recorrente em silêncio (erro num
     // campo invisível).
@@ -236,8 +184,9 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     return Object.keys(e).length === 0
   }
 
-  async function salvar(e: React.FormEvent) {
-    e.preventDefault()
+  async function salvar(e?: React.FormEvent) {
+    e?.preventDefault()
+    if (salvando || falhaAnexos) return
     if (!validar()) {
       // Rede de segurança: se algum erro cair num campo fora da tela, o
       // usuário ainda vê que o salvamento foi barrado — nunca mais botão "morto".
@@ -390,220 +339,248 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     }
   }
 
+  // ── Novo layout ────────────────────────────────────────────
+  const subitem = tipos.find(t => t.id === form.tipo_lancamento_id)
+  const categoria = categorias.find(c => c.id === form.categoria_id)
+  const bancoNome = bancos.find(b => b.id === form.banco_id)?.nome ?? 'Sem banco'
+  const centroNome = form.centro_custo ? nomeCentro(form.centro_custo, centros) : '—'
+  const situacao = despesa ? situacaoDespesa({ ...despesa, paga_em: form.paga_em || null, data_vencimento: form.data_vencimento || null }) : null
+  const classifNome = classificacao
+    ? (classificacoes ?? []).find(c => c.codigo === classificacao)?.nome ?? classificacao.replace('_', ' ')
+    : '—'
+
+  function ligarPaga(v: boolean) {
+    setPagaLigada(v)
+    set('paga_em', v ? (form.paga_em || hojeISO()) : '')
+  }
+
+  // "Pronto para remessa?" (CNAB): só faz sentido para despesa em aberto.
+  const mostrarRemessa = !!resumoPagto?.habilitado && !form.paga_em
+  const itensRemessa: { texto: string; estado: EstadoItem }[] = [
+    { texto: 'Valor e vencimento', estado: valorParcela > 0 && form.data_vencimento ? 'ok' : 'falta' },
+    { texto: 'Banco pagador', estado: form.banco_id ? 'ok' : 'falta' },
+    { texto: 'Forma de pagamento', estado: resumoPagto?.forma ? 'ok' : 'falta' },
+    ...(resumoPagto?.forma
+      ? [{ texto: resumoPagto.falta ?? (resumoPagto.favorecidoNome ? `Favorecido: ${resumoPagto.favorecidoNome}` : 'Dados do pagamento'),
+          estado: (resumoPagto.falta ? 'alerta' : 'ok') as EstadoItem }]
+      : []),
+    { texto: 'Nota ou boleto anexado (opcional)', estado: nAnexos > 0 ? 'ok' : 'opcional' },
+  ]
+
+  const subtitulo = (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      {situacao && <Selo texto={situacao.texto} tom={situacao.tom} className="text-xs" />}
+      <span>
+        {categoria && subitem ? `${categoria.nome} › ${subitem.nome} · ` : ''}Competência {mesAno(form.competencia)}
+        {!editando && ' · os campos com * são obrigatórios'}
+      </span>
+    </span>
+  )
+
+  const rodape = (
+    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+      {onExcluir && !falhaAnexos ? (
+        <Button type="button" variant="ghost" tone="danger" onClick={onExcluir} disabled={salvando}>Excluir despesa</Button>
+      ) : <span />}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {falhaAnexos ? (
+          <Button type="button" onClick={onClose} className="flex-1 sm:flex-none">Fechar</Button>
+        ) : (
+          <>
+            <span className="hidden text-xs text-slate-500 md:inline">Ctrl + Enter para salvar</span>
+            <Button type="button" variant="secondary" onClick={onClose} disabled={salvando} className="flex-1 sm:flex-none">Cancelar</Button>
+            <Button type="submit" form={formId} loading={salvando} className="flex-[2] sm:flex-none">
+              {salvando ? 'Salvando…' : editando ? 'Salvar alterações' : parcelado ? `Criar ${numParcelas} parcelas` : 'Salvar despesa'}
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <Modal
       open
       onClose={onClose}
-      title={editando ? 'Editar Despesa' : 'Nova Despesa'}
+      title={editando ? 'Editar despesa' : 'Nova despesa'}
+      subtitle={subtitulo}
       variant="sheet"
-      maxWidth="sm:max-w-xl"
+      maxWidth="sm:max-w-5xl"
       dismissable={!salvando}
+      bodyClassName="flex-1 overflow-y-auto border-t border-slate-200 bg-slate-50"
+      footer={rodape}
     >
-      <FaixaVinculo token={token} vinculado={vinculado} onAbrir={onAbrirVinculado} />
-      {/* Regra de 19/10/2026: Data de Pagamento aprova a despesa (qualquer perfil). */}
-      {editando && (form.paga_em ? (
-        <div className="mb-3 rounded-lg bg-green-50 border border-green-200 px-3 py-1.5 text-xs text-green-700">
-          Com Data de Pagamento, a despesa fica <strong>Aprovada</strong>.
-        </div>
-      ) : (
-        <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs text-amber-700">
-          A despesa voltará para <strong>Pendente</strong> e precisará de nova aprovação.
-        </div>
-      ))}
+      <ResumoFaixa tema="despesa" rotulo="Valor total" valor={valorTotal}
+        detalhe={`${numParcelas}x · ${bancoNome}${form.data_vencimento ? ` · vence ${form.data_vencimento.slice(8, 10)}/${form.data_vencimento.slice(5, 7)}` : ''}`} />
 
-      <form onSubmit={salvar} noValidate className="space-y-2.5">
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
-          <Field label="Categoria" required error={erros.categoria_id}>
-            {p => (
-              <Select {...p} size="sm" value={form.categoria_id} onChange={e => selecionarCategoria(e.target.value)}>
-                <option value="">Selecionar categoria</option>
-                {categoriasDespesa.map(c => (
-                  <option key={c.id} value={c.id}>{c.nome}</option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <Field label="Subitem" required error={erros.tipo_lancamento_id}>
-            {p => (
-              <Select {...p} size="sm" disabled={!form.categoria_id} value={form.tipo_lancamento_id}
-                onChange={e => selecionarSubitem(e.target.value)}>
-                <option value="">{form.categoria_id ? 'Selecionar subitem' : 'Escolha a categoria primeiro'}</option>
-                {subitensDaCategoria.map(t => (
-                  <option key={t.id} value={t.id}>{t.nome}</option>
-                ))}
-              </Select>
-            )}
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
-          <Campo label="Classificação">
-            <select value={classificacao}
-              onChange={e => setClassificacao(e.target.value)} className={selectCls}>
-              <option value="">Selecionar</option>
-              {classificacoesDe(classificacoes, 'despesa', classificacao).map(c => (
-                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
-              ))}
-            </select>
-          </Campo>
-          <Campo label="Banco">
-            <select value={form.banco_id} onChange={e => set('banco_id', e.target.value)} className={selectCls}>
-              <option value="">Sem banco</option>
-              {bancos.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
-            </select>
-          </Campo>
-          <Campo label="Centro de custo">
-            <select value={form.centro_custo} onChange={e => set('centro_custo', e.target.value)} className={selectCls}>
-              <OpcoesCentro centros={centros} atual={form.centro_custo} />
-            </select>
-          </Campo>
-        </div>
-
-        <Field label="Descrição" required error={erros.descricao}>
-          {p => (
-            <Input {...p} size="sm" value={form.descricao} onChange={e => set('descricao', e.target.value)}
-              maxLength={DESCRICAO_MAX}
-              placeholder="Ex: Aluguel sede matriz" />
-          )}
-        </Field>
-
-        {/* Valor, Parcelamento e Competência */}
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
-          <Field label="Valor da Parcela" required error={erros.valor_parcela}>
-            {() => <InputMoeda value={form.valor_parcela} onChange={v => set('valor_parcela', v)} />}
-          </Field>
-          <Field label="Nº de Parcelas" error={erros.num_parcelas}>
-            {/* Sempre editavel (pedido de 29/09/2026). Recorrencia e parcelamento
-                continuam exclusivos, mas agora a troca e automatica: na criacao,
-                parcelar desmarca "repetir"; na edicao, o backend converte a serie. */}
-            {p => (
-              <SeletorParcelas {...p} value={form.num_parcelas}
-                onChange={v => {
-                  set('num_parcelas', v)
-                  if (!editando && (parseInt(v) || 1) > 1 && form.recorrente) set('recorrente', false)
-                }} />
-            )}
-          </Field>
-          <Field label={naoEhPrimeiraParcela ? 'Competência' : 'Competência (1ª parc.)'} required error={erros.competencia}>
-            {p => (
-              <Input {...p} size="sm" type="month" value={form.competencia}
-                onChange={e => set('competencia', e.target.value)} />
-            )}
-          </Field>
-        </div>
-
-        {/* Avisos em largura inteira: dentro da coluna do Nº de Parcelas
-            (1/3 do modal) quebravam em quatro linhas. */}
-        {editando && form.recorrente && numParcelas > 1 && (
-          <p className="-mt-1 text-xs text-amber-600">
-            Esta despesa é recorrente: ao salvar, a série deste mês em diante vira {numParcelas} parcelas.
-          </p>
-        )}
-        {naoEhPrimeiraParcela && (
-          <p className="-mt-1 text-xs text-gray-400">
-            Parcela {despesa?.parcela_atual} de {despesa?.parcela_total} — alterar o número refaz o parcelamento a partir da 1ª parcela.
-          </p>
-        )}
-
-        {valorParcela > 0 && (
-          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5 text-xs text-blue-700">
-            Valor Total: <strong>R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-            {' '}({numParcelas} {numParcelas === 1 ? 'parcela' : 'parcelas'} de R$ {valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
-          <Field label="Data de Vencimento" required error={erros.data_vencimento}>
-            {p => (
-              <Input {...p} size="sm" type="date" value={form.data_vencimento}
-                onChange={e => set('data_vencimento', e.target.value)} />
-            )}
-          </Field>
-          <Campo label="Data de Pagamento">
-            <input type="date" value={form.paga_em} onChange={e => set('paga_em', e.target.value)} className={inputCls} />
-          </Campo>
-        </div>
-
-        {/* A data informada vale para a 1ª parcela/ocorrência — as demais são
-            pagas mês a mês, editando cada lançamento. */}
-        {!editando && (parcelado || form.recorrente) && (
-          <p className="-mt-1 text-xs text-gray-400">
-            A Data de Pagamento se aplica {parcelado ? 'à 1ª parcela' : 'ao 1º mês'}; as demais ficam em aberto para pagamento mês a mês.
-          </p>
-        )}
-        {!editando && form.paga_em && (
-          <p className="-mt-1 text-xs text-green-700">
-            Com Data de Pagamento, a despesa entra como <strong>Aprovada</strong>{parcelado ? ' (a 1ª parcela)' : form.recorrente ? ' (o 1º mês)' : ''}.
-          </p>
-        )}
-
-        {/* Recorrente — não combina com parcelamento. Na edição (24/11/2026),
-            liga, estende, encurta ou desliga a série a partir desta despesa. */}
-        {!parcelado && (!editando || serie) && (
-          <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-2.5">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={form.recorrente as boolean}
-                onChange={e => set('recorrente', e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy"
-              />
-              <span className="text-sm font-medium text-gray-700">Despesa recorrente (repete todo mês)</span>
-            </label>
-            {form.recorrente && (
-              <Field label="Repetir até (mês/ano)" required error={erros.repetir_ate} className="max-w-[180px]">
-                {p => (
-                  <Input {...p} size="sm" type="month" value={form.repetir_ate} min={form.competencia}
-                    onChange={e => set('repetir_ate', e.target.value)} />
-                )}
-              </Field>
-            )}
-            {!editando && nMesesRecorrencia > 1 && (
-              <p className="text-xs text-blue-600">Serão criados <strong>{nMesesRecorrencia} registros</strong> mensais.</p>
-            )}
-            {editando && serie && <AvisoRecorrencia serie={serie} recorrente={form.recorrente} ate={form.repetir_ate} competencia={form.competencia} />}
-          </div>
-        )}
-
-        {espelhoDisponivel && (
-          <PainelEspelho lado="receita" valor={espelho} onChange={v => { setEspelho(v); limparErro('espelho') }}
-            categorias={categorias} tipos={tipos} bancos={bancos} centros={centros} erro={erros.espelho}
-            base={{ subitemNome: tipos.find(t => t.id === form.tipo_lancamento_id)?.nome, banco_id: form.banco_id, centro_custo: form.centro_custo }} />
-        )}
-        {!editando && categoriaEmprestimo && !espelhoDisponivel && <DicaEspelhoIndisponivel />}
-
-        <BlocoPagamento token={token} despesaId={despesa?.id} valorDespesa={valorParcela}
-          valor={pagamento} onChange={setPagamento} />
-        {!editando && pagamentoPreenchido(pagamento) && (parcelado || form.recorrente) && (
-          <p className="-mt-1 text-xs text-gray-400">O pagamento fica na {parcelado ? '1ª parcela' : 'despesa do 1º mês'}.</p>
-        )}
-
-        <CampoAnexos token={token} entidade="despesa" entidadeId={despesa?.id}
-          pendentes={anexosPendentes} onPendentes={setAnexosPendentes} />
-        {!editando && anexosPendentes.length > 0 && (parcelado || form.recorrente) && (
-          <p className="-mt-1 text-xs text-gray-400">Os anexos ficam na {parcelado ? '1ª parcela' : 'despesa do 1º mês'}.</p>
-        )}
-
-        {/* Erro de submissão (servidor). Erros de preenchimento ficam nos campos. */}
-        {erro && <p role="alert" className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-600">{erro}</p>}
-        {falhaAnexos && <p role="alert" className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-700">{falhaAnexos}</p>}
-
-        <div className="flex items-center justify-end gap-3 pt-1">
-          {onExcluir && !falhaAnexos && (
-            <Button type="button" variant="ghost" tone="danger" onClick={onExcluir} disabled={salvando}
-              className="mr-auto">Excluir</Button>
-          )}
-          {falhaAnexos ? (
-            <Button type="button" onClick={onClose}>Fechar</Button>
+      <form id={formId} onSubmit={salvar} onKeyDown={e => atalhoSalvar(e, () => salvar())} noValidate
+        className="flex gap-6 p-4 sm:p-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <FaixaVinculo token={token} vinculado={vinculado} onAbrir={onAbrirVinculado} />
+          {/* Regra de 19/10/2026: Data de Pagamento aprova a despesa (qualquer perfil). */}
+          {editando && (form.paga_em ? (
+            <p className="rounded-[10px] border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+              Com Data de Pagamento, a despesa fica <strong>Aprovada</strong>.
+            </p>
           ) : (
-            <>
-              <Button type="button" variant="secondary" onClick={onClose} disabled={salvando}>Cancelar</Button>
-              <Button type="submit" loading={salvando}>
-                {salvando ? 'Salvando…' : editando ? 'Salvar alterações' : parcelado ? `Criar ${numParcelas} parcelas` : 'Salvar'}
-              </Button>
-            </>
+            <p className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Ao salvar, a despesa volta para <strong>Pendente</strong> e precisa de nova aprovação.
+            </p>
+          ))}
+
+          <Secao n={1} titulo="O que é" tema="despesa">
+            <Campo id={`${formId}-desc`} rotulo="Descrição" obrigatorio erro={erros.descricao}>
+              <input id={`${formId}-desc`} value={form.descricao} onChange={e => set('descricao', e.target.value)}
+                maxLength={DESCRICAO_MAX} placeholder="Ex.: Aluguel sede matriz" aria-invalid={!!erros.descricao}
+                className={campoCls(!!erros.descricao, 'text-[15px]')} />
+            </Campo>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Campo id={`${formId}-cat`} rotulo="Categoria" obrigatorio erro={erros.categoria_id}>
+                <select id={`${formId}-cat`} value={form.categoria_id} onChange={e => selecionarCategoria(e.target.value)}
+                  aria-invalid={!!erros.categoria_id} className={campoCls(!!erros.categoria_id)}>
+                  <option value="">Selecionar categoria</option>
+                  {categoriasDespesa.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </Campo>
+              <Campo id={`${formId}-sub`} rotulo="Subitem" obrigatorio erro={erros.tipo_lancamento_id} desabilitado={!form.categoria_id}>
+                <select id={`${formId}-sub`} value={form.tipo_lancamento_id} disabled={!form.categoria_id}
+                  onChange={e => selecionarSubitem(e.target.value)} aria-invalid={!!erros.tipo_lancamento_id}
+                  className={campoCls(!!erros.tipo_lancamento_id)}>
+                  <option value="">{form.categoria_id ? 'Selecionar subitem' : 'Escolha a categoria primeiro'}</option>
+                  {subitensDaCategoria.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                </select>
+              </Campo>
+            </div>
+            <SeloClassificacao id={`${formId}-classif`} valor={classificacao} padraoSubitem={subitem?.custo_tipo}
+              onChange={setClassificacao} classificacoes={classificacoes} natureza="despesa" />
+          </Secao>
+
+          {espelhoDisponivel && (
+            <PainelEspelho lado="receita" valor={espelho} onChange={v => { setEspelho(v); limparErro('espelho') }}
+              categorias={categorias} tipos={tipos} bancos={bancos} centros={centros} erro={erros.espelho}
+              base={{ subitemNome: subitem?.nome, banco_id: form.banco_id, centro_custo: form.centro_custo }} />
           )}
+          {!editando && categoriaEmprestimo && !espelhoDisponivel && <DicaEspelhoIndisponivel />}
+
+          <Secao n={2} titulo="Quanto e quando" tema="despesa">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Campo id={`${formId}-valor`} rotulo="Valor da parcela" obrigatorio erro={erros.valor_parcela}>
+                <InputMoeda id={`${formId}-valor`} value={form.valor_parcela} onChange={v => set('valor_parcela', v)}
+                  className="!h-11 !rounded-[10px] !border-slate-300 !text-lg font-semibold tabular-nums text-right" />
+              </Campo>
+              <Campo id={`${formId}-parc`} rotulo="Parcelas" erro={erros.num_parcelas}>
+                {/* Sempre editável (29/09/2026). Parcelar desmarca "repetir" na criação. */}
+                <ContadorParcelas id={`${formId}-parc`} valor={form.num_parcelas} max={MAX_PARCELAS} invalido={!!erros.num_parcelas}
+                  onChange={v => {
+                    set('num_parcelas', v)
+                    if (!editando && (parseInt(v) || 1) > 1 && form.recorrente) set('recorrente', false)
+                  }} />
+              </Campo>
+              <Campo id={`${formId}-comp`} rotulo={naoEhPrimeiraParcela || !parcelado ? 'Competência' : 'Competência (1ª parcela)'} obrigatorio erro={erros.competencia}>
+                <input id={`${formId}-comp`} type="month" value={form.competencia} onChange={e => set('competencia', e.target.value)}
+                  aria-invalid={!!erros.competencia} className={campoCls(!!erros.competencia)} />
+              </Campo>
+              <Campo id={`${formId}-venc`} rotulo="Vencimento" obrigatorio erro={erros.data_vencimento}>
+                <input id={`${formId}-venc`} type="date" value={form.data_vencimento} onChange={e => set('data_vencimento', e.target.value)}
+                  aria-invalid={!!erros.data_vencimento} className={campoCls(!!erros.data_vencimento)} />
+              </Campo>
+            </div>
+            {parcelado && valorParcela > 0 && (
+              <p className="text-[13px] text-slate-600">
+                {numParcelas} parcelas de <strong>R$ {valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> ·
+                total <strong>R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+              </p>
+            )}
+            {editando && form.recorrente && numParcelas > 1 && (
+              <p className="text-xs text-amber-700">Esta despesa é recorrente: ao salvar, a série deste mês em diante vira {numParcelas} parcelas.</p>
+            )}
+            {naoEhPrimeiraParcela && (
+              <p className="text-xs text-slate-500">
+                Parcela {despesa?.parcela_atual} de {despesa?.parcela_total}: alterar o número refaz o parcelamento a partir da 1ª parcela.
+              </p>
+            )}
+            {/* Recorrente: não combina com parcelamento. Na edição (24/11/2026), liga, estende,
+                encurta ou desliga a série a partir desta despesa. */}
+            {!parcelado && (!editando || serie) && (
+              <CaixaInterruptor id={`${formId}-rec`} titulo="Repetir todo mês" dica="Cria a mesma despesa nas próximas competências"
+                ligado={form.recorrente as boolean} onChange={v => set('recorrente', v)}>
+                <div className="flex flex-col gap-2">
+                  <Campo id={`${formId}-ate`} rotulo="Repetir até (mês/ano)" obrigatorio erro={erros.repetir_ate} className="max-w-[220px]">
+                    <input id={`${formId}-ate`} type="month" value={form.repetir_ate} min={form.competencia}
+                      onChange={e => set('repetir_ate', e.target.value)} className={campoCls(!!erros.repetir_ate)} />
+                  </Campo>
+                  {!editando && nMesesRecorrencia > 1 && (
+                    <p className="text-xs text-blue-700">Serão criados <strong>{nMesesRecorrencia} registros</strong> mensais.</p>
+                  )}
+                  {editando && serie && <AvisoRecorrencia serie={serie} recorrente={form.recorrente} ate={form.repetir_ate} competencia={form.competencia} />}
+                </div>
+              </CaixaInterruptor>
+            )}
+          </Secao>
+
+          <Secao n={3} titulo="De onde sai" tema="despesa">
+            <EscolhaBotoes rotulo="Banco" tema="despesa" colunas={bancos.length + 1 > 3 ? 4 : bancos.length + 1 === 3 ? 3 : 2}
+              valor={form.banco_id} onChange={v => set('banco_id', v)}
+              opcoes={[...bancos.map(b => ({ valor: b.id, texto: b.nome, ponto: corBanco(b.nome) })), { valor: '', texto: 'Sem banco' }]} />
+            <Campo id={`${formId}-cc`} rotulo="Centro de custo" obrigatorio erro={erros.centro_custo} className="sm:max-w-[50%]">
+              <select id={`${formId}-cc`} value={form.centro_custo} onChange={e => set('centro_custo', e.target.value)}
+                aria-invalid={!!erros.centro_custo} className={campoCls(!!erros.centro_custo)}>
+                <option value="">Selecionar centro de custo</option>
+                <OpcoesCentro centros={centros} atual={form.centro_custo} />
+              </select>
+            </Campo>
+          </Secao>
+
+          <Secao n={4} titulo="Pagamento" tema="despesa"
+            extra={resumoPagto?.habilitado ? <span className="text-xs text-slate-500">Usado na remessa CNAB</span> : undefined}>
+            <BlocoPagamento token={token} despesaId={despesa?.id} valorDespesa={valorParcela}
+              valor={pagamento} onChange={setPagamento} embutido onResumo={setResumoPagto} />
+            {!editando && pagamentoPreenchido(pagamento) && (parcelado || form.recorrente) && (
+              <p className="text-xs text-slate-500">O pagamento fica na {parcelado ? '1ª parcela' : 'despesa do 1º mês'}.</p>
+            )}
+            {/* Data de Pagamento existe em TODO lançamento (04/08/2026): o interruptor
+                abre ligado quando há data e fica disponível em parcela e recorrente. */}
+            <CaixaInterruptor id={`${formId}-paga`} titulo="Já foi paga" dica="Ao marcar, aparece a data de pagamento"
+              ligado={pagaLigada} onChange={ligarPaga}>
+              <div className="flex flex-col gap-2">
+                <Campo id={`${formId}-pagaem`} rotulo="Data de pagamento" obrigatorio erro={erros.paga_em} className="max-w-[220px]">
+                  <input id={`${formId}-pagaem`} type="date" value={form.paga_em} onChange={e => set('paga_em', e.target.value)}
+                    className={campoCls(!!erros.paga_em)} />
+                </Campo>
+                {!editando && (
+                  <p className="text-xs text-green-800">
+                    A despesa entra como <strong>Aprovada</strong>{parcelado ? ' (a 1ª parcela; as demais ficam em aberto)' : form.recorrente ? ' (o 1º mês; os demais ficam em aberto)' : ''}.
+                  </p>
+                )}
+              </div>
+            </CaixaInterruptor>
+          </Secao>
+
+          <Secao titulo="Anexos" tema="despesa">
+            <CampoAnexos token={token} entidade="despesa" entidadeId={despesa?.id} variante="area"
+              pendentes={anexosPendentes} onPendentes={setAnexosPendentes} onQuantidade={setNAnexos} />
+            {!editando && anexosPendentes.length > 0 && (parcelado || form.recorrente) && (
+              <p className="text-xs text-slate-500">Os anexos ficam na {parcelado ? '1ª parcela' : 'despesa do 1º mês'}.</p>
+            )}
+          </Secao>
+
+          {/* Erro de submissão (servidor). Erros de preenchimento ficam nos campos. */}
+          {erro && <p role="alert" className="rounded-[10px] bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p>}
+          {falhaAnexos && <p role="alert" className="rounded-[10px] bg-amber-50 px-3 py-2 text-sm text-amber-800">{falhaAnexos}</p>}
         </div>
+
+        <aside className="hidden w-[280px] flex-none flex-col gap-4 lg:flex">
+          <ResumoValor tema="despesa" rotulo="Valor total" valor={valorTotal}
+            sub={`${numParcelas} ${numParcelas === 1 ? 'parcela' : 'parcelas'}${form.data_vencimento ? ` · vence ${form.data_vencimento.split('-').reverse().join('/')}` : ''}`}
+            linhas={[['Banco', bancoNome], ['Centro de custo', centroNome], ['Classificação', classifNome]]} />
+          {mostrarRemessa && <Checklist titulo="Pronto para remessa?" itens={itensRemessa} />}
+          {form.paga_em && (
+            <div className={cn('rounded-xl border border-green-200 bg-green-50 p-4 text-[13px] text-green-900')}>
+              Paga em <strong>{form.paga_em.split('-').reverse().join('/')}</strong>: não entra em remessa.
+            </div>
+          )}
+          <Historico criado={despesa?.criado_em} atualizado={despesa?.atualizado_em} />
+        </aside>
       </form>
     </Modal>
   )

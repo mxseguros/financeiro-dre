@@ -238,7 +238,7 @@ async def obter_lancamento(tipo: str, lancamento_id: UUID, usuario: UsuarioAtual
     resp = await _exec(
         db.table("receitas_outras")
         .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, criado_em, "
-                "atualizado_em, status, observacao, tipo_lancamento_id, banco_id, custo_tipo, criado_por")
+                "atualizado_em, status, observacao, recebido_de, forma_recebimento, tipo_lancamento_id, banco_id, custo_tipo, criado_por")
         .eq("id", str(lancamento_id)).neq("status", "excluida").limit(1)
     )
     row = (resp.data or [None])[0]
@@ -251,6 +251,7 @@ async def obter_lancamento(tipo: str, lancamento_id: UUID, usuario: UsuarioAtual
         competencia=row["competencia"], data_vencimento=row.get("data_vencimento"),
         recebido_em=row.get("recebido_em"), centro_custo=row.get("centro_custo") or "matriz",
         observacao=row.get("observacao"), criado_em=row.get("criado_em"), atualizado_em=row.get("atualizado_em"),
+        recebido_de=row.get("recebido_de"), forma_recebimento=row.get("forma_recebimento"),
     ).model_dump(mode="json")
 
 

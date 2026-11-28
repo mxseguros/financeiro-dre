@@ -1617,7 +1617,7 @@ async def buscar_receitas(
         db.table("receitas_outras")
         .select(
             "id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
-            "observacao, tipo_lancamento_id, banco_id, criado_por, criado_em, "
+            "observacao, recebido_de, forma_recebimento, tipo_lancamento_id, banco_id, criado_por, criado_em, "
             "custo_tipo, subitens_lancamento(nome), bancos(nome)"
         )
         .gte(coluna_data("receitas_outras", base), inicio.isoformat())
@@ -1696,6 +1696,8 @@ async def buscar_receitas(
             recebido_em=row.get("recebido_em"),
             centro_custo=row.get("centro_custo", "matriz"),
             observacao=row.get("observacao"),
+            recebido_de=row.get("recebido_de"),
+            forma_recebimento=row.get("forma_recebimento"),
             criado_em=row.get("criado_em"),
             atualizado_em=row.get("atualizado_em"),
             somente_dre=apenas_dre,
@@ -1771,6 +1773,11 @@ async def criar_receita_outra(
         dados["recebido_em"] = payload.recebido_em.isoformat()
     if payload.observacao:
         dados["observacao"] = payload.observacao
+    # Bloco Recebimento (0054).
+    if payload.recebido_de and payload.recebido_de.strip():
+        dados["recebido_de"] = payload.recebido_de.strip()
+    if payload.forma_recebimento:
+        dados["forma_recebimento"] = payload.forma_recebimento
     # Receita não passa por aprovação (decisão de 22/10/2026): toda receita
     # lançada já nasce aprovada, em qualquer perfil e em toda ocorrência.
     dados.update(campos_aprovacao(usuario.user_id))
@@ -1826,6 +1833,8 @@ async def criar_receita_outra(
         recebido_em=row.get("recebido_em"),
         centro_custo=row.get("centro_custo", "matriz"),
         observacao=row.get("observacao"),
+        recebido_de=row.get("recebido_de"),
+        forma_recebimento=row.get("forma_recebimento"),
     )
 
 
@@ -1838,7 +1847,8 @@ async def _obter_receita_item(receita_id: UUID, db_admin) -> ReceitaItem:
     full = (
         db_admin.table("receitas_outras")
         .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
-                "observacao, tipo_lancamento_id, banco_id, custo_tipo, subitens_lancamento(nome), bancos(nome)")
+                "observacao, recebido_de, forma_recebimento, "
+                "tipo_lancamento_id, banco_id, custo_tipo, subitens_lancamento(nome), bancos(nome)")
         .eq("id", str(receita_id))
         .single()
         .execute()
@@ -1860,6 +1870,8 @@ async def _obter_receita_item(receita_id: UUID, db_admin) -> ReceitaItem:
         recebido_em=row.get("recebido_em"),
         centro_custo=row.get("centro_custo", "matriz"),
         observacao=row.get("observacao"),
+        recebido_de=row.get("recebido_de"),
+        forma_recebimento=row.get("forma_recebimento"),
     )
 
 
@@ -1934,6 +1946,10 @@ async def atualizar_receita_outra(
         campos["centro_custo"] = payload.centro_custo
     if "observacao" in set_fields:
         campos["observacao"] = payload.observacao
+    if "recebido_de" in set_fields:
+        campos["recebido_de"] = (payload.recebido_de or "").strip() or None
+    if "forma_recebimento" in set_fields:
+        campos["forma_recebimento"] = payload.forma_recebimento or None
     if "tipo_lancamento_id" in set_fields:
         campos["tipo_lancamento_id"] = str(payload.tipo_lancamento_id) if payload.tipo_lancamento_id else None
     if "custo_tipo" in set_fields:
@@ -1973,7 +1989,8 @@ async def atualizar_receita_outra(
     full = (
         db_admin.table("receitas_outras")
         .select("id, descricao, valor, competencia, data_vencimento, recebido_em, centro_custo, atualizado_em, status, "
-                "observacao, tipo_lancamento_id, banco_id, custo_tipo, subitens_lancamento(nome), bancos(nome)")
+                "observacao, recebido_de, forma_recebimento, "
+                "tipo_lancamento_id, banco_id, custo_tipo, subitens_lancamento(nome), bancos(nome)")
         .eq("id", str(receita_id))
         .single()
         .execute()
@@ -1995,6 +2012,8 @@ async def atualizar_receita_outra(
         recebido_em=row.get("recebido_em"),
         centro_custo=row.get("centro_custo", "matriz"),
         observacao=row.get("observacao"),
+        recebido_de=row.get("recebido_de"),
+        forma_recebimento=row.get("forma_recebimento"),
     )
 
 
