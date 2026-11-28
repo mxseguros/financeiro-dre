@@ -640,6 +640,9 @@ class OrdemCompraAprovacao(RespostaBase):
 
 # ── LANÇAMENTOS: RECEITAS ─────────────────────────────────────
 
+# Forma de recebimento (0054) — espelha o CHECK da migration.
+FormaRecebimento = Literal["pix", "ted", "boleto", "deposito", "cartao", "dinheiro", "outro"]
+
 class ReceitaOutraUpdate(RespostaBase):
     tipo_lancamento_id: UUID | None = None
     banco_id:           UUID | None = None
@@ -651,6 +654,9 @@ class ReceitaOutraUpdate(RespostaBase):
     data_vencimento:    date | None = None
     recebido_em:        date | None = None
     observacao:         str | None = Field(default=None, max_length=1000)
+    # Bloco Recebimento do novo modal (0054): null limpa.
+    recebido_de:        str | None = Field(default=None, max_length=200)
+    forma_recebimento:  FormaRecebimento | None = None
     # Recorrência na edição (24/11/2026) — ver DespesaUpdate.
     recorrente:         bool | None = None
     repetir_ate:        date | None = None
@@ -676,6 +682,8 @@ class ReceitaOutraCreate(RespostaBase):
     data_vencimento:    date | None = None
     recebido_em:        date | None = None
     observacao:         str | None = Field(default=None, max_length=1000)
+    recebido_de:        str | None = Field(default=None, max_length=200)
+    forma_recebimento:  FormaRecebimento | None = None
     # Recorrência atômica: quando informado (>= competencia), o backend cria
     # um registro por mês até este mês em um único INSERT.
     repetir_ate:        date | None = None
@@ -712,6 +720,8 @@ class ReceitaItem(RespostaBase):
     recebido_em:        date | None = None
     centro_custo:       str | None = None
     observacao:         str | None = None
+    recebido_de:        str | None = None
+    forma_recebimento:  str | None = None
     criado_em:          Any | None = None
     atualizado_em:      Any | None = None
     # Só receita manual tem status (migration 0032). Comissão vem de apólice e

@@ -10,11 +10,12 @@ const inputCls =
  * dos centavos para cima. `value` guarda a string numérica ("1234.56"), então
  * a lógica de quem consome (parseFloat, payloads) não muda.
  */
-export function InputMoeda({ value, onChange, required, className }: {
+export function InputMoeda({ value, onChange, required, className, id }: {
   value: string
   onChange: (v: string) => void
   required?: boolean
   className?: string
+  id?: string
 }) {
   const display = value
     ? Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -31,6 +32,7 @@ export function InputMoeda({ value, onChange, required, className }: {
     <div className="relative">
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">R$</span>
       <input
+        id={id}
         type="text"
         inputMode="numeric"
         required={required}

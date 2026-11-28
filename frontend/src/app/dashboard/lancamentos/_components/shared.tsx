@@ -44,6 +44,8 @@ export interface Receita {
   tipo_nome: string | null; descricao: string; centro_custo: string | null
   banco_nome: string | null; valor: number; data_vencimento: string | null; recebido_em: string | null
   observacao: string | null; origem: string; criado_em: string | null; atualizado_em?: string | null
+  /** Bloco Recebimento do modal (0054). */
+  recebido_de?: string | null; forma_recebimento?: string | null
   /** So receita manual tem status (migration 0032); comissao vem de apolice e nao passa por aprovacao. */
   status?: 'pendente' | 'aprovada' | 'rejeitada' | 'excluida' | null
   /** Subitem "Constar apenas na DRE": listada, mas fora dos totais. */

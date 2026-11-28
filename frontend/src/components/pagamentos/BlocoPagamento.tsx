@@ -53,14 +53,33 @@ function Campo({ rotulo, dica, children, className = '' }: { rotulo: string; dic
   )
 }
 
-export function BlocoPagamento({ token, despesaId, valorDespesa, valor, onChange }: {
+/** O que a remessa CNAB precisa, para o checklist do modal (novo layout, 28/11/2026). */
+export interface ResumoPagamento {
+  forma: FormaPagamento | ''
+  favorecidoNome: string | null
+  /** Favorecido/documento suficiente para a forma escolhida. */
+  dadosOk: boolean
+  /** Rótulo do que falta (ex.: "Chave Pix do favorecido"). */
+  falta: string | null
+  status: StatusPagamento | null
+  travado: boolean
+  habilitado: boolean
+}
+
+// Formas à vista como botões; as demais ficam em "Outras".
+const FORMAS_PRINCIPAIS: FormaPagamento[] = ['pix', 'boleto', 'ted']
+
+export function BlocoPagamento({ token, despesaId, valorDespesa, valor, onChange, embutido = false, onResumo }: {
   token: string
   despesaId?: string
   valorDespesa: number
   valor: EstadoPagamento
   onChange: (e: EstadoPagamento) => void
+  /** Sempre aberto, sem cabeçalho próprio, forma em botões (dentro da seção "Pagamento" do modal). */
+  embutido?: boolean
+  onResumo?: (r: ResumoPagamento) => void
 }) {
-  const [aberto, setAberto] = useState(false)
+  const [aberto, setAberto] = useState(embutido)
   const [habilitado, setHabilitado] = useState(true)
   const [status, setStatus] = useState<StatusPagamento | null>(null)
   const [favorecidos, setFavorecidos] = useState<Fornecedor[]>([])
@@ -107,9 +126,22 @@ export function BlocoPagamento({ token, despesaId, valorDespesa, valor, onChange
   const favorecido = useMemo(() => favorecidos.find(f => f.id === valor.fornecedor_id) ?? null, [favorecidos, valor.fornecedor_id])
   const fornecedores = favorecidos.filter(f => !f.funcionario_id)
   const funcionarios = favorecidos.filter(f => f.funcionario_id)
+  const travado = !!status && TRAVADOS.includes(status)
+
+  // Checklist "Pronto para remessa?" do modal.
+  const resumoPagto = useMemo<ResumoPagamento>(() => {
+    const f = valor.forma
+    let falta: string | null = null
+    if (f === 'pix' && !(favorecido?.pix_mascarada || favorecido?.conta_mascarada)) falta = favorecido ? 'Chave Pix do favorecido' : 'Favorecido'
+    else if ((f === 'ted' || f === 'credito_conta') && !favorecido?.conta_mascarada) falta = favorecido ? 'Conta do favorecido' : 'Favorecido'
+    else if ((f === 'boleto' || f === 'concessionaria') && valor.linha.replace(/\D/g, '').length < 44) falta = 'Linha digitável'
+    else if (f === 'pix_qr' && valor.pix_copia_cola.length < 50) falta = 'Pix copia-e-cola'
+    else if (f === 'tributo' && !valor.tributo.codigo_receita) falta = 'Código da guia'
+    return { forma: f, favorecidoNome: favorecido?.nome ?? null, dadosOk: !!f && !falta, falta, status, travado, habilitado }
+  }, [valor, favorecido, status, travado, habilitado])
+  useEffect(() => { onResumo?.(resumoPagto) }, [resumoPagto]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!habilitado) return null
-  const travado = !!status && TRAVADOS.includes(status)
   const valorPagar = parseFloat(valor.valor_pagamento) || valorDespesa
   const valorDoc = doc?.valor ? parseFloat(doc.valor) : null
   const divergente = valorDoc !== null && Math.abs(valorDoc - valorPagar) >= 0.01
@@ -123,42 +155,23 @@ export function BlocoPagamento({ token, despesaId, valorDespesa, valor, onChange
     ? [nomeForma(valor.forma), favorecido?.nome].filter(Boolean).join(' · ')
     : 'Não informado'
 
-  return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50">
-      <button type="button" onClick={() => setAberto(a => !a)} aria-expanded={aberto}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left">
-        <span className="text-sm font-medium text-gray-700">
-          Pagamento <span className="font-normal text-gray-400">· {resumo}</span>
-        </span>
-        <span className="flex items-center gap-2">
-          {status && (
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_PAGAMENTO[status].cor}`}>
-              {STATUS_PAGAMENTO[status].nome}
-            </span>
-          )}
-          <span className="text-xs text-gray-400">{aberto ? '▲' : '▼'}</span>
-        </span>
-      </button>
-
-      {aberto && (
-        <fieldset disabled={travado} className="space-y-2.5 border-t border-gray-100 px-3 pb-3 pt-2.5">
-          {travado && (
-            <p className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs text-blue-700">
-              O pagamento já está com o banco ou pago: estes dados não podem mudar agora.
-            </p>
-          )}
+  function corpo() {
+    return (
+      <>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {!embutido && (
             <Campo rotulo="Forma">
               <select value={valor.forma} onChange={e => set({ forma: e.target.value as FormaPagamento | '' })} className={cls}>
                 <option value="">Não pagar por arquivo</option>
                 {FORMAS.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
               </select>
             </Campo>
+            )}
             <Campo rotulo="Valor a pagar" dica={valor.valor_pagamento ? undefined : `Vazio = valor da despesa (${fmtBRL(valorDespesa)})`}>
               <InputMoeda value={valor.valor_pagamento} onChange={v => set({ valor_pagamento: v })} />
             </Campo>
           </div>
-          {valor.forma && <p className="-mt-1 text-[11px] text-gray-400">{FORMAS.find(f => f.id === valor.forma)?.dica}</p>}
+          {!embutido && valor.forma && <p className="-mt-1 text-[11px] text-gray-400">{FORMAS.find(f => f.id === valor.forma)?.dica}</p>}
 
           {(['pix', 'ted', 'credito_conta', 'boleto', ''] as string[]).includes(valor.forma) && (
             <Campo rotulo={valor.forma === 'boleto' ? 'Beneficiário (opcional)' : 'Favorecido'}
@@ -259,6 +272,82 @@ export function BlocoPagamento({ token, despesaId, valorDespesa, valor, onChange
               </Campo>
             </div>
           )}
+      </>
+    )
+  }
+
+  const outras = FORMAS.filter(f => !FORMAS_PRINCIPAIS.includes(f.id))
+  const seletorForma = embutido ? (
+    <div>
+      <span className="mb-1.5 block text-[13px] font-semibold text-slate-700">Forma de pagamento</span>
+      <div role="radiogroup" aria-label="Forma de pagamento" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {FORMAS_PRINCIPAIS.map(id => {
+          const ativo = valor.forma === id
+          return (
+            <button key={id} type="button" role="radio" aria-checked={ativo}
+              onClick={() => set({ forma: ativo ? '' : id })}
+              className={`focus-ring h-11 rounded-[10px] text-sm transition-colors ${ativo
+                ? 'border-2 border-blue-700 bg-blue-50 font-semibold text-blue-900'
+                : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
+              {nomeForma(id)}
+            </button>
+          )
+        })}
+        <select aria-label="Outras formas de pagamento" value={outras.some(o => o.id === valor.forma) ? valor.forma : ''}
+          onChange={e => set({ forma: e.target.value as FormaPagamento | '' })}
+          className={`focus-ring h-11 rounded-[10px] px-2 text-sm focus:outline-none ${outras.some(o => o.id === valor.forma)
+            ? 'border-2 border-blue-700 bg-blue-50 font-semibold text-blue-900'
+            : 'border border-slate-300 bg-white text-slate-700'}`}>
+          <option value="">Outras…</option>
+          {outras.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+        </select>
+      </div>
+      <p className="mt-1 text-[12px] text-slate-500">
+        {valor.forma ? FORMAS.find(f => f.id === valor.forma)?.dica : 'Sem forma: a despesa não entra em remessa por arquivo.'}
+      </p>
+    </div>
+  ) : null
+
+  if (embutido) {
+    return (
+      <fieldset disabled={travado} className="space-y-3">
+        {status && (
+          <p className="flex items-center gap-2 text-xs">
+            <span className={`rounded-full px-2 py-0.5 font-medium ${STATUS_PAGAMENTO[status].cor}`}>{STATUS_PAGAMENTO[status].nome}</span>
+            {travado && <span className="text-blue-700">Já está com o banco ou pago: estes dados não podem mudar agora.</span>}
+          </p>
+        )}
+        {seletorForma}
+        {corpo()}
+      </fieldset>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-100 bg-gray-50">
+      <button type="button" onClick={() => setAberto(a => !a)} aria-expanded={aberto}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left">
+        <span className="text-sm font-medium text-gray-700">
+          Pagamento <span className="font-normal text-gray-400">· {resumo}</span>
+        </span>
+        <span className="flex items-center gap-2">
+          {status && (
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_PAGAMENTO[status].cor}`}>
+              {STATUS_PAGAMENTO[status].nome}
+            </span>
+          )}
+          <span className="text-xs text-gray-400">{aberto ? '▲' : '▼'}</span>
+        </span>
+      </button>
+
+      {aberto && (
+        <fieldset disabled={travado} className="space-y-2.5 border-t border-gray-100 px-3 pb-3 pt-2.5">
+          {travado && (
+            <p className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs text-blue-700">
+              O pagamento já está com o banco ou pago: estes dados não podem mudar agora.
+            </p>
+          )}
+          {corpo()}
         </fieldset>
       )}
     </div>

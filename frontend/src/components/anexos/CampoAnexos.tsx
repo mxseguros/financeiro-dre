@@ -101,11 +101,18 @@ interface Props {
   tipoPadrao?: TipoDocumento
   somenteLeitura?: boolean
   rotulo?: string
+  /** 'area': área de arrastar e soltar (novo layout dos modais de lançamento). */
+  variante?: 'compacto' | 'area'
+  /** Texto da área (ex.: "nota fiscal, boleto, recibo"). */
+  dicaArea?: string
+  /** Quantos anexos há (salvos + pendentes), para o checklist do modal. */
+  onQuantidade?: (n: number) => void
 }
 
 export function CampoAnexos({
   token, entidade, entidadeId, pendentes = [], onPendentes, tipoPadrao = 'nota_fiscal',
   somenteLeitura = false, rotulo = 'Anexos (Nota Fiscal, Boleto)',
+  variante = 'compacto', dicaArea = 'nota fiscal, boleto, recibo', onQuantidade,
 }: Props) {
   const [anexos, setAnexos] = useState<Anexo[]>([])
   const [tipo, setTipo] = useState<TipoDocumento>(tipoPadrao)
@@ -162,9 +169,41 @@ export function CampoAnexos({
   }
 
   const vazio = anexos.length === 0 && pendentes.length === 0
+  const quantidade = anexos.length + pendentes.length
+  useEffect(() => { onQuantidade?.(quantidade) }, [quantidade]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [arrastando, setArrastando] = useState(false)
+
+  const area = variante === 'area' && !somenteLeitura ? (
+    <div className="space-y-2">
+      <div
+        onDragOver={e => { e.preventDefault(); setArrastando(true) }}
+        onDragLeave={() => setArrastando(false)}
+        onDrop={e => { e.preventDefault(); setArrastando(false); escolher(e.dataTransfer.files) }}
+        className={`flex flex-col items-center justify-center gap-2 rounded-[10px] border-[1.5px] border-dashed px-4 py-4 text-center text-sm text-slate-700 transition-colors sm:flex-row sm:gap-3 ${arrastando ? 'border-blue-600 bg-blue-50' : 'border-slate-400 bg-slate-50'}`}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true">
+          <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />
+        </svg>
+        <span>
+          <button type="button" disabled={ocupado} onClick={() => inputRef.current?.click()}
+            className="focus-ring rounded font-semibold text-blue-700 hover:underline disabled:opacity-50">
+            {ocupado ? 'Enviando…' : 'Escolher arquivo'}
+          </button>
+          {' '}ou arraste aqui · {dicaArea} (PDF, JPG, PNG)
+        </span>
+        <select value={tipo} onChange={e => setTipo(e.target.value as TipoDocumento)} aria-label="Tipo do documento"
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus-ring focus:outline-none sm:ml-auto">
+          {TIPOS_DOCUMENTO.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+        </select>
+        <input ref={inputRef} type="file" multiple accept={ACEITOS} className="hidden"
+          onChange={e => escolher(e.target.files)} />
+      </div>
+    </div>
+  ) : null
 
   return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50 p-2.5">
+    <div className={variante === 'area' ? '' : 'rounded-xl border border-gray-100 bg-gray-50 p-2.5'}>
+      {area}
+      {variante !== 'area' && (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-gray-600">{rotulo}</span>
         {!somenteLeitura && (
@@ -182,6 +221,7 @@ export function CampoAnexos({
           </div>
         )}
       </div>
+      )}
 
       {!vazio && (
         <ul className="mt-2 space-y-1">
