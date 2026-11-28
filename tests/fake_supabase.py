@@ -29,7 +29,8 @@ class _Q:
         return self
 
     def lt(self, col, val):
-        self.filtros.append(lambda r: (r.get(col) or "") < val)
+        # Como no Postgres: NULL < x é falso.
+        self.filtros.append(lambda r: r.get(col) is not None and r.get(col) < val)
         return self
 
     def single(self):
@@ -41,12 +42,43 @@ class _Q:
         return self
 
     def or_(self, expr):
-        # Só o formato usado pelos filtros do app: "col.is.null,col.not.in.(a,b)"
-        partes = expr.split(",", 1)
-        col = partes[0].split(".")[0]
-        fora = set(partes[1].split(".not.in.(", 1)[1].rstrip(")").split(","))
-        self.filtros.append(lambda r: r.get(col) is None or r.get(col) not in fora)
+        # Formatos usados pelo app: "col.is.null,col.not.in.(a,b)" e listas
+        # simples de "col.op.valor" (op: eq, gt, lt, gte, lte, is.null).
+        if ".not.in.(" in expr:
+            partes = expr.split(",", 1)
+            col = partes[0].split(".")[0]
+            fora = set(partes[1].split(".not.in.(", 1)[1].rstrip(")").split(","))
+            self.filtros.append(lambda r: r.get(col) is None or r.get(col) not in fora)
+            return self
+        testes = []
+        for termo in expr.split(","):
+            col, op, val = termo.split(".", 2)
+            testes.append((col, op, val))
+
+        def _ok(r):
+            for col, op, val in testes:
+                v = r.get(col)
+                if op == "is" and val == "null" and v is None:
+                    return True
+                if v is None:
+                    continue
+                v = str(v)
+                if (op == "eq" and v == val) or (op == "gt" and v > val) or (op == "lt" and v < val)                         or (op == "gte" and v >= val) or (op == "lte" and v <= val):
+                    return True
+            return False
+        self.filtros.append(_ok)
         return self
+
+    @property
+    def not_(self):
+        q = self
+
+        class _Not:
+            def is_(self, col, val):
+                alvo = None if val == "null" else val
+                q.filtros.append(lambda r: r.get(col) is not alvo)
+                return q
+        return _Not()
 
     def is_(self, col, val):
         alvo = None if val == "null" else val

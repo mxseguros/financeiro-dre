@@ -10,8 +10,9 @@ import { Field, Input } from '@/components/ui/Field'
 import {
   Campo, inputCls, selectCls,
   type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Receita, type ReceitasResp,
-  type Classificacao, classificacoesDe,
+  type Classificacao, type Despesa, classificacoesDe,
 } from './shared'
+import { DicaEspelhoIndisponivel, ESPELHO_VAZIO, FaixaVinculo, PainelEspelho, ehEmprestimo, payloadEspelho, useVinculo, type EspelhoForm } from './Emprestimo'
 import { AvisoRecorrencia, type SerieRecorrencia } from './AvisoRecorrencia'
 
 interface ModalReceitaProps {
@@ -27,9 +28,11 @@ interface ModalReceitaProps {
   classificacoes?: Classificacao[]
   /** Editando: mostra Excluir no rodapé (o botão saiu da linha da tabela, redesenho UX). */
   onExcluir?: () => void
+  /** Empréstimo vinculado: abre o lado despesa no lugar deste modal. */
+  onAbrirVinculado?: (tipo: 'despesa' | 'receita', item: Despesa | Receita) => void
 }
 
-export function ModalReceita({ token, categorias, tipos, bancos, centros, receita, mesDefault, onClose, onSaved, classificacoes, onExcluir }: ModalReceitaProps) {
+export function ModalReceita({ token, categorias, tipos, bancos, centros, receita, mesDefault, onClose, onSaved, classificacoes, onExcluir, onAbrirVinculado }: ModalReceitaProps) {
   const editando = !!receita
   const tipoInicial = receita ? tipos.find(t => t.id === receita.tipo_lancamento_id) : undefined
   const [form, setForm] = useState({
@@ -55,6 +58,9 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
   const [anexosPendentes, setAnexosPendentes] = useState<AnexoPendente[]>([])
   // Salvou, mas algum anexo falhou: não deixa salvar de novo (duplicaria a receita).
   const [falhaAnexos, setFalhaAnexos] = useState<string | null>(null)
+  // Empréstimo (28/11/2026): despesa espelho na criação; faixa do vínculo na edição.
+  const [espelho, setEspelho] = useState<EspelhoForm>(ESPELHO_VAZIO)
+  const vinculado = useVinculo(token, 'receita', receita?.id)
 
   // Recorrência na edição (24/11/2026): a série atual vem da API.
   const [serie, setSerie] = useState<SerieRecorrencia | null>(null)
@@ -87,6 +93,8 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
 
   const categoriasReceita = categorias.filter(c => c.natureza === 'receita' && c.ativo)
   const subitensDaCategoria = tipos.filter(t => t.natureza === 'receita' && t.categoria_id === form.categoria_id)
+  const categoriaEmprestimo = ehEmprestimo(categorias.find(c => c.id === form.categoria_id)?.nome)
+  const espelhoDisponivel = !editando && categoriaEmprestimo && !form.recorrente
 
   /** Validação por campo — a mensagem aparece ao lado do campo, não em faixa única. */
   function validar(): boolean {
@@ -96,6 +104,7 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
     if (!form.competencia) e.competencia = 'Informe a competência.'
     if (form.recorrente && !form.data_final) e.data_final = 'Informe até quando repetir.'
     else if (form.recorrente && form.data_final < form.competencia) e.data_final = 'Não pode ser antes da competência.'
+    if (espelhoDisponivel && espelho.ativo && !espelho.tipo_lancamento_id) e.espelho = 'Selecione o subitem da despesa.'
     setErros(e)
     return Object.keys(e).length === 0
   }
@@ -155,7 +164,10 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
           }
         }
       } else {
-        criadaId = (await api.post<Receita>('/lancamentos/receitas', token, { ...basePayload, competencia: `${form.competencia.split('-')[0]}-${form.competencia.split('-')[1]}-01` }))?.id
+        criadaId = (await api.post<Receita>('/lancamentos/receitas', token, {
+          ...basePayload, competencia: compMes,
+          ...(espelhoDisponivel && espelho.ativo ? { espelho: payloadEspelho(espelho) } : {}),
+        }))?.id
       }
       // Anexos de receita nova: vão para a do 1º mês.
       if (criadaId && anexosPendentes.length) {
@@ -184,6 +196,7 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
       maxWidth="sm:max-w-xl"
       dismissable={!salvando}
     >
+      <FaixaVinculo token={token} vinculado={vinculado} onAbrir={onAbrirVinculado} />
       <form onSubmit={salvar} noValidate className="space-y-2.5">
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
             <Campo label="Categoria">
@@ -297,6 +310,13 @@ export function ModalReceita({ token, categorias, tipos, bancos, centros, receit
               })()}
             </div>
           )}
+
+          {espelhoDisponivel && (
+            <PainelEspelho lado="despesa" valor={espelho} onChange={v => { setEspelho(v); limparErro('espelho') }}
+              categorias={categorias} tipos={tipos} bancos={bancos} centros={centros} erro={erros.espelho}
+              base={{ subitemNome: tipos.find(t => t.id === form.tipo_lancamento_id)?.nome, banco_id: form.banco_id, centro_custo: form.centro_custo }} />
+          )}
+          {!editando && categoriaEmprestimo && !espelhoDisponivel && <DicaEspelhoIndisponivel />}
 
           <CampoAnexos token={token} entidade="receita" entidadeId={receita?.id}
             pendentes={anexosPendentes} onPendentes={setAnexosPendentes} />

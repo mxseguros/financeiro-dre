@@ -520,7 +520,7 @@ export default function RelatoriosPage() {
         onConfirmar={confirmarExcluir}
       />
       {token && (
-        <EdicaoLancamento token={token} aberto={edicao.aberto} cadastros={edicao.cadastros} onFechar={edicao.fechar}
+        <EdicaoLancamento token={token} aberto={edicao.aberto} cadastros={edicao.cadastros} onFechar={edicao.fechar} onTrocar={edicao.trocar}
           onSalvo={() => { buscar(); if (comparar) setVersaoAnt(v => v + 1) }} />
       )}
     </div>

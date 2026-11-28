@@ -28,6 +28,8 @@ import {
   type Classificacao } from './_components/shared'
 import { opcoesCentroFiltro } from '@/lib/centros'
 import { hojeISO } from './_components/situacao'
+import { type Vinculado } from './_components/Emprestimo'
+import { BarraSituacao, OPCOES_DESPESA, OPCOES_RECEITA, type SituacaoDespesa, type SituacaoReceita } from './_components/BarraSituacao'
 import {
   BarraLote, CartaoResumo, CartoesDespesas, CartoesOrdens, CartoesReceitas, ChipSelect, DialogMarcar,
   TabelaDespesas, TabelaOrdens, TabelaReceitas, botaoLote, botaoLotePrimario, qtd, selecionavelReceita,
@@ -52,20 +54,25 @@ export default function LancamentosPage() {
   const filtro = filtroDoPeriodo(periodo, true)
   const [filtroBanco, setFiltroBanco] = useState('')
   const [filtroCentro, setFiltroCentro] = useState('')
-  // Vale para as três abas (despesas, receitas e ordens de compra).
+  const [aba, setAba] = useState<'despesas' | 'receitas' | 'ordens'>('despesas')
+  // Status de aprovação: só na aba Ordens de compra. Despesas e Receitas usam
+  // a Situação (28/11/2026), que já inclui "Aguardando aprovação" e "Rejeitada".
   const [filtroStatus, setFiltroStatus] = useState('')
+  const [situacaoDesp, setSituacaoDesp] = useState<SituacaoDespesa | ''>('')
+  const [situacaoRec, setSituacaoRec] = useState<SituacaoReceita | ''>('')
   // Filtro "Tipo" (22/10/2026): Categoria e, opcionalmente, Subitem.
   const [filtroCategoria, setFiltroCategoria] = useState('')
   const [filtroSubitem, setFiltroSubitem] = useState('')
   // Redesenho UX (fase 3): filtros à vista, em chips de 44 px.
-  const filtrosAtivos = [filtroCategoria, filtroBanco, filtroCentro, filtroStatus].filter(Boolean).length
+  const situacaoAba = aba === 'despesas' ? situacaoDesp : aba === 'receitas' ? situacaoRec : ''
+  const filtrosAtivos = [filtroCategoria, filtroBanco, filtroCentro, aba === 'ordens' ? filtroStatus : '', situacaoAba].filter(Boolean).length
   function limparFiltros() {
     setFiltroCategoria(''); setFiltroSubitem(''); setFiltroBanco(''); setFiltroCentro(''); setFiltroStatus('')
+    setSituacaoDesp(''); setSituacaoRec('')
   }
   const [erroLista, setErroLista] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
   const [ordem, setOrdem] = useState<{ campo: OrdemCampo; dir: 'asc' | 'desc' }>({ campo: 'registro', dir: 'desc' })
-  const [aba, setAba] = useState<'despesas' | 'receitas' | 'ordens'>('despesas')
   const [despesas, setDespesas] = useState<DespesasResp | null>(null)
   const [receitas, setReceitas] = useState<ReceitasResp | null>(null)
   const anexosDesp = useContagemAnexos(token, 'despesa', useMemo(() => despesas?.items.map(d => d.id), [despesas]))
@@ -94,6 +101,17 @@ export default function LancamentosPage() {
   // Exclusão simples (sem grupo): confirmação em diálogo. O Excluir fica no rodapé da modal.
   const [confirmando, setConfirmando] = useState<{ tipo: 'despesa' | 'receita' | 'ordem'; id: string; nome: string } | null>(null)
   const [deletando, setDeletando] = useState(false)
+  // Empréstimo vinculado (0053): ao excluir, pergunta se leva o outro lado junto.
+  const [vinculoExcl, setVinculoExcl] = useState<{ info: Vinculado; marcar: boolean } | null>(null)
+  useEffect(() => {
+    setVinculoExcl(null)
+    if (!token || !confirmando || confirmando.tipo === 'ordem') return
+    let vivo = true
+    api.get<{ vinculado: Vinculado | null }>(`/lancamentos/vinculo/${confirmando.tipo === 'despesa' ? 'despesas' : 'receitas'}/${confirmando.id}`, token)
+      .then(r => { if (vivo && r.vinculado) setVinculoExcl({ info: r.vinculado, marcar: true }) })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [token, confirmando])
   // Seleção em lote (despesas e receitas da aba aberta).
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [marcando, setMarcando] = useState<{ ids: string[] } | null>(null)
@@ -140,12 +158,11 @@ export default function LancamentosPage() {
     else if (filtroCategoria) params.set('categoria_id', filtroCategoria)
     if (filtroBanco)  params.set('banco_id', filtroBanco)
     if (filtroCentro) params.set('centro_custo', filtroCentro)
-    if (filtroStatus) params.set('status', filtroStatus)
     if (buscaDebounced) params.set('q', buscaDebounced)
     params.set('ordenar_por', ordem.campo)
     params.set('ordem', ordem.dir)
     return params.toString()
-  }, [filtro.inicio, filtro.fim, filtro.base, filtroBanco, filtroCentro, filtroStatus, filtroCategoria, filtroSubitem, buscaDebounced, ordem])
+  }, [filtro.inicio, filtro.fim, filtro.base, filtroBanco, filtroCentro, filtroCategoria, filtroSubitem, buscaDebounced, ordem])
   // O Exportar da barra do topo leva os filtros desta tela (fase 8).
   useEffect(() => {
     filtrosExport.lancamentos = filtrosQuery()
@@ -155,20 +172,22 @@ export default function LancamentosPage() {
   // Paginação server-side: busca em blocos de 200 em vez de baixar o período
   // inteiro de uma vez (com anos de recorrências, seriam milhares de linhas).
   const TAM_PAGINA_SRV = 200
+  const qsDespesas = useCallback(
+    () => `${filtrosQuery()}${situacaoDesp ? `&situacao=${situacaoDesp}` : ''}`, [filtrosQuery, situacaoDesp])
   const buscarDespesas = useCallback(() => {
     if (!token) return
     setLoadingDespesas(true)
-    api.get<DespesasResp>(`/lancamentos/despesas?${filtrosQuery()}&limit=${TAM_PAGINA_SRV}&offset=0`, token)
+    api.get<DespesasResp>(`/lancamentos/despesas?${qsDespesas()}&limit=${TAM_PAGINA_SRV}&offset=0`, token)
       .then(d => { setDespesas(d); setErroLista(null) })
       .catch(e => setErroLista(e instanceof Error ? e.message : 'Erro ao carregar lançamentos.'))
       .finally(() => setLoadingDespesas(false))
-  }, [token, filtrosQuery])
+  }, [token, qsDespesas])
 
   const [carregandoMais, setCarregandoMais] = useState(false)
   function carregarMaisDespesas() {
     if (!token || !despesas) return
     setCarregandoMais(true)
-    api.get<DespesasResp>(`/lancamentos/despesas?${filtrosQuery()}&limit=${TAM_PAGINA_SRV}&offset=${despesas.items.length}`, token)
+    api.get<DespesasResp>(`/lancamentos/despesas?${qsDespesas()}&limit=${TAM_PAGINA_SRV}&offset=${despesas.items.length}`, token)
       .then(d => setDespesas(prev => prev ? { ...d, items: [...prev.items, ...d.items] } : d))
       .catch(e => setErroLista(e instanceof Error ? e.message : 'Erro ao carregar lançamentos.'))
       .finally(() => setCarregandoMais(false))
@@ -177,11 +196,12 @@ export default function LancamentosPage() {
   const buscarReceitas = useCallback(() => {
     if (!token) return
     setLoadingReceitas(true)
-    api.get<ReceitasResp>(`/lancamentos/receitas?${filtrosQuery()}`, token)
+    const sit = situacaoRec ? `&situacao=${situacaoRec}` : ''
+    api.get<ReceitasResp>(`/lancamentos/receitas?${filtrosQuery()}${sit}`, token)
       .then(r => { setReceitas(r); setErroLista(null) })
       .catch(e => setErroLista(e instanceof Error ? e.message : 'Erro ao carregar lançamentos.'))
       .finally(() => setLoadingReceitas(false))
-  }, [token, filtrosQuery])
+  }, [token, filtrosQuery, situacaoRec])
 
   // Ordens de compra: filtradas só por período (banco/centro não se aplicam)
   const buscarOrdens = useCallback(() => {
@@ -248,7 +268,7 @@ export default function LancamentosPage() {
   // client-side — baixar de 20 em 20 reduziria esse alcance em 10x.
   const TAM_PAGINA = 20
   const [visLimite, setVisLimite] = useState(TAM_PAGINA)
-  useEffect(() => { setVisLimite(TAM_PAGINA) }, [aba, termo, ordem, filtroBanco, filtroCentro, filtroStatus, filtroCategoria, filtroSubitem, filtro.qs])
+  useEffect(() => { setVisLimite(TAM_PAGINA) }, [aba, termo, ordem, filtroBanco, filtroCentro, filtroStatus, situacaoDesp, situacaoRec, filtroCategoria, filtroSubitem, filtro.qs])
 
   // Filtro de Categoria só lista as categorias da aba aberta (há nomes repetidos
   // entre despesa e receita, ex.: "Empréstimo"). Ao trocar de aba, a categoria
@@ -296,12 +316,15 @@ export default function LancamentosPage() {
     }
   }
 
-  async function deletarDespesa(id: string, excluirFuturas = false) {
+  async function deletarDespesa(id: string, excluirFuturas = false, comVinculado = false) {
     if (!token) return
     setDeletando(true)
     try {
-      const params = excluirFuturas ? { excluir_futuras: 'true' } : undefined
-      await api.delete(`/lancamentos/despesas/${id}`, token, params)
+      const params: Record<string, string> = {}
+      if (excluirFuturas) params.excluir_futuras = 'true'
+      if (comVinculado) params.com_vinculado = 'true'
+      await api.delete(`/lancamentos/despesas/${id}`, token, Object.keys(params).length ? params : undefined)
+      if (comVinculado) buscarReceitas()
       setDespesas(prev => {
         if (!prev) return prev
         const despesaExcluida = prev.items.find(d => d.id === id)
@@ -356,12 +379,15 @@ export default function LancamentosPage() {
     }
   }
 
-  async function deletarReceita(id: string, excluirFuturas = false) {
+  async function deletarReceita(id: string, excluirFuturas = false, comVinculado = false) {
     if (!token) return
     setDeletando(true)
     try {
-      const params = excluirFuturas ? { excluir_futuras: 'true' } : undefined
-      await api.delete(`/lancamentos/receitas/${id}`, token, params)
+      const params: Record<string, string> = {}
+      if (excluirFuturas) params.excluir_futuras = 'true'
+      if (comVinculado) params.com_vinculado = 'true'
+      await api.delete(`/lancamentos/receitas/${id}`, token, Object.keys(params).length ? params : undefined)
+      if (comVinculado) buscarDespesas()
       setReceitas(prev => {
         if (!prev) return prev
         const excluida = prev.items.find(r => r.id === id)
@@ -460,6 +486,13 @@ export default function LancamentosPage() {
     router.push(`/dashboard/lancamentos/pagamentos?incluir=${ids.join(',')}`)
   }
 
+  // Empréstimo vinculado: troca o modal aberto pelo do outro lado.
+  function abrirVinculado(tipo: 'despesa' | 'receita', item: Despesa | Receita) {
+    setModalDespesa(false); setModalReceita(false)
+    if (tipo === 'despesa') { setEditandoReceita(null); setAba('despesas'); setEditandoDespesa(item as Despesa) }
+    else { setEditandoDespesa(null); setAba('receitas'); setEditandoReceita(item as Receita) }
+  }
+
   // ── Excluir pela modal ─────────────────────────────────────
   function excluirDespesaDaModal(d: Despesa) { setEditandoDespesa(null); abrirDialogExclusao(d) }
   function excluirReceitaDaModal(r: Receita) { setEditandoReceita(null); abrirDialogExclusaoReceita(r) }
@@ -496,10 +529,11 @@ export default function LancamentosPage() {
           despesa={editandoDespesa ?? undefined}
           mesDefault={mesInicio}
           onClose={() => { setModalDespesa(false); setEditandoDespesa(null) }}
-          onSaved={buscarDespesas}
+          onSaved={() => { buscarDespesas(); buscarReceitas() }}
           classificacoes={classificacoes}
           onExcluir={editandoDespesa && podeExcluirLancamento(editandoDespesa, role, userId)
             ? () => excluirDespesaDaModal(editandoDespesa) : undefined}
+          onAbrirVinculado={abrirVinculado}
         />
       )}
       {(modalReceita || editandoReceita) && token && (
@@ -509,8 +543,9 @@ export default function LancamentosPage() {
           receita={editandoReceita ?? undefined}
           mesDefault={mesInicio}
           onClose={() => { setModalReceita(false); setEditandoReceita(null) }}
-          onSaved={buscarReceitas}
+          onSaved={() => { buscarReceitas(); buscarDespesas() }}
           onExcluir={editandoReceita ? () => excluirReceitaDaModal(editandoReceita) : undefined}
+          onAbrirVinculado={abrirVinculado}
         />
       )}
       {(modalOrdem || editandoOrdem) && token && (
@@ -540,11 +575,24 @@ export default function LancamentosPage() {
         onCancelar={() => setConfirmando(null)}
         onConfirmar={() => {
           if (!confirmando) return
-          if (confirmando.tipo === 'despesa') deletarDespesa(confirmando.id)
-          else if (confirmando.tipo === 'receita') deletarReceita(confirmando.id)
+          const comVinculado = !!vinculoExcl?.marcar
+          if (confirmando.tipo === 'despesa') deletarDespesa(confirmando.id, false, comVinculado)
+          else if (confirmando.tipo === 'receita') deletarReceita(confirmando.id, false, comVinculado)
           else deletarOrdem(confirmando.id)
         }}
-      />
+      >
+        {vinculoExcl && (
+          <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+            <input type="checkbox" checked={vinculoExcl.marcar}
+              onChange={e => setVinculoExcl(v => v && { ...v, marcar: e.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy" />
+            <span>
+              Excluir também a {vinculoExcl.info.tipo} vinculada <strong>&quot;{vinculoExcl.info.descricao}&quot;</strong> ({fmtBRL(vinculoExcl.info.valor)}).
+              {!vinculoExcl.marcar && <span className="block text-xs text-indigo-700">Ela fica no sistema, sem vínculo.</span>}
+            </span>
+          </label>
+        )}
+      </ConfirmDialog>
 
       {/* Dialog: excluir parcelas/ocorrências futuras de despesa */}
       <DialogExcluirGrupo
@@ -667,8 +715,10 @@ export default function LancamentosPage() {
                   <ChipSelect rotulo="Centro" valor={filtroCentro} onChange={setFiltroCentro} opcoes={opcoesCentroFiltro(centros)} />
                 </>
               )}
-              <ChipSelect rotulo="Status" valor={filtroStatus} onChange={setFiltroStatus}
-                opcoes={[{ valor: 'pendente', texto: 'Aguardando aprovação' }, { valor: 'aprovada', texto: 'Aprovada' }, { valor: 'rejeitada', texto: 'Rejeitada' }]} />
+              {aba === 'ordens' && (
+                <ChipSelect rotulo="Status" valor={filtroStatus} onChange={setFiltroStatus}
+                  opcoes={[{ valor: 'pendente', texto: 'Aguardando aprovação' }, { valor: 'aprovada', texto: 'Aprovada' }, { valor: 'rejeitada', texto: 'Rejeitada' }]} />
+              )}
               {filtrosAtivos > 0 && (
                 <button type="button" onClick={limparFiltros}
                   className="focus-ring h-12 shrink-0 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-sel hover:underline md:h-11">
@@ -676,6 +726,18 @@ export default function LancamentosPage() {
                 </button>
               )}
             </div>
+            {aba === 'despesas' && (
+              <div className="md:basis-full">
+                <BarraSituacao opcoes={OPCOES_DESPESA} valor={situacaoDesp} onChange={setSituacaoDesp}
+                  contagem={despesas?.contagem_situacao} />
+              </div>
+            )}
+            {aba === 'receitas' && (
+              <div className="md:basis-full">
+                <BarraSituacao opcoes={OPCOES_RECEITA} valor={situacaoRec} onChange={setSituacaoRec}
+                  contagem={receitas?.contagem_situacao} />
+              </div>
+            )}
           </div>
 
           {aba === 'despesas' && (

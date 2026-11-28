@@ -37,6 +37,8 @@ interface ShareButtonProps {
   resumo?: ShareResumoItem[]
   totalTexto?: string
   emoji?: string
+  /** Para onde abre o menu: 'cima' no rodapé de uma modal. */
+  abrirPara?: 'baixo' | 'cima'
 }
 
 const STATUS_LABEL: Record<string, string> = { pendente: 'Pendente', aprovada: 'Aprovada', rejeitada: 'Rejeitada' }
@@ -51,7 +53,7 @@ const IconShare = () => (
   </svg>
 )
 
-export function ShareButton({ titulo, periodoLabel, itens, secoes, resumo, totalTexto, emoji = '📋' }: ShareButtonProps) {
+export function ShareButton({ titulo, periodoLabel, itens, secoes, resumo, totalTexto, emoji = '📋', abrirPara = 'baixo' }: ShareButtonProps) {
   const [aberto, setAberto] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [gerando, setGerando] = useState(false)
@@ -136,7 +138,9 @@ export function ShareButton({ titulo, periodoLabel, itens, secoes, resumo, total
   return (
     <div ref={wrapRef} className="relative">
       <button
+        type="button"
         onClick={() => setAberto(a => !a)}
+        aria-expanded={aberto}
         title="Compartilhar"
         className="focus-ring flex h-12 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-gray-50 md:h-11"
       >
@@ -145,7 +149,7 @@ export function ShareButton({ titulo, periodoLabel, itens, secoes, resumo, total
       </button>
 
       {aberto && (
-        <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-xl border border-gray-100 bg-white p-1.5 shadow-lg">
+        <div className={`absolute right-0 z-20 w-52 rounded-xl border border-gray-100 bg-white p-1.5 shadow-lg ${abrirPara === 'cima' ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
           <button
             onClick={enviarWhatsApp}
             className="focus-ring flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-slate-700 hover:bg-gray-50"

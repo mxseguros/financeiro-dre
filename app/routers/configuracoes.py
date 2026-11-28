@@ -167,6 +167,26 @@ async def atualizar_centro(
 
 
 @router.post(
+    "/centros-custo/renumerar",
+    response_model=list[CentroCustoItem],
+    summary="Reorganizar a numeração de todos os subgrupos (admin)",
+)
+async def renumerar_centros(
+    request: Request,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    _exigir_admin(usuario)
+    db = get_supabase_admin()
+    itens = await financeiro_service.renumerar_todos(usuario, db)
+    await registrar_auditoria(
+        usuario, "renumerar_centros_custo", {"total": len(itens)},
+        request.client.host if request.client else None,
+        db,
+    )
+    return itens
+
+
+@router.post(
     "/centros-custo/{centro_id}/mover",
     response_model=CentroCustoItem,
     summary="Subir/descer o subgrupo uma posição (admin)",

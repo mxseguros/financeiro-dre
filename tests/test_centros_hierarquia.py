@@ -105,11 +105,12 @@ def test_lista_ordena_pelo_numero():
     assert [i.numero for i in itens][:3] == ["1.00", "1.21", "1.22"]
 
 
-# ── Numeração automática do subgrupo (24/11/2026) ────────────
+# ── Numeração automática do subgrupo (regra de 28/11/2026) ────
+# Uma só sequência por grupo, começando em 11: 1 → 1.11, 1.12…; 2 → 2.11…
 
 def _banco_numeros():
     return Db(centros_custo=[
-        centro(G1, "financeiro", "Financeiro", numero="1.10"),
+        centro(G1, "financeiro", "Financeiro", numero="5"),
         centro(M, "matriz", "Matriz", numero="1"),
         centro(S1, "contas", "Contas", numero=None),
     ], despesas=[], receitas_outras=[])
@@ -119,23 +120,28 @@ def test_subgrupo_segue_o_numero_do_grupo():
     db = _banco_numeros()
     nums = [run(fs.criar_centro_custo(CentroCustoCreate(nome=n, parent_id=G1), ADMIN, db)).numero
             for n in ("Bancos", "Tarifas", "Juros")]
-    assert nums == ["1.11", "1.12", "1.13"]
-    assert run(fs.criar_centro_custo(CentroCustoCreate(nome="Sede", parent_id=M), ADMIN, db)).numero == "1.1"
+    assert nums == ["5.11", "5.12", "5.13"]
+    assert run(fs.criar_centro_custo(CentroCustoCreate(nome="Sede", parent_id=M), ADMIN, db)).numero == "1.11"
 
 
-def test_numero_segue_depois_do_9():
-    assert [fs.numero_sub("1", k) for k in (1, 9, 10, 11)] == ["1.1", "1.9", "2.0", "2.1"]
+def test_numero_segue_uma_so_sequencia():
+    assert [fs.numero_sub("1", k) for k in (1, 2, 9, 10, 12)] == ["1.11", "1.12", "1.19", "1.20", "1.22"]
+    assert fs.numero_sub("2", 1) == "2.11"
+    # Grupo decimal (legado) soma na última casa.
     assert [fs.numero_sub("1.10", k) for k in (1, 9, 10)] == ["1.11", "1.19", "1.20"]
     assert fs.numero_sub(None, 1) is None and fs.numero_sub("abc", 1) is None
 
 
 def _matriz():
-    """Produção em 24/11: Matriz "1" com 1.1, 1.3 … 1.9 e 2.0 (sem 1.2)."""
+    """Produção em 28/11: Matriz "1" com 1.1 … 1.9, 2.0, 2.1, 2.2 (regra antiga) e
+    o grupo "2" (Águas de Lindóia) sem subgrupos."""
     nomes = ["Financeiro", "Venda Nova", "Renovação", "Benefícios", "Sinistros", "TI", "Emissão",
-             "Gerência", "Presidência"]
-    nums = ["1.1", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "2.0"]
+             "Gerência", "Presidência", "Serviços Gerais", "Administrativo", "Grupo Exalt"]
+    nums = ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "2.0", "2.1", "2.2"]
     subs = [centro(_u(100 + i), f"c{i}", n, parent=M, numero=num) for i, (n, num) in enumerate(zip(nomes, nums))]
-    return Db(centros_custo=[centro(M, "matriz", "Matriz", numero="1")] + subs, despesas=[], receitas_outras=[])
+    return Db(centros_custo=[centro(M, "matriz", "Matriz", numero="1"),
+                             centro(_u(99), "aguas_lindoia", "Águas de Lindóia", numero="2")] + subs,
+              despesas=[], receitas_outras=[])
 
 
 def _numeros(db, grupo=M):
@@ -143,13 +149,27 @@ def _numeros(db, grupo=M):
                                         key=fs._chave_ordem)]
 
 
+_SEQ_MATRIZ = [f"1.{n}" for n in range(11, 23)]
+
+
+def test_renumerar_todos_reorganiza_a_matriz():
+    db = _matriz()
+    itens = run(fs.renumerar_todos(ADMIN, db))
+    assert _numeros(db) == _SEQ_MATRIZ
+    nomes = {c["numero"]: c["nome"] for c in db.tabelas["centros_custo"] if c["parent_id"] == M}
+    assert nomes["1.11"] == "Financeiro" and nomes["1.20"] == "Serviços Gerais" and nomes["1.22"] == "Grupo Exalt"
+    assert any(i.numero == "2" for i in itens)          # grupo 2 intacto
+    run(fs.renumerar_todos(ADMIN, db))                   # idempotente
+    assert _numeros(db) == _SEQ_MATRIZ
+
+
 def test_criar_compacta_e_entra_no_fim():
     db = _matriz()
     item = run(fs.criar_centro_custo(CentroCustoCreate(nome="Novo", parent_id=M), ADMIN, db))
-    assert item.numero == "2.0"
-    assert _numeros(db) == ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "2.0"]
+    assert item.numero == "1.23"
+    assert _numeros(db) == _SEQ_MATRIZ + ["1.23"]
     presid = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "Presidência")
-    assert presid["numero"] == "1.9"
+    assert presid["numero"] == "1.19"
 
 
 def test_excluir_sobe_os_seguintes():
@@ -157,48 +177,48 @@ def test_excluir_sobe_os_seguintes():
     emissao = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "Emissão")
     run(fs.excluir_centro_custo(emissao["id"], ADMIN, db))
     nomes = {c["numero"]: c["nome"] for c in db.tabelas["centros_custo"] if c["parent_id"] == M}
-    assert nomes["1.6"] == "TI" and nomes["1.7"] == "Gerência" and nomes["1.8"] == "Presidência"
-    assert len(nomes) == 8
+    assert nomes["1.16"] == "TI" and nomes["1.17"] == "Gerência" and nomes["1.18"] == "Presidência"
+    assert len(nomes) == 11
 
 
 def test_mover_troca_com_o_vizinho():
     db = _matriz()
     ti = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "TI")
-    assert run(fs.mover_centro(ti["id"], "cima", ADMIN, db)).numero == "1.5"
+    assert run(fs.mover_centro(ti["id"], "cima", ADMIN, db)).numero == "1.15"
     sin = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "Sinistros")
-    assert sin["numero"] == "1.6"
+    assert sin["numero"] == "1.16"
     fin = next(c for c in db.tabelas["centros_custo"] if c["nome"] == "Financeiro")
-    assert run(fs.mover_centro(fin["id"], "cima", ADMIN, db)).numero == "1.1"   # já é o primeiro
+    assert run(fs.mover_centro(fin["id"], "cima", ADMIN, db)).numero == "1.11"   # já é o primeiro
 
 
 def test_trocar_de_grupo_renumera_os_dois():
     db = _banco_numeros()
     a = run(fs.criar_centro_custo(CentroCustoCreate(nome="A", parent_id=G1), ADMIN, db))
     b = run(fs.criar_centro_custo(CentroCustoCreate(nome="B", parent_id=G1), ADMIN, db))
-    assert (a.numero, b.numero) == ("1.11", "1.12")
+    assert (a.numero, b.numero) == ("5.11", "5.12")
     movido = run(fs.atualizar_centro_custo(a.id, CentroCustoUpdate(parent_id=M), ADMIN, db))
-    assert movido.numero == "1.1"
-    assert _numeros(db, G1) == ["1.11"]
+    assert movido.numero == "1.11"
+    assert _numeros(db, G1) == ["5.11"]
 
 
 def test_numero_do_grupo_muda_e_filhos_seguem():
     db = _banco_numeros()
     run(fs.criar_centro_custo(CentroCustoCreate(nome="A", parent_id=G1), ADMIN, db))
-    run(fs.atualizar_centro_custo(G1, CentroCustoUpdate(numero="3.20"), ADMIN, db))
-    assert _numeros(db, G1) == ["3.21"]
+    run(fs.atualizar_centro_custo(G1, CentroCustoUpdate(numero="3"), ADMIN, db))
+    assert _numeros(db, G1) == ["3.11"]
 
 
 def test_numero_de_grupo_repetido_da_409():
     db = _banco_numeros()
     with pytest.raises(HTTPException) as e:
-        run(fs.criar_centro_custo(CentroCustoCreate(nome="Z", numero="1.10"), ADMIN, db))
+        run(fs.criar_centro_custo(CentroCustoCreate(nome="Z", numero="5"), ADMIN, db))
     assert e.value.status_code == 409
 
 
 def test_atrelar_centro_existente_ao_grupo_numera():
     db = _banco_numeros()
     item = run(fs.atualizar_centro_custo(S1, CentroCustoUpdate(parent_id=G1, numero=""), ADMIN, db))
-    assert item.numero == "1.11" and str(item.parent_id) == G1
+    assert item.numero == "5.11" and str(item.parent_id) == G1
 
 
 def test_grupo_sem_numero_nao_numera():
