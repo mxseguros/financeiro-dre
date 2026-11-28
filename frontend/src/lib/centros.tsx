@@ -67,18 +67,20 @@ export function OpcoesCentro({ centros, atual, filtro = false }: {
 }
 
 /**
- * Número do k-ésimo subgrupo (espelha financeiro_service.numero_sub): soma k
- * na última casa do grupo, sem trava em 9 — "1" → 1.1 … 1.9, 2.0, 2.1…;
- * "1.10" → 1.11 … 1.19, 1.20… Grupo sem número: ''.
+ * Número do k-ésimo subgrupo (espelha financeiro_service.numero_sub). Regra de
+ * 28/11/2026: uma só sequência dentro de cada grupo, começando em 11 —
+ * "1" → 1.11, 1.12 … 1.19, 1.20…; "2" → 2.11… Grupo decimal (legado, "1.10")
+ * soma na última casa: 1.11, 1.12… Grupo sem número: ''.
  */
 export function numeroSub(grupoNumero: string | null | undefined, k: number): string {
   const g = (grupoNumero ?? '').trim()
-  if (!/^\d+(\.\d+)?$/.test(g)) return ''
-  const [inteiro, dec = ''] = g.split('.')
-  const casas = dec.length || 1
+  if (/^\d+$/.test(g)) return `${parseInt(g, 10)}.${10 + k}`
+  if (!/^\d+\.\d+$/.test(g)) return ''
+  const [inteiro, dec] = g.split('.')
+  const casas = dec.length
   // Em inteiros na menor casa, para não errar com ponto flutuante.
   const escala = 10 ** casas
-  const total = parseInt(inteiro, 10) * escala + (dec ? parseInt(dec, 10) : 0) + k
+  const total = parseInt(inteiro, 10) * escala + parseInt(dec, 10) + k
   return `${Math.floor(total / escala)}.${String(total % escala).padStart(casas, '0')}`
 }
 

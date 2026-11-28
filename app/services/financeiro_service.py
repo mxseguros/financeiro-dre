@@ -108,16 +108,22 @@ def _chave_ordem(c: dict):
 
 
 def numero_sub(grupo_numero: str | None, k: int) -> str | None:
-    """Número do k-ésimo subgrupo (k a partir de 1). Soma k na última casa do
-    número do grupo, sem trava em 9 (pedido de 24/11/2026):
-    grupo "1" → 1.1 … 1.9, 2.0, 2.1…; grupo "1.10" → 1.11 … 1.19, 1.20…
+    """Número do k-ésimo subgrupo (k a partir de 1).
+
+    Regra de 28/11/2026 (substitui a de 24/11): uma só sequência dentro de cada
+    número de grupo, começando em 11 — grupo "1" → 1.11, 1.12, 1.13…; grupo
+    "2" → 2.11, 2.12… (1.19 → 1.20, sem pular para o grupo seguinte).
+    Grupo com número decimal (legado, ex. "1.10") soma k na última casa:
+    1.11 … 1.19, 1.20…
     Grupo sem número (ou com número fora do padrão): None."""
     import re
     from decimal import Decimal
     g = (grupo_numero or "").strip()
-    if not re.fullmatch(r"\d+(\.\d+)?", g):
+    if re.fullmatch(r"\d+", g):
+        return f"{int(g)}.{10 + k}"
+    if not re.fullmatch(r"\d+\.\d+", g):
         return None
-    casas = len(g.partition(".")[2]) or 1
+    casas = len(g.partition(".")[2])
     return f"{Decimal(g) + Decimal(k).scaleb(-casas):.{casas}f}"
 
 
@@ -129,9 +135,9 @@ def _garantir_numero_livre(numero: str | None, centros: list[dict], proprio_id: 
 def renumerar_grupo(
     db: Client, grupo_id: str | None, tenant_id: str | None, ordem_ids: list[str] | None = None,
 ) -> None:
-    """Renumera os subgrupos de um grupo em sequência (1.1, 1.2…), na ordem
-    atual — ou em `ordem_ids`, quando vem de "mover". Excluiu o 1.8, o 1.9 vira
-    1.8; criou, entra no fim. Lançamentos guardam o CODIGO, não o número: nada
+    """Renumera os subgrupos de um grupo em sequência (1.11, 1.12…), na ordem
+    atual — ou em `ordem_ids`, quando vem de "mover". Excluiu o 1.18, o 1.19 vira
+    1.18; criou, entra no fim. Lançamentos guardam o CODIGO, não o número: nada
     muda neles. Grupo sem número não é renumerado."""
     if not grupo_id:
         return
@@ -159,6 +165,20 @@ def renumerar_grupo(
             if tenant_id:
                 q = q.eq("tenant_id", tenant_id)
             q.execute()
+
+
+async def renumerar_todos(usuario: UsuarioAtual, db: Client) -> list[CentroCustoItem]:
+    """Reorganiza a numeração de TODOS os grupos numerados pela regra vigente
+    (botão "Reorganizar numeração" em Configurações). Idempotente."""
+    tenant = getattr(usuario, "tenant_id", None)
+    centros = _ler_centros(db, tenant)
+    grupos = sorted(
+        (c for c in centros if not c.get("parent_id") and any(f.get("parent_id") == c["id"] for f in centros)),
+        key=_chave_ordem,
+    )
+    for g in grupos:
+        renumerar_grupo(db, g["id"], tenant)
+    return await listar_centros_custo(db)
 
 
 def _centro_atual(db: Client, centro_id: str, tenant_id: str | None) -> CentroCustoItem:
@@ -579,18 +599,23 @@ async def buscar_despesas(
     base: str = "competencia",
     categoria_id: str | None = None,
     tipo_lancamento_id: str | None = None,
+    situacao: str | None = None,
 ) -> DespesasResponse:
     from app.services.periodo_base import coluna_data, ids_do_tipo
     from app.services import confidencial as conf
+    from app.services import situacao_filtro as sf
+    hoje = hoje_brasil().isoformat()
     termo = _termo_busca(busca)
     col = coluna_data("despesas", base)
     ids_tipo = ids_do_tipo(db, categoria_id, tipo_lancamento_id)
     # Salários confidenciais (0046): quem não é Admin vê uma linha de total.
     ocultos = conf.ids_ocultos(usuario, db)
 
-    def _aplicar_filtros(q, linhas_ocultas: bool = False):
-        """linhas_ocultas=True: os filtros da tela, sem a busca, para somar as
-        linhas confidenciais; False: a lista normal, sem elas."""
+    def _aplicar_filtros(q, linhas_ocultas: bool = False, com_situacao: bool = True):
+        """linhas_ocultas=True: os filtros da tela, sem a busca e sem a situação
+        (aplicada depois de agregar), para somar as linhas confidenciais; False:
+        a lista normal, sem elas. com_situacao=False: base das contagens dos
+        chips de Situação, que não mudam ao escolher um deles."""
         q = (
             q.neq("status", "excluida")
             .gte(col, inicio.isoformat())
@@ -610,6 +635,8 @@ async def buscar_despesas(
             q = q.eq("status", status_filter)
         if linhas_ocultas:
             return q
+        if com_situacao:
+            q = sf.filtrar_despesas(q, situacao, hoje)
         if ocultos:
             q = conf.sem_confidenciais(q, ocultos)
         # A busca entra aqui (e não só na query de itens) para que o total e a
@@ -638,19 +665,29 @@ async def buscar_despesas(
     if limit is not None:
         query = query.range(offset, offset + limit - 1)
 
+    # Base das contagens dos chips de Situação: os mesmos filtros, sem a
+    # situação. Sem situação escolhida, sai das próprias linhas (sem query extra).
+    async def _base_contagem():
+        if not situacao:
+            return None
+        return await _exec(_aplicar_filtros(
+            db.table("despesas").select("paga_em, status, data_vencimento"), com_situacao=False,
+        ))
+
     if limit is None:
-        resp = await _exec(query)
+        resp, resp_base = await asyncio.gather(_exec(query), _base_contagem())
     else:
         # Itens + 3 agregados (total, pendentes, soma) são independentes:
         # 4 round-trips em paralelo, fora do event loop, em vez de 4 em fila.
-        resp, resp_total, resp_pend, resp_soma = await asyncio.gather(
+        resp, resp_total, resp_pend, resp_soma, resp_base = await asyncio.gather(
             _exec(query),
             _exec(_aplicar_filtros(db.table("despesas").select("id", count="exact")).limit(1)),
             _exec(
                 _aplicar_filtros(db.table("despesas").select("id", count="exact"))
                 .eq("status", "pendente").limit(1)
             ),
-            _exec(_aplicar_filtros(db.table("despesas").select("valor, paga_em, data_vencimento"))),
+            _exec(_aplicar_filtros(db.table("despesas").select("valor, paga_em, data_vencimento, status"))),
+            _base_contagem(),
         )
     def _item(row: dict) -> DespesaItem:
         tipo_nome  = (row.get("subitens_lancamento") or {}).get("nome")
@@ -697,13 +734,28 @@ async def buscar_despesas(
         )
         agregados = [_item(r) for r in conf.agregar(linhas, getattr(usuario, "tenant_id", None))]
 
-    hoje = hoje_brasil().isoformat()
-    situacao = {"paga": [Decimal(0), 0], "a_pagar": [Decimal(0), 0], "vencida": [Decimal(0), 0]}
+    def _sit(paga_em, status, vencimento) -> str:
+        return sf.situacao_despesa(paga_em, status, vencimento, hoje)
+
+    # Chips de Situação: contagem sobre os filtros da tela sem a situação.
+    if resp_base is not None:
+        chaves = [_sit(r.get("paga_em"), r.get("status"), r.get("data_vencimento")) for r in (resp_base.data or [])]
+    elif limit is None:
+        chaves = [_sit(i.paga_em, i.status, i.data_vencimento) for i in items]
+    else:
+        chaves = [_sit(r.get("paga_em"), r.get("status"), r.get("data_vencimento")) for r in (resp_soma.data or [])]
+    chaves += [_sit(a.paga_em, a.status, a.data_vencimento) for a in agregados]
+    contagem = sf.contar(chaves, sf.SITUACOES_DESPESA)
+    # Linhas de salário agregadas seguem a situação escolhida depois de somadas.
+    if situacao:
+        agregados = [a for a in agregados if _sit(a.paga_em, a.status, a.data_vencimento) == situacao]
+
+    resumo = {"paga": [Decimal(0), 0], "a_pagar": [Decimal(0), 0], "vencida": [Decimal(0), 0]}
 
     def _contar(valor, paga_em, vencimento) -> None:
         chave = "paga" if paga_em else ("vencida" if vencimento and str(vencimento)[:10] < hoje else "a_pagar")
-        situacao[chave][0] += _dec(valor or 0)
-        situacao[chave][1] += 1
+        resumo[chave][0] += _dec(valor or 0)
+        resumo[chave][1] += 1
 
     if limit is None:
         soma = sum(i.valor for i in items)
@@ -736,8 +788,9 @@ async def buscar_despesas(
             items = agregados + items
     return DespesasResponse(
         total=total, items=items, soma_total=soma, total_pendentes=pendentes,
-        soma_paga=situacao["paga"][0], soma_a_pagar=situacao["a_pagar"][0], soma_vencida=situacao["vencida"][0],
-        qtd_paga=situacao["paga"][1], qtd_a_pagar=situacao["a_pagar"][1], qtd_vencida=situacao["vencida"][1],
+        soma_paga=resumo["paga"][0], soma_a_pagar=resumo["a_pagar"][0], soma_vencida=resumo["vencida"][0],
+        qtd_paga=resumo["paga"][1], qtd_a_pagar=resumo["a_pagar"][1], qtd_vencida=resumo["vencida"][1],
+        contagem_situacao=contagem,
     )
 
 
@@ -1521,8 +1574,19 @@ async def buscar_receitas(
     base: str = "competencia",
     categoria_id: str | None = None,
     tipo_lancamento_id: str | None = None,
+    situacao: str | None = None,
 ) -> ReceitasResponse:
     from app.services.periodo_base import coluna_data, ids_do_tipo
+    from app.services import situacao_filtro as sf
+    hoje = hoje_brasil().isoformat()
+    chaves_situacao: list[str] = []
+
+    def _passa(recebido_em, status, vencimento) -> bool:
+        """Conta a situação (chips) e diz se a linha entra no filtro escolhido."""
+        chave = sf.situacao_receita(recebido_em, status, vencimento, hoje)
+        chaves_situacao.append(chave)
+        return not situacao or chave == situacao
+
     ids_tipo = ids_do_tipo(db, categoria_id, tipo_lancamento_id)
     items: list[ReceitaItem] = []
     soma_comissoes = Decimal(0)
@@ -1587,6 +1651,8 @@ async def buscar_receitas(
             # por isso a busca nela é filtrada em memória, e não no banco.
             if termo_lower and termo_lower not in f"comissão — {row.get('tipo', 'padrão')}".lower():
                 continue
+            if not _passa(row.get("recebida_em"), None, None):
+                continue
             v = _dec(row["valor"])
             soma_comissoes += v
             items.append(ReceitaItem(
@@ -1606,6 +1672,8 @@ async def buscar_receitas(
     so_dre = await ids_somente_dre(db)
 
     for row in (resp_rec.data or []):
+        if not _passa(row.get("recebido_em"), row.get("status"), row.get("data_vencimento")):
+            continue
         v = _dec(row["valor"])
         apenas_dre = row.get("tipo_lancamento_id") in so_dre
         if not apenas_dre:
@@ -1652,6 +1720,7 @@ async def buscar_receitas(
         soma_comissoes=soma_comissoes,
         soma_manuais=soma_manuais,
         soma_total=soma_comissoes + soma_manuais,
+        contagem_situacao=sf.contar(chaves_situacao, sf.SITUACOES_RECEITA),
     )
 
 

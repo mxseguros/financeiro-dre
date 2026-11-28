@@ -23,6 +23,8 @@ from app.models.schemas import (
 )
 from app.services import financeiro_service
 from app.services.dre_service import auditar_leitura, registrar_auditoria
+from app.services.situacao_filtro import PADRAO_DESPESA, PADRAO_RECEITA
+from app.services import emprestimo_vinculo
 
 router = APIRouter(prefix="/lancamentos", tags=["Lançamentos"])
 
@@ -114,6 +116,23 @@ async def sugerir_classificacao(
     )
 
 
+# ── EMPRÉSTIMO VINCULADO (0053) ───────────────────────────────
+
+@router.get("/vinculo/{tabela}/{item_id}", summary="Lançamento vinculado (Empréstimo despesa ↔ receita)")
+async def obter_vinculo(
+    request: Request,
+    tabela: str,
+    item_id: UUID,
+    usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
+):
+    if tabela not in ("despesas", "receitas"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tabela inválida.")
+    _exigir_leitura(usuario)
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    nome = "despesas" if tabela == "despesas" else "receitas_outras"
+    return {"vinculado": emprestimo_vinculo.vinculado(get_supabase_usuario(token), nome, item_id)}
+
+
 # ── DESPESAS ──────────────────────────────────────────────────
 
 @router.get(
@@ -131,6 +150,8 @@ async def listar_despesas(
     centro_custo:   str | None = Query(None),
     banco_id:       str | None = Query(None),
     status_filter:  str | None = Query(None, alias="status", description="Filtrar por status: pendente | aprovada | rejeitada"),
+    situacao:       str | None = Query(None, pattern=PADRAO_DESPESA,
+                                       description="Situação: a_pagar | vence_hoje | vencida | aguardando | paga | rejeitada"),
     limit:          int | None = Query(None, ge=1, le=1000, description="Paginação: máximo de itens"),
     offset:         int        = Query(0, ge=0, description="Paginação: deslocamento"),
     busca:          str | None = Query(None, alias="q", max_length=100, description="Busca por descrição/subcategoria"),
@@ -147,6 +168,7 @@ async def listar_despesas(
         limit=limit, offset=offset,
         busca=busca, ordenar_por=ordenar_por, ordem_desc=(ordem == "desc"),
         base=base, categoria_id=categoria_id, tipo_lancamento_id=tipo_lancamento_id,
+        situacao=situacao,
     )
     await auditar_leitura(
         usuario, "consulta_despesas",
@@ -181,9 +203,14 @@ async def criar_despesa(
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
     item = await financeiro_service.criar_despesa(payload, usuario, db)
+    espelho = None
+    if payload.espelho:
+        espelho = await emprestimo_vinculo.criar_espelho(
+            "despesas", item, payload.espelho, usuario, db, get_supabase_admin())
     await registrar_auditoria(
         usuario, "criar_despesa",
-        {"descricao": payload.descricao, "valor": str(payload.valor)},
+        {"descricao": payload.descricao, "valor": str(payload.valor),
+         **({"receita_vinculada": str(espelho.id)} if espelho else {})},
         request.client.host if request.client else None,
         get_supabase_admin(),
     )
@@ -210,9 +237,13 @@ async def editar_despesa(
         despesa_id, payload, db, preservar_aprovadas=not pode_excluir_qualquer(usuario),
         usuario=usuario,
     )
+    # Empréstimo vinculado: valor/descrição/datas acompanham (28/11/2026).
+    sincronizado = emprestimo_vinculo.propagar(
+        get_supabase_admin(), "despesas", despesa_id, payload.model_dump(exclude_unset=True),
+        getattr(usuario, "tenant_id", None))
     await registrar_auditoria(
         usuario, "editar_despesa",
-        {"despesa_id": str(despesa_id)},
+        {"despesa_id": str(despesa_id), **({"vinculado_sincronizado": True} if sincronizado else {})},
         request.client.host if request.client else None,
         get_supabase_admin(),
     )
@@ -244,11 +275,13 @@ async def deletar_despesa(
     request: Request,
     despesa_id: UUID,
     excluir_futuras: bool = Query(False, description="Excluir também parcelas futuras do mesmo grupo"),
+    com_vinculado: bool = Query(False, description="Empréstimo: excluir também a receita vinculada"),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_despesas_leitura(usuario)
     _bloquear_confidencial(despesa_id, usuario)
     db_admin = get_supabase_admin()
+    vinculado = emprestimo_vinculo.desvincular_ou_excluir(db_admin, "despesas", despesa_id, com_vinculado, usuario)
     # Admin/gestor excluem qualquer despesa. Os demais, só a própria e só
     # enquanto não aprovada — depois de aprovada ela já compõe o DRE, e
     # removê-la é decisão de quem aprova. A checagem é explícita aqui porque
@@ -259,9 +292,12 @@ async def deletar_despesa(
     await financeiro_service.deletar_despesa(
         despesa_id, db_admin, excluir_futuras=excluir_futuras, preservar_aprovadas=restrito,
     )
+    if vinculado:
+        await financeiro_service.deletar_receita_outra(UUID(vinculado["id"]), db_admin)
     await registrar_auditoria(
         usuario, "deletar_despesa",
-        {"despesa_id": str(despesa_id), "excluir_futuras": excluir_futuras},
+        {"despesa_id": str(despesa_id), "excluir_futuras": excluir_futuras,
+         **({"receita_vinculada_excluida": vinculado["id"]} if vinculado else {})},
         request.client.host if request.client else None,
         db_admin,
     )
@@ -391,6 +427,8 @@ async def listar_receitas(
     banco_id:     str | None = Query(None),
     status_filter: str | None = Query(None, alias="status", pattern="^(pendente|aprovada|rejeitada)$",
                                       description="Filtrar receitas manuais por status (comissões, sem status, saem da lista)"),
+    situacao:     str | None = Query(None, pattern=PADRAO_RECEITA,
+                                     description="Situação: a_receber | atrasada | recebida | rejeitada"),
     busca:        str | None = Query(None, alias="q", max_length=100, description="Busca por descrição/observação"),
     ordenar_por:  str        = Query("competencia", description="competencia | vencimento | pagamento | valor | registro"),
     ordem:        str        = Query("desc", pattern="^(asc|desc)$"),
@@ -405,6 +443,7 @@ async def listar_receitas(
         busca=busca, ordenar_por=ordenar_por, ordem_desc=(ordem == "desc"),
         status_filter=status_filter,
         base=base, categoria_id=categoria_id, tipo_lancamento_id=tipo_lancamento_id,
+        situacao=situacao,
     )
     await auditar_leitura(
         usuario, "consulta_receitas",
@@ -434,9 +473,14 @@ async def criar_receita(
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
     item = await financeiro_service.criar_receita_outra(payload, usuario, db)
+    espelho = None
+    if payload.espelho:
+        espelho = await emprestimo_vinculo.criar_espelho(
+            "receitas_outras", item, payload.espelho, usuario, db, get_supabase_admin())
     await registrar_auditoria(
         usuario, "criar_receita",
-        {"descricao": payload.descricao, "valor": str(payload.valor)},
+        {"descricao": payload.descricao, "valor": str(payload.valor),
+         **({"despesa_vinculada": str(espelho.id)} if espelho else {})},
         request.client.host if request.client else None,
         get_supabase_admin(),
     )
@@ -458,9 +502,12 @@ async def editar_receita(
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     db = get_supabase_usuario(token)
     item = await financeiro_service.atualizar_receita_outra(receita_id, payload, db, usuario=usuario)
+    sincronizado = emprestimo_vinculo.propagar(
+        get_supabase_admin(), "receitas_outras", receita_id, payload.model_dump(exclude_unset=True),
+        getattr(usuario, "tenant_id", None))
     await registrar_auditoria(
         usuario, "editar_receita",
-        {"receita_id": str(receita_id)},
+        {"receita_id": str(receita_id), **({"vinculado_sincronizado": True} if sincronizado else {})},
         request.client.host if request.client else None,
         get_supabase_admin(),
     )
@@ -491,14 +538,23 @@ async def deletar_receita(
     request: Request,
     receita_id: UUID,
     excluir_futuras: bool = Query(False, description="Excluir também ocorrências futuras do mesmo grupo de recorrência"),
+    com_vinculado: bool = Query(False, description="Empréstimo: excluir também a despesa vinculada"),
     usuario: Annotated[UsuarioAtual, Depends(obter_usuario_atual)] = None,
 ):
     _exigir_leitura(usuario)
     db_admin = get_supabase_admin()
+    vinculado = emprestimo_vinculo.desvincular_ou_excluir(db_admin, "receitas_outras", receita_id, com_vinculado, usuario)
+    restrito = not pode_excluir_qualquer(usuario)
+    if vinculado and restrito:
+        # Checa ANTES de excluir a receita: sem permissão, nada é excluído.
+        garantir_exclusao_propria("despesas", UUID(vinculado["id"]), usuario, db_admin)
     await financeiro_service.deletar_receita_outra(receita_id, db_admin, excluir_futuras=excluir_futuras)
+    if vinculado:
+        await financeiro_service.deletar_despesa(UUID(vinculado["id"]), db_admin, preservar_aprovadas=restrito)
     await registrar_auditoria(
         usuario, "deletar_receita",
-        {"receita_id": str(receita_id), "excluir_futuras": excluir_futuras},
+        {"receita_id": str(receita_id), "excluir_futuras": excluir_futuras,
+         **({"despesa_vinculada_excluida": vinculado["id"]} if vinculado else {})},
         request.client.host if request.client else None,
         db_admin,
     )

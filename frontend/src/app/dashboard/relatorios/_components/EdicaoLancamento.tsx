@@ -55,7 +55,12 @@ export function useEdicaoLancamento(token: string | null, onErro: (msg: string) 
     }
   }, [token, onErro, rota])
 
-  return { aberto, carregando, editar, fechar: () => setAberto(null), cadastros: cadastros.current }
+  // Empréstimo vinculado (0053): troca para o lançamento do outro lado.
+  const trocar = useCallback((tipo: 'despesa' | 'receita', item: Despesa | Receita) => {
+    setAberto(tipo === 'despesa' ? { tipo, item: item as Despesa } : { tipo, item: item as Receita })
+  }, [])
+
+  return { aberto, carregando, editar, trocar, fechar: () => setAberto(null), cadastros: cadastros.current }
 }
 
 interface Props {
@@ -64,16 +69,19 @@ interface Props {
   cadastros: Cadastros | null
   onFechar: () => void
   onSalvo: () => void
+  /** Empréstimo vinculado: abre o outro lado (useEdicaoLancamento().trocar). */
+  onTrocar?: (tipo: 'despesa' | 'receita', item: Despesa | Receita) => void
 }
 
-export function EdicaoLancamento({ token, aberto, cadastros, onFechar, onSalvo }: Props) {
+export function EdicaoLancamento({ token, aberto, cadastros, onFechar, onSalvo, onTrocar }: Props) {
   if (!aberto || !cadastros) return null
   const comum = {
     token, categorias: cadastros.categorias, tipos: cadastros.tipos, bancos: cadastros.bancos,
     centros: cadastros.centros, classificacoes: cadastros.classificacoes.length ? cadastros.classificacoes : undefined,
-    onClose: onFechar, onSaved: onSalvo,
+    onClose: onFechar, onSaved: onSalvo, onAbrirVinculado: onTrocar,
   }
+  // `key`: trocar para o vinculado monta o modal do zero (estado inicial vem das props).
   return aberto.tipo === 'despesa'
-    ? <ModalDespesa {...comum} despesa={aberto.item} />
-    : <ModalReceita {...comum} receita={aberto.item} />
+    ? <ModalDespesa key={aberto.item.id} {...comum} despesa={aberto.item} />
+    : <ModalReceita key={aberto.item.id} {...comum} receita={aberto.item} />
 }

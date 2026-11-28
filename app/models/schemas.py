@@ -360,6 +360,19 @@ CATEGORIAS_DESPESA_VALIDAS = {
 }
 
 
+class EspelhoEmprestimo(RespostaBase):
+    """Lado espelho de um Empréstimo (28/11/2026): a despesa cria a receita
+    vinculada, ou o contrário. Banco e centro vazios = os do lançamento."""
+    tipo_lancamento_id: UUID | None = None
+    banco_id:           UUID | None = None
+    centro_custo:       str | None = None
+
+
+def _espelho_so_em_lancamento_unico(espelho, num_parcelas, repetir_ate) -> None:
+    if espelho and ((num_parcelas or 0) > 1 or repetir_ate):
+        raise ValueError("O espelho de empréstimo vale só para lançamento único (sem parcelas ou recorrência).")
+
+
 class DespesaCreate(RespostaBase):
     tipo_lancamento_id: UUID | None = None
     banco_id:           UUID | None = None
@@ -385,6 +398,8 @@ class DespesaCreate(RespostaBase):
     # informado (>= competencia), o backend cria um registro por mês até
     # este mês em um único INSERT. Mutuamente exclusivo com num_parcelas.
     repetir_ate:        date | None = None
+    # Empréstimo: cria também a receita vinculada (migration 0053).
+    espelho:            EspelhoEmprestimo | None = None
 
     @model_validator(mode="after")
     def parcelamento_e_recorrencia_sao_exclusivos(self) -> "DespesaCreate":
@@ -393,6 +408,7 @@ class DespesaCreate(RespostaBase):
                 "Informe apenas 'repetir_ate' (recorrência) ou 'num_parcelas' "
                 "(parcelamento), não os dois."
             )
+        _espelho_so_em_lancamento_unico(self.espelho, self.num_parcelas, self.repetir_ate)
         return self
 
     @field_validator("categoria")
@@ -476,6 +492,9 @@ class DespesasResponse(RespostaBase):
     qtd_paga:           int = 0
     qtd_a_pagar:        int = 0
     qtd_vencida:        int = 0
+    # Chips de Situação (28/11/2026): quantidade por situação sobre os filtros
+    # da tela SEM a situação escolhida (services/situacao_filtro.py).
+    contagem_situacao:  dict[str, int] = {}
 
 
 class DespesaUpdate(RespostaBase):
@@ -660,6 +679,8 @@ class ReceitaOutraCreate(RespostaBase):
     # Recorrência atômica: quando informado (>= competencia), o backend cria
     # um registro por mês até este mês em um único INSERT.
     repetir_ate:        date | None = None
+    # Empréstimo: cria também a despesa vinculada (migration 0053).
+    espelho:            EspelhoEmprestimo | None = None
 
     @field_validator("centro_custo")
     @classmethod
@@ -668,6 +689,11 @@ class ReceitaOutraCreate(RespostaBase):
         if not v:
             raise ValueError("centro_custo é obrigatório.")
         return v
+
+    @model_validator(mode="after")
+    def espelho_unico(self) -> "ReceitaOutraCreate":
+        _espelho_so_em_lancamento_unico(self.espelho, None, self.repetir_ate)
+        return self
 
 
 class ReceitaItem(RespostaBase):
@@ -701,6 +727,7 @@ class ReceitasResponse(RespostaBase):
     soma_comissoes:      Decimal
     soma_manuais:        Decimal
     soma_total:          Decimal
+    contagem_situacao:   dict[str, int] = {}
 
 
 # ── FECHAMENTOS MENSAIS ───────────────────────────────────────

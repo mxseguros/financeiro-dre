@@ -35,6 +35,8 @@ export interface DespesasResp {
   /** Resumo da aba (26/11/2026), sobre o período inteiro: pago + a pagar + vencido = soma_total. */
   soma_paga?: number | string; soma_a_pagar?: number | string; soma_vencida?: number | string
   qtd_paga?: number; qtd_a_pagar?: number; qtd_vencida?: number
+  /** Chips de Situação (28/11/2026): quantidade por situação, sem a situação escolhida. */
+  contagem_situacao?: Record<string, number>
 }
 
 export interface Receita {
@@ -50,7 +52,10 @@ export interface Receita {
   /** Classificação do lançamento (migration 0040). */
   custo_tipo?: string | null
 }
-export interface ReceitasResp { total: number; items: Receita[]; soma_total: number }
+export interface ReceitasResp {
+  total: number; items: Receita[]; soma_total: number
+  contagem_situacao?: Record<string, number>
+}
 
 export interface OrdemCompra {
   id: string; solicitante: string; assunto: string; descricao: string

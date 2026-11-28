@@ -99,24 +99,40 @@ export function Detalhe({ titulo, lancamentos, onFechar, onEditar, editando }: D
 }
 
 /** Tabela de lançamentos, também usada na modal dos valores da Visão Geral. */
-export function TabelaLancamentos({ lancamentos, onEditar, editando, zebrada = false }: Pick<DetalheProps, 'lancamentos' | 'onEditar' | 'editando'> & {
+export function TabelaLancamentos({ lancamentos, onEditar, editando, zebrada = false, ordemData, limite = MAX_DETALHE }: Pick<DetalheProps, 'lancamentos' | 'onEditar' | 'editando'> & {
   /** Linhas intercaladas em cinza claro e branco. */
   zebrada?: boolean
+  /** Ordena por data (cabeçalho Data alterna ↑↓). Sem isto: maior valor primeiro (Relatórios). */
+  ordemData?: { dir: 'asc' | 'desc'; alternar: () => void }
+  /** Quantas linhas mostrar; quem passa cuida do "Mostrar mais". */
+  limite?: number
 }) {
-  const ordenados = [...lancamentos].sort((a, b) => b.valor - a.valor)
+  const ordenados = ordemData
+    ? [...lancamentos].sort((a, b) => (a.data ?? '').localeCompare(b.data ?? '') * (ordemData.dir === 'asc' ? 1 : -1))
+    : [...lancamentos].sort((a, b) => b.valor - a.valor)
   return (
     <>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-left text-[11px] text-gray-500">
-              {['Data', 'Tipo', 'Descrição', 'Subitem', 'Banco', 'Status'].map(h => <th key={h} className="px-2 py-1 font-semibold">{h}</th>)}
+              {['Data', 'Tipo', 'Descrição', 'Subitem', 'Banco', 'Status'].map(h => (
+                <th key={h} className="px-2 py-1 font-semibold"
+                  aria-sort={h === 'Data' && ordemData ? (ordemData.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+                  {h === 'Data' && ordemData ? (
+                    <button type="button" onClick={ordemData.alternar} className="inline-flex items-center gap-1 hover:text-navy"
+                      title={ordemData.dir === 'asc' ? 'Mais antigas primeiro' : 'Mais recentes primeiro'}>
+                      Data <span aria-hidden="true">{ordemData.dir === 'asc' ? '↑' : '↓'}</span>
+                    </button>
+                  ) : h}
+                </th>
+              ))}
               <th className="px-2 py-1 text-right font-semibold">Valor</th>
               {onEditar && <th className="px-2 py-1"><span className="sr-only">Ações</span></th>}
             </tr>
           </thead>
           <tbody>
-            {ordenados.slice(0, MAX_DETALHE).map((r, i) => (
+            {ordenados.slice(0, limite).map((r, i) => (
               // O índice cobre um lançamento listado duas vezes no Resultado da Visão Geral.
               <tr key={`${r.id}-${i}`} className={cn('border-t border-gray-200', zebrada && (i % 2 === 0 ? 'bg-white' : 'bg-gray-100'))}>
                 <td className="whitespace-nowrap px-2 py-1">{fmtData(r.data)}</td>
@@ -143,8 +159,8 @@ export function TabelaLancamentos({ lancamentos, onEditar, editando, zebrada = f
           </tbody>
         </table>
       </div>
-      {lancamentos.length > MAX_DETALHE && (
-        <span className="text-[11px] text-gray-500">+ {lancamentos.length - MAX_DETALHE} lançamentos (mostrando os {MAX_DETALHE} maiores).</span>
+      {!ordemData && lancamentos.length > limite && (
+        <span className="text-[11px] text-gray-500">+ {lancamentos.length - limite} lançamentos (mostrando os {limite} maiores).</span>
       )}
     </>
   )

@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/Button'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { AvisoRecorrencia, type SerieRecorrencia } from './AvisoRecorrencia'
 import { BlocoPagamento, estadoPagamentoVazio, pagamentoPreenchido, salvarPagamento, type EstadoPagamento } from '@/components/pagamentos/BlocoPagamento'
-import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type Classificacao, classificacoesDe } from './shared'
+import { Campo, inputCls, selectCls, type Categoria, type TipoLancamento, type Banco, type CentroCusto, type Despesa, type DespesasResp, type Classificacao, type Receita, classificacoesDe } from './shared'
+import { DicaEspelhoIndisponivel, ESPELHO_VAZIO, FaixaVinculo, PainelEspelho, ehEmprestimo, payloadEspelho, useVinculo, type EspelhoForm } from './Emprestimo'
 
 // Limites espelhados de DespesaCreate/DespesaUpdate (app/models/schemas.py).
 // Sem eles o backend devolvia 422 e a tela mostrava só "HTTP 422".
@@ -106,9 +107,11 @@ interface ModalDespesaProps {
   classificacoes?: Classificacao[]
   /** Editando: mostra Excluir no rodapé (o botão saiu da linha da tabela, redesenho UX). */
   onExcluir?: () => void
+  /** Empréstimo vinculado: abre o lado receita no lugar deste modal. */
+  onAbrirVinculado?: (tipo: 'despesa' | 'receita', item: Despesa | Receita) => void
 }
 
-export function ModalDespesa({ token, categorias, tipos, bancos, centros, despesa, mesDefault, onClose, onSaved, classificacoes, onExcluir }: ModalDespesaProps) {
+export function ModalDespesa({ token, categorias, tipos, bancos, centros, despesa, mesDefault, onClose, onSaved, classificacoes, onExcluir, onAbrirVinculado }: ModalDespesaProps) {
   const editando = !!despesa
   const tipoInicial = despesa ? tipos.find(t => t.id === despesa.tipo_lancamento_id) : undefined
   const [form, setForm] = useState({
@@ -138,6 +141,9 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   const [falhaAnexos, setFalhaAnexos] = useState<string | null>(null)
   // Bloco "Pagamento" (CNAB, 0050): gravado depois da despesa.
   const [pagamento, setPagamento] = useState<EstadoPagamento>(estadoPagamentoVazio())
+  // Empréstimo (28/11/2026): receita espelho na criação; faixa do vínculo na edição.
+  const [espelho, setEspelho] = useState<EspelhoForm>(ESPELHO_VAZIO)
+  const vinculado = useVinculo(token, 'despesa', despesa?.id)
 
   // Se o modal abriu antes de a taxonomia terminar de carregar, a categoria
   // nasceu vazia — o useState acima só calcula o valor inicial uma vez — e o
@@ -176,6 +182,8 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
   const valorParcela = parseFloat(form.valor_parcela) || 0
   const valorTotal   = valorParcela * numParcelas
   const parcelado    = numParcelas > 1
+  const categoriaEmprestimo = ehEmprestimo(categorias.find(c => c.id === form.categoria_id)?.nome)
+  const espelhoDisponivel = !editando && categoriaEmprestimo && !parcelado && !form.recorrente
   // Reparcelar reescreve datas e numeração de todo o grupo a partir da 1ª
   // parcela, então o backend só aceita o pedido vindo dela (422 caso contrário).
   const naoEhPrimeiraParcela = !!editando && (despesa?.parcela_atual ?? 1) > 1
@@ -223,6 +231,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
     // campo invisível).
     if (form.recorrente && !form.repetir_ate && (!editando || (serie && !parcelado))) e.repetir_ate = 'Informe até quando repetir.'
     else if (editando && form.recorrente && form.repetir_ate && form.repetir_ate < form.competencia) e.repetir_ate = 'Não pode ser antes da competência.'
+    if (espelhoDisponivel && espelho.ativo && !espelho.tipo_lancamento_id) e.espelho = 'Selecione o subitem da receita.'
     setErros(e)
     return Object.keys(e).length === 0
   }
@@ -341,6 +350,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
           recorrente:         form.recorrente,
         }
         if (form.paga_em) payload.paga_em = form.paga_em
+        if (espelhoDisponivel) payload.espelho = payloadEspelho(espelho)
         criadaId = (await api.post<Despesa>('/lancamentos/despesas', token, payload))?.id
       }
       // Pagamento: na despesa editada, se mudou; na nova, na 1ª parcela/ocorrência.
@@ -389,6 +399,7 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
       maxWidth="sm:max-w-xl"
       dismissable={!salvando}
     >
+      <FaixaVinculo token={token} vinculado={vinculado} onAbrir={onAbrirVinculado} />
       {/* Regra de 19/10/2026: Data de Pagamento aprova a despesa (qualquer perfil). */}
       {editando && (form.paga_em ? (
         <div className="mb-3 rounded-lg bg-green-50 border border-green-200 px-3 py-1.5 text-xs text-green-700">
@@ -553,6 +564,13 @@ export function ModalDespesa({ token, categorias, tipos, bancos, centros, despes
             {editando && serie && <AvisoRecorrencia serie={serie} recorrente={form.recorrente} ate={form.repetir_ate} competencia={form.competencia} />}
           </div>
         )}
+
+        {espelhoDisponivel && (
+          <PainelEspelho lado="receita" valor={espelho} onChange={v => { setEspelho(v); limparErro('espelho') }}
+            categorias={categorias} tipos={tipos} bancos={bancos} centros={centros} erro={erros.espelho}
+            base={{ subitemNome: tipos.find(t => t.id === form.tipo_lancamento_id)?.nome, banco_id: form.banco_id, centro_custo: form.centro_custo }} />
+        )}
+        {!editando && categoriaEmprestimo && !espelhoDisponivel && <DicaEspelhoIndisponivel />}
 
         <BlocoPagamento token={token} despesaId={despesa?.id} valorDespesa={valorParcela}
           valor={pagamento} onChange={setPagamento} />

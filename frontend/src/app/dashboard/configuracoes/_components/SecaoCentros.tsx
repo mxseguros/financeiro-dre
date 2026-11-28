@@ -5,7 +5,7 @@ import { useToast } from '@/components/ui/Toast'
 import { inputCls, BtnExcluir } from './shared'
 import { arvoreCentros, numeroSub, proximoNumeroSub, rotuloCentro, type CentroCusto } from '@/lib/centros'
 
-// Centros em grupos e subgrupos (24/11/2026): "1.00 - Venda Nova" › "1.21 - Saúde e Vida".
+// Centros em grupos e subgrupos (24/11/2026): "1 - Matriz" › "1.11 - Financeiro".
 // Dois níveis. Grupo com subgrupos não recebe lançamento; filtrar pelo grupo
 // traz os lançamentos de todos os subgrupos.
 
@@ -34,13 +34,36 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
 
   useEffect(() => { carregar() }, [carregar])
 
-  // Numeração automática do subgrupo (24/11/2026): o subgrupo recebe o número
-  // pelo grupo (1.10 → 1.11, 1.12…; 1 → 1.1 … 1.9, 2.0…) e o backend renumera
-  // ao criar, excluir ou mover. Só o número do grupo é digitado.
+  // Numeração automática do subgrupo (28/11/2026): uma só sequência por grupo,
+  // começando em 11 (1 → 1.11, 1.12…; 2 → 2.11…). O backend renumera ao criar,
+  // excluir ou mover. Só o número do grupo é digitado.
   const grupoDoForm = items.find(c => c.id === form.parent_id)
   const sugestao = proximoNumeroSub(grupoDoForm, items)
   const numerado = (grupoId: string | null | undefined) => !!numeroSub(items.find(g => g.id === grupoId)?.numero, 1)
   const [movendo, setMovendo] = useState<string | null>(null)
+  const [confirmRenumerar, setConfirmRenumerar] = useState(false)
+  const [renumerando, setRenumerando] = useState(false)
+
+  // Subgrupos cujo número não bate com a sequência do grupo (ex.: dados
+  // numerados pela regra antiga, 1.9 → 2.0). Mostra o aviso com o botão.
+  const foraDeSequencia = arvoreCentros(items).flatMap(({ grupo, filhos }) =>
+    filhos.filter((f, i) => {
+      const esperado = numeroSub(grupo.numero, i + 1)
+      return esperado && (f.numero ?? '') !== esperado
+    }))
+
+  async function renumerar() {
+    setRenumerando(true)
+    try {
+      const lista = await api.post<CentroCusto[]>('/configuracoes/centros-custo/renumerar', token, {})
+      setItems(lista); setConfirmRenumerar(false)
+      toast.sucesso('Numeração reorganizada.')
+    } catch (err) {
+      toast.erro(err instanceof Error ? err.message : 'Não foi possível reorganizar a numeração.')
+    } finally {
+      setRenumerando(false)
+    }
+  }
 
   async function mover(c: CentroCusto, direcao: 'cima' | 'baixo') {
     setMovendo(c.id)
@@ -194,6 +217,30 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
         onCancelar={() => { setConfirmExcluir(null); setErroExclusao(null) }}
         onConfirmar={() => confirmExcluir && excluir(confirmExcluir)}
       />
+      <ConfirmDialog
+        open={confirmRenumerar}
+        titulo="Reorganizar a numeração?"
+        mensagem={<>Os subgrupos de cada grupo passam a seguir uma só sequência, na ordem atual
+          (1.11, 1.12, 1.13…). Os lançamentos não mudam: eles guardam o centro, não o número.</>}
+        confirmarLabel="Reorganizar"
+        confirmarVariant="primary"
+        loading={renumerando}
+        onCancelar={() => setConfirmRenumerar(false)}
+        onConfirmar={renumerar}
+      />
+
+      {podeEditar && foraDeSequencia.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[13px] text-amber-800">
+            <strong>{foraDeSequencia.length} subgrupo{foraDeSequencia.length > 1 ? 's' : ''}</strong> fora da sequência do grupo
+            ({foraDeSequencia.slice(0, 3).map(c => c.numero || 's/ nº').join(', ')}{foraDeSequencia.length > 3 ? '…' : ''}).
+          </p>
+          <button type="button" onClick={() => setConfirmRenumerar(true)}
+            className="focus-ring min-h-10 shrink-0 rounded-lg bg-navy px-4 text-sm font-medium text-white hover:bg-navy-light">
+            Reorganizar numeração
+          </button>
+        </div>
+      )}
 
       {podeCriar && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -202,7 +249,7 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
             <input value={form.parent_id ? (sugestao ? `${sugestao} (auto)` : '') : form.numero}
               disabled={!!form.parent_id}
               onChange={e => setForm(f => ({ ...f, numero: e.target.value }))}
-              placeholder={form.parent_id ? 'Nº auto' : 'Nº (ex.: 1.10)'} aria-label="Número"
+              placeholder={form.parent_id ? 'Nº auto' : 'Nº (ex.: 5)'} aria-label="Número"
               title={form.parent_id ? 'Número automático pelo grupo' : undefined}
               className={`${inputCls} sm:w-32 disabled:bg-gray-100 disabled:text-gray-500`} />
             <input required value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
@@ -220,11 +267,11 @@ export function SecaoCentros({ token, podeCriar, podeEditar, podeExcluir }: {
           {erro && <p className="mt-2 text-[13px] text-red-600">{erro}</p>}
           {grupoDoForm && !sugestao && (
             <p className="mt-2 text-[13px] text-amber-600">
-              Dê um número ao grupo &quot;{grupoDoForm.nome}&quot; (ex.: 1.10) para os subgrupos serem numerados sozinhos.
+              Dê um número ao grupo &quot;{grupoDoForm.nome}&quot; (ex.: 5) para os subgrupos serem numerados sozinhos.
             </p>
           )}
           <p className="mt-2 text-[13px] text-slate-500">
-            Numeração automática: o subgrupo segue o grupo (1.10 → 1.11, 1.12…; 1.9 → 2.0) e, ao excluir, os seguintes sobem.
+            Numeração automática: cada grupo tem uma só sequência, começando em 11 (1 → 1.11, 1.12, 1.13…; 2 → 2.11…) e, ao excluir, os seguintes sobem.
             Use ↑ ↓ para mudar a ordem. Lançamentos vão nos subgrupos; o grupo soma e filtra.
           </p>
         </div>
